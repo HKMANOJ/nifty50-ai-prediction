@@ -1,0 +1,3522 @@
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --f-head: 'Syne', sans-serif;
+    --f-mono: 'JetBrains Mono', monospace;
+    --color-background-primary:#FFFFFF;
+    --color-background-secondary:#F7F9FD;
+    --color-text-primary:#17213F;
+    --color-text-secondary:#68708A;
+    --color-border-secondary:#DDE4F2;
+    --color-border-tertiary:#E8EDF7;
+    --border-radius-md:14px;
+    --border-radius-lg:22px;
+  }
+  html{background:#F4F6FA}
+  body{background:#F4F6FA}
+  .app{font-family:var(--f-mono);background:var(--color-background-primary);border:0;border-radius:0;overflow:hidden;display:flex;flex-direction:column;min-height:100vh}
+  .dashboard-layout{display:block;min-height:100vh;background:#F4F6FA}
+  .feature-sidebar{display:none;position:sticky;top:0;height:100vh;overflow:auto;background:linear-gradient(180deg,#203B85,#173173);color:#fff;padding:18px 14px;border-right:1px solid rgba(255,255,255,.12)}
+  .feature-brand{display:flex;align-items:center;gap:12px;padding:8px 8px 18px;border-bottom:1px solid rgba(255,255,255,.16)}
+  .feature-logo{width:46px;height:46px;border-radius:8px;background:linear-gradient(135deg,#F0B33F,#E56B32 48%,#6849B8);display:flex;align-items:center;justify-content:center;font-family:var(--f-head);font-weight:700}
+  .feature-brand-title{font-family:var(--f-head);font-size:18px;font-weight:700;line-height:1.1}
+  .feature-brand-sub{margin-top:3px;font-size:10px;line-height:1.3;color:rgba(255,255,255,.7);text-transform:uppercase}
+  .feature-actions{display:grid;gap:9px;margin:18px 0}
+  .feature-run{width:100%;border:0;border-radius:8px;padding:11px 12px;font-family:var(--f-head);font-size:13px;font-weight:700;color:#17213F;background:#fff;cursor:pointer;text-align:left}
+  .feature-run.live{background:#57C17A;color:#092814}
+  .feature-run.tomorrow{background:#F1B64B;color:#311B00}
+  .feature-run.load{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.18)}
+  .feature-group{padding-top:4px}
+  .feature-group-title{font-size:11px;font-weight:700;color:rgba(255,255,255,.72);text-transform:uppercase;margin:14px 8px 8px}
+  .feature-check{display:grid;grid-template-columns:18px 1fr;gap:10px;align-items:start;padding:11px 10px;margin:6px 0;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);cursor:pointer}
+  .feature-check:hover{background:rgba(255,255,255,.13)}
+  .feature-check input{width:16px;height:16px;margin-top:2px;accent-color:#F1B64B}
+  .feature-check-title{display:block;font-family:var(--f-head);font-size:13px;font-weight:700;line-height:1.2;color:#fff}
+  .feature-check-sub{display:block;margin-top:3px;font-size:10px;line-height:1.4;color:rgba(255,255,255,.68)}
+  .feature-status{margin-top:16px;padding:11px 10px;border-radius:8px;background:rgba(0,0,0,.16);font-size:11px;line-height:1.6;color:rgba(255,255,255,.78)}
+  .dashboard-main{min-width:0;max-width:1480px;margin:0 auto;display:flex;flex-direction:column;gap:18px;padding:20px 24px 28px}
+  .dashboard-main > .market-browser,.dashboard-main > .chart-board,.dashboard-main > .news-board{margin:0}
+  .dashboard-main > .chart-board{order:1}
+  .dashboard-main > .market-browser{display:none;order:2}
+  .dashboard-main > .news-board{order:3}
+  .live-hero{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;border:1px solid #E4EAF5;border-radius:22px;background:linear-gradient(135deg,#FFFFFF 0%,#F8FBFF 54%,#EEF8F2 100%);box-shadow:0 16px 36px rgba(26,39,74,.06)}
+  .live-hero-title{font-family:var(--f-head);font-size:28px;font-weight:700;color:#17213F;line-height:1.05}
+  .live-hero-sub{margin-top:6px;font-size:12px;line-height:1.6;color:#68708A}
+  .live-hero-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .live-pill{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:#E9F8EF;color:#16643D;font-size:11px;font-weight:700}
+  .live-pill.warn{background:#FFF4DD;color:#8C5A00}
+  .live-pulse{width:8px;height:8px;border-radius:999px;background:#1D9E75;box-shadow:0 0 0 0 rgba(29,158,117,.42);animation:pulseRing 1.8s infinite}
+  @keyframes pulseRing{0%{box-shadow:0 0 0 0 rgba(29,158,117,.42)}70%{box-shadow:0 0 0 10px rgba(29,158,117,0)}100%{box-shadow:0 0 0 0 rgba(29,158,117,0)}}
+  .live-hero-actions{min-width:260px;display:flex;flex-direction:column;gap:10px;align-items:stretch}
+  .live-refresh-btn{border:0;border-radius:16px;background:#1D9E75;color:#FFFFFF;padding:13px 18px;font-family:var(--f-head);font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 12px 24px rgba(29,158,117,.22)}
+  .live-refresh-btn:disabled{opacity:.56;cursor:not-allowed}
+  .auto-refresh-status{padding:10px 12px;border:1px solid #E4EAF5;border-radius:14px;background:#FFFFFF;color:#5D6680;font-size:11px;line-height:1.5;text-align:center}
+  .feature-section.is-hidden{display:none!important}
+  .header{padding:16px 20px;border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .header-left{display:flex;align-items:center;gap:10px}
+  .logo{font-family:var(--f-head);font-size:17px;font-weight:700;color:var(--color-text-primary)}
+  .logo span{color:#1D9E75}
+  .badge{font-size:10px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:4px;padding:2px 7px;color:var(--color-text-secondary);font-family:var(--f-mono)}
+  .live-dot{width:7px;height:7px;border-radius:50%;background:#1D9E75;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .date-info{font-size:11px;color:var(--color-text-secondary)}
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 16px;border-bottom:0.5px solid var(--color-border-tertiary)}
+  .ctrl-group{display:flex;flex-direction:column;gap:5px}
+  .ctrl-label{font-size:10px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em}
+  .ctrl-note{font-size:12px;line-height:1.6;color:var(--color-text-primary)}
+  .ctrl-sub{font-size:11px;color:var(--color-text-secondary)}
+  select,input[type=date]{width:100%;padding:7px 10px;font-size:12px;font-family:var(--f-mono);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary)}
+  .btn-run{width:auto;margin:0;padding:10px;font-size:13px;font-family:var(--f-head);font-weight:600;background:#1D9E75;color:#fff;border:none;border-radius:var(--border-radius-md);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .15s}
+  .btn-live{width:auto;margin:0;padding:10px;font-size:13px;font-family:var(--f-head);font-weight:600;background:#2A6FDB;color:#fff;border:none;border-radius:var(--border-radius-md);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .15s}
+  .btn-run:hover{opacity:.88}
+  .btn-live:hover{opacity:.88}
+  .btn-run:disabled,.btn-live:disabled{opacity:.4;cursor:not-allowed}
+  .action-row{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;padding:10px 16px 0}
+  .btn-load{padding:10px 14px;font-size:12px;font-family:var(--f-mono);background:var(--color-background-secondary);color:var(--color-text-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);cursor:pointer;transition:opacity .15s}
+  .btn-load:hover{opacity:.88}
+  .btn-load:disabled{opacity:.4;cursor:not-allowed}
+  .terminal{background:var(--color-background-secondary);margin:0 16px 16px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);min-height:180px;overflow:hidden;order:5}
+  .term-bar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:0.5px solid var(--color-border-tertiary)}
+  .dot{width:9px;height:9px;border-radius:50%}
+  .d-r{background:#E24B4A}.d-y{background:#EF9F27}.d-g{background:#639922}
+  .term-title{font-size:11px;color:var(--color-text-secondary);margin-left:4px}
+  .term-body{padding:12px 14px;font-size:12px;line-height:1.8;color:var(--color-text-primary);min-height:240px;overflow-y:auto;max-height:500px}
+  .t-muted{color:var(--color-text-secondary)}
+  .t-green{color:#1D9E75;font-weight:500}
+  .t-red{color:#E24B4A;font-weight:500}
+  .t-amber{color:#EF9F27;font-weight:500}
+  .t-blue{color:#378ADD;font-weight:500}
+  .t-bold{font-weight:700;color:var(--color-text-primary)}
+  .t-head{font-family:var(--f-head);font-size:13px;font-weight:700;color:var(--color-text-primary);margin-bottom:2px}
+  .sep{border-top:0.5px dashed var(--color-border-tertiary);margin:8px 0}
+  .metric-row{display:flex;justify-content:space-between;gap:8px}
+  .metric-block{flex:1;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:8px 10px}
+  .m-label{font-size:10px;color:var(--color-text-secondary);margin-bottom:3px}
+  .m-val{font-size:13px;font-weight:500}
+  .prog-bar{height:6px;background:var(--color-background-primary);border-radius:3px;overflow:hidden;margin-top:4px}
+  .prog-fill{height:100%;border-radius:3px;transition:width .5s ease}
+  .signal-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+  .signal-item{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:6px 9px;font-size:11px;display:flex;justify-content:space-between;align-items:center}
+  .sig-name{color:var(--color-text-secondary)}
+  .sig-badge{font-size:10px;padding:2px 6px;border-radius:3px;font-weight:500}
+  .bull{background:#E1F5EE;color:#0F6E56}.bear{background:#FCEBEB;color:#A32D2D}.neut{background:var(--color-background-secondary);color:var(--color-text-secondary)}
+  .prediction-box{background:var(--color-background-primary);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:12px 14px;margin-top:6px}
+  .pred-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .pred-direction{font-size:18px;font-family:var(--f-head);font-weight:700}
+  .pred-conf{font-size:11px;color:var(--color-text-secondary)}
+  .levels-row{display:flex;gap:8px;margin-top:8px}
+  .level-item{flex:1;text-align:center;background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:6px}
+  .lev-label{font-size:9px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em}
+  .lev-val{font-size:13px;font-weight:500;margin-top:2px}
+  .trade-board{margin:0 16px 16px;padding:14px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:linear-gradient(180deg,var(--color-background-secondary),var(--color-background-primary));order:2}
+  .trade-board-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .trade-title{font-family:var(--f-head);font-size:16px;font-weight:700;color:var(--color-text-primary)}
+  .trade-subtitle,.trade-updated{font-size:11px;color:var(--color-text-secondary)}
+  .trade-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,1fr);gap:12px}
+  .trade-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px}
+  .trade-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .trade-card-title{font-size:12px;font-weight:700;color:var(--color-text-primary);text-transform:uppercase;letter-spacing:.05em}
+  .trade-chip{padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700}
+  .trade-chip.call{background:#E1F5EE;color:#0F6E56}
+  .trade-chip.put{background:#FCEBEB;color:#A32D2D}
+  .trade-chip.wait{background:#FFF4DD;color:#8C5A00}
+  .trade-summary{font-size:13px;line-height:1.7;color:var(--color-text-primary)}
+  .trade-kpi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+  .trade-kpi{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:9px 10px}
+  .trade-kpi-label{font-size:10px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em}
+  .trade-kpi-value{margin-top:4px;font-size:14px;font-weight:700;color:var(--color-text-primary)}
+  .trade-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .trade-mini{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:9px 10px}
+  .trade-mini-label{font-size:10px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em}
+  .trade-mini-value{margin-top:4px;font-size:12px;line-height:1.5;color:var(--color-text-primary)}
+  .trade-list{display:flex;flex-direction:column;gap:8px}
+  .trade-item{padding:9px 10px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);font-size:12px;line-height:1.6;color:var(--color-text-primary)}
+  .trade-item strong{font-family:var(--f-head);font-size:12px}
+  .sources-row{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+  .src-tag{font-size:10px;padding:2px 7px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:3px;color:var(--color-text-secondary)}
+  .chart-board{margin:0 16px 16px;padding:16px;border:0.5px solid var(--color-border-tertiary);border-radius:22px;background:linear-gradient(180deg,#FFFFFF,var(--color-background-primary));box-shadow:0 16px 36px rgba(26,39,74,.05);order:3}
+  .chart-board-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .chart-title{font-family:var(--f-head);font-size:16px;font-weight:700;color:var(--color-text-primary)}
+  .chart-subtitle,.chart-updated,.chart-status,.chart-provider{font-size:11px;color:var(--color-text-secondary)}
+  .chart-board-grid{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:16px;align-items:start}
+  .chart-stage,.live-action-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px}
+  .chart-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .tf-group{display:flex;gap:6px;flex-wrap:wrap}
+  .tf-btn{padding:7px 11px;font-size:11px;font-family:var(--f-mono);background:var(--color-background-secondary);color:var(--color-text-primary);border:0.5px solid var(--color-border-tertiary);border-radius:999px;cursor:pointer;transition:all .15s}
+  .tf-btn:hover{opacity:.88}
+  .tf-btn.active{background:#10171F;color:#F7FBFF;border-color:#10171F}
+  .chart-frame{min-height:430px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:linear-gradient(180deg,#FAFCFF,var(--color-background-secondary));padding:10px}
+  .chart-empty{min-height:338px;display:flex;align-items:center;justify-content:center;text-align:center;border:0.5px dashed var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:18px;font-size:12px;color:var(--color-text-secondary)}
+  .chart-svg{display:block;width:100%;height:auto;min-height:390px}
+  .chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:10px;color:var(--color-text-secondary)}
+  .legend-swatch,.legend-line{display:inline-flex;align-items:center;gap:5px}
+  .legend-box{width:10px;height:10px;border-radius:2px}
+  .legend-stroke{width:18px;height:0;border-top:2px solid}
+  .live-action-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .live-action-title{font-size:12px;font-weight:700;color:var(--color-text-primary);text-transform:uppercase;letter-spacing:.05em}
+  .action-pill{padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700}
+  .action-pill.buy{background:#E1F5EE;color:#0F6E56}
+  .action-pill.sell{background:#FCEBEB;color:#A32D2D}
+  .action-pill.wait{background:#FFF4DD;color:#8C5A00}
+  .live-action-copy{font-size:12px;line-height:1.7;color:var(--color-text-primary)}
+  .action-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+  .action-kpi{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:8px 10px}
+  .action-kpi-label{font-size:10px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em}
+  .action-kpi-value{margin-top:4px;font-size:14px;font-weight:600;color:var(--color-text-primary)}
+  .action-notes{display:flex;flex-direction:column;gap:7px;margin-top:10px}
+  .action-note{font-size:11px;line-height:1.6;color:var(--color-text-secondary);padding:8px 10px;border-radius:var(--border-radius-md);background:var(--color-background-secondary)}
+  .next50-card{margin-top:0;padding:14px;border:1px solid #E4EAF5;border-radius:16px;background:#FFFFFF}
+  .next50-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .next50-title{font-family:var(--f-head);font-size:15px;font-weight:700;color:#1D2445}
+  .next50-sub{margin-top:3px;font-size:11px;line-height:1.5;color:#65708A}
+  .next50-bias{display:inline-flex;align-items:center;justify-content:center;min-width:82px;padding:7px 10px;border-radius:6px;font-size:11px;font-weight:700}
+  .next50-bias.call{background:#E1F5EE;color:#0F6E56}
+  .next50-bias.put{background:#FCEBEB;color:#A32D2D}
+  .next50-bias.wait{background:#FFF4DD;color:#8C5A00}
+  .next50-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+  .next50-grid.compact{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:0}
+  .next50-grid.compact .next50-kpi.primary{grid-column:1 / -1;background:#F0FAF5;border-color:#BDECD1}
+  .next50-kpi{padding:9px 10px;border:1px solid #EEF1F7;border-radius:8px;background:#F8FAFD}
+  .next50-label{font-size:9px;color:#717A91;text-transform:uppercase}
+  .next50-value{margin-top:4px;font-size:16px;font-weight:700;color:#1C2547}
+  .next50-meter{height:8px;border-radius:999px;background:#EEF1F7;overflow:hidden}
+  .next50-fill{height:100%;border-radius:999px;background:#1D9E75;transition:width .25s ease}
+  .next50-path{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:10px}
+  .next50-step{padding:8px 7px;border-radius:8px;background:#F8FAFD;border:1px solid #EEF1F7;text-align:center}
+  .next50-step-time{font-size:9px;color:#717A91}
+  .next50-step-price{margin-top:3px;font-size:12px;font-weight:700;color:#1D2445}
+  .next50-note{margin-top:10px;padding:9px 10px;border-radius:8px;background:#F7F8FC;font-size:11px;line-height:1.55;color:#4E5771}
+  .market-browser{margin:0 16px 16px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden;background:#fff;box-shadow:0 16px 40px rgba(26,39,74,.05);order:1}
+  .market-topbar{display:none;align-items:center;gap:18px;flex-wrap:wrap;padding:12px 18px;background:#32256C;color:#F7F5FF;font-size:12px;font-weight:600}
+  .market-topbar span{opacity:.95}
+  .market-brandbar{display:grid;grid-template-columns:auto minmax(220px,1.3fr) minmax(320px,1fr);gap:16px;align-items:center;padding:18px;border-bottom:1px solid #ECEAF7;background:linear-gradient(180deg,#FFFDFC,#F9F7FF)}
+  .market-commandbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 18px;border-top:1px solid #F7F3FB;border-bottom:1px solid #F0ECF8;background:#FDFDFF}
+  .market-command-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .market-action-btn{padding:11px 16px;border:none;border-radius:14px;font-family:var(--f-head);font-size:13px;font-weight:700;cursor:pointer;transition:opacity .15s}
+  .market-action-btn.live{background:#2A6FDB;color:#fff}
+  .market-action-btn.tomorrow{background:#1D9E75;color:#fff}
+  .market-action-btn.load{background:#fff;color:#24295B;border:1px solid #E0DAF4}
+  .market-action-btn:hover{opacity:.88}
+  .market-action-meta{font-size:11px;line-height:1.55;color:#6B708F}
+  .market-logo-lockup{display:flex;align-items:center;gap:12px}
+  .market-logo-badge{width:58px;height:58px;border-radius:18px;background:conic-gradient(from 210deg,#E97B24,#EABF4D,#8B4CCB,#E97B24);display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--f-head);font-size:18px;font-weight:700;box-shadow:inset 0 -14px 18px rgba(0,0,0,.08)}
+  .market-logo-copy{display:flex;flex-direction:column;gap:3px}
+  .market-logo-title{font-family:var(--f-head);font-size:26px;font-weight:700;color:#2A2E77;letter-spacing:.01em}
+  .market-logo-subtitle{font-size:11px;color:#6E7196;text-transform:uppercase;letter-spacing:.08em}
+  .market-search-shell{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:58px;padding:0 18px;border:1px solid #E7E3F4;border-radius:18px;background:#fff;color:#5E6783;font-size:14px}
+  .market-search-accent{width:20px;height:20px;border:2px solid #F19933;border-radius:999px;position:relative;display:inline-block}
+  .market-search-accent::after{content:'';position:absolute;right:-6px;bottom:-5px;width:8px;height:2px;background:#F19933;transform:rotate(45deg);border-radius:99px}
+  .market-header-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .market-header-card{min-height:108px;padding:14px 16px;border:1px solid #E9E6F6;border-radius:18px;background:#fff;display:flex;flex-direction:column;justify-content:space-between}
+  .market-header-label{font-size:11px;color:#666B88;text-transform:uppercase;letter-spacing:.08em}
+  .market-header-price{font-family:var(--f-head);font-size:28px;font-weight:700;color:#1C2547}
+  .market-header-change{font-size:15px;font-weight:700}
+  .market-header-note{font-size:11px;line-height:1.55;color:#6B708F}
+  .market-header-mini{font-size:11px;line-height:1.55;color:#5D6581}
+  .market-header-chip{display:inline-flex;align-items:center;justify-content:center;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;width:max-content}
+  .market-header-chip.call{background:#E1F5EE;color:#0F6E56}
+  .market-header-chip.put{background:#FCEBEB;color:#A32D2D}
+  .market-header-chip.wait{background:#FFF4DD;color:#8C5A00}
+  .market-nav{display:none;align-items:center;gap:26px;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid #F0ECF8;background:#fff}
+  .market-nav-item{font-family:var(--f-head);font-size:14px;font-weight:700;color:#22284A;position:relative}
+  .market-nav-item.active{color:#3D3A8A}
+  .market-nav-item.active::after{content:'';position:absolute;left:0;right:0;bottom:-13px;height:3px;border-radius:99px;background:#F0BB37}
+  .scanner-hero-board,.scanner-card-board,.scanner-table-board{margin:18px;border:1px solid #ECE8F6;border-radius:22px;background:#fff;box-shadow:0 14px 32px rgba(26,39,74,.04)}
+  .scanner-hero-board{padding:18px}
+  .scanner-hero-head,.scanner-board-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .scanner-hero-title,.scanner-board-title{font-family:var(--f-head);font-size:20px;font-weight:700;color:#1E2550}
+  .scanner-hero-subtitle,.scanner-board-subtitle,.scanner-board-meta{margin-top:6px;font-size:12px;line-height:1.65;color:#66708C}
+  .scanner-toggle-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .scanner-toggle-btn{padding:10px 16px;border:1px solid #DAD4F1;border-radius:14px;background:#fff;color:#2A2F60;font-family:var(--f-head);font-size:13px;font-weight:700;cursor:pointer;transition:all .15s}
+  .scanner-toggle-btn.active{background:#325FD5;border-color:#325FD5;color:#fff}
+  .scanner-summary-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px}
+  .scanner-summary-pill{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:999px;font-family:var(--f-head);font-size:14px;font-weight:700}
+  .scanner-summary-pill span{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:4px 8px;border-radius:999px;font-size:12px;background:rgba(255,255,255,.78)}
+  .scanner-summary-pill.bull{background:#E9FAF1;color:#148452}
+  .scanner-summary-pill.bear{background:#FFF0F0;color:#C94242}
+  .scanner-summary-pill.neutral{background:#F5F5FB;color:#666D8C}
+  .scanner-ticker-strip{margin-top:16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .scanner-ticker-item{padding:12px 14px;border-radius:16px;border:1px solid #E6E2F6;background:#FBFBFF}
+  .scanner-ticker-symbol{font-family:var(--f-head);font-size:15px;font-weight:700;color:#202753}
+  .scanner-ticker-meta{margin-top:6px;font-size:12px;color:#65708A;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .scanner-ticker-change{font-size:18px;font-weight:700}
+  .scanner-card-board{padding:18px;background:linear-gradient(180deg,#FFFFFF,#FFFDF8)}
+  .scanner-card-board.opening{background:linear-gradient(180deg,#FFFDF6,#FFFAEE)}
+  .scanner-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  .scanner-side-panel{padding:14px;border-radius:20px}
+  .scanner-side-panel.bull{background:#F5FFF8;border:1px solid #99E0B3}
+  .scanner-side-panel.bear{background:#FFF6F6;border:1px solid #F0A6A6}
+  .scanner-side-panel.opening-bull{background:#FFFCEF;border:1px solid #F5C65E}
+  .scanner-side-panel.opening-bear{background:#FFF5F1;border:1px solid #F0B586}
+  .scanner-side-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .scanner-side-title{font-family:var(--f-head);font-size:18px;font-weight:700}
+  .scanner-side-panel.bull .scanner-side-title,.scanner-side-panel.opening-bull .scanner-side-title{color:#20744D}
+  .scanner-side-panel.bear .scanner-side-title,.scanner-side-panel.opening-bear .scanner-side-title{color:#B84444}
+  .scanner-side-count{padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.75);font-size:12px;font-weight:700;color:#5E6683}
+  .scanner-side-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .scanner-stock-card{padding:14px;border-radius:18px;background:#fff;border:2px solid #E8E2F7;box-shadow:0 6px 18px rgba(18,28,60,.04)}
+  .scanner-stock-card.bull{border-color:#F3B24E;background:linear-gradient(180deg,#FFFDF4,#FFFFFF)}
+  .scanner-stock-card.bear{border-color:#F3A7AF;background:linear-gradient(180deg,#FFF8F8,#FFFFFF)}
+  .scanner-stock-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .scanner-stock-symbol{font-family:var(--f-head);font-size:16px;font-weight:700;color:#1D2445}
+  .scanner-stock-bias{display:inline-flex;align-items:center;justify-content:center;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;margin-top:8px}
+  .scanner-stock-bias.bull{background:#FFF0D4;color:#A85B00}
+  .scanner-stock-bias.bear{background:#FFE4E8;color:#B53B59}
+  .scanner-stock-rv{display:inline-flex;align-items:center;justify-content:center;padding:5px 10px;border-radius:12px;background:#EEE9FF;color:#5B47C7;font-size:12px;font-weight:700}
+  .scanner-stock-tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .scanner-tag{padding:4px 7px;border-radius:8px;font-size:10px;font-weight:700;letter-spacing:.05em}
+  .scanner-tag.pre{background:#E9EEFF;color:#4066D0}
+  .scanner-tag.open{background:#FFF0D7;color:#C1680A}
+  .scanner-tag.trend{background:#F0E9FF;color:#6B4DD8}
+  .scanner-stock-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:12px}
+  .scanner-stock-change{font-size:16px;font-weight:700}
+  .scanner-stock-price{font-size:17px;font-weight:700;color:#1B2442}
+  .scanner-table-board{padding:18px}
+  .scanner-table-stage{margin-top:16px}
+  .scanner-table-shell{border:1px solid #ECE8F6;border-radius:20px;overflow:hidden;background:#fff}
+  .scanner-table{width:100%;border-collapse:collapse}
+  .scanner-table thead th{padding:14px 10px;background:#F7F8FD;color:#39415F;font-size:12px;font-weight:700;text-align:left;border-bottom:1px solid #ECE8F6}
+  .scanner-table tbody td{padding:14px 10px;font-size:13px;color:#1C2343;border-bottom:1px solid #EEEAF8;vertical-align:middle}
+  .scanner-table tbody tr:last-child td{border-bottom:none}
+  .scanner-table tbody tr.tone-bull{background:rgba(154,232,185,.18)}
+  .scanner-table tbody tr.tone-bear{background:rgba(244,165,171,.22)}
+  .scanner-table tbody tr.tone-neutral{background:rgba(245,245,251,.65)}
+  .scanner-table-symbol{font-family:var(--f-head);font-size:15px;font-weight:700;color:#1F2650}
+  .scanner-table-company{margin-top:4px;font-size:11px;line-height:1.45;color:#68718B}
+  .scanner-table-badges{display:flex;flex-direction:column;gap:8px;min-width:190px}
+  .scanner-table-badge{display:inline-flex;align-items:center;justify-content:center;width:max-content;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700}
+  .scanner-table-badge.bull{background:#E7F9EE;color:#157348}
+  .scanner-table-badge.bear{background:#FFE8EA;color:#BD4053}
+  .scanner-table-badge.neutral{background:#F1F2F8;color:#656D88}
+  .scanner-table-subtag{display:inline-flex;align-items:center;justify-content:center;width:max-content;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;background:#EEE9FF;color:#6653D7}
+  .scanner-table-meta{font-size:11px;color:#6B7390}
+  .scanner-table-chip{display:inline-flex;align-items:center;justify-content:center;padding:5px 10px;border-radius:10px;font-size:12px;font-weight:700;background:rgba(255,255,255,.72)}
+  .scanner-table-chip.up{color:#137447;background:#E7F9EE}
+  .scanner-table-chip.down{color:#B83C4A;background:#FFE8EA}
+  .scanner-table-chip.flat{color:#666D88;background:#F1F2F8}
+  .scanner-break-chip{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.74);font-size:12px;font-weight:700;line-height:1.35;text-align:center}
+  .scanner-break-chip.up{color:#137447}
+  .scanner-break-chip.down{color:#B83C4A}
+  .scanner-break-chip.flat{color:#6B7390}
+  .scanner-view-btn{padding:10px 14px;border:none;border-radius:12px;background:#1D2345;color:#fff;font-family:var(--f-head);font-size:13px;font-weight:700;cursor:pointer}
+  .market-heavyweights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:18px;border-bottom:1px solid #F1ECF8;background:#FBFAFF}
+  .scenario-card{padding:15px;border:1px solid #E8E2F7;border-radius:18px;background:#fff;display:flex;flex-direction:column;gap:10px}
+  .scenario-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .scenario-card-title{font-family:var(--f-head);font-size:15px;font-weight:700;color:#252B5B}
+  .scenario-card-copy{font-size:11px;line-height:1.6;color:#6B718D}
+  .scenario-chip{padding:5px 9px;border-radius:999px;font-size:10px;font-weight:700}
+  .scenario-chip.call{background:#E1F5EE;color:#0F6E56}
+  .scenario-chip.put{background:#FCEBEB;color:#A32D2D}
+  .scenario-chip.wait{background:#FFF4DD;color:#8C5A00}
+  .scenario-main-value{font-size:22px;font-weight:700;color:#17203A}
+  .scenario-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .scenario-mini{padding:9px 10px;border-radius:12px;background:#F7F7FC}
+  .scenario-mini-label{font-size:9px;color:#747A94;text-transform:uppercase;letter-spacing:.07em}
+  .scenario-mini-value{margin-top:4px;font-size:12px;font-weight:700;color:#1C2547}
+  .market-heavy-card{padding:14px 15px;border:1px solid #ECE7F7;border-radius:16px;background:#fff}
+  .market-heavy-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .market-heavy-brand{display:flex;align-items:center;gap:10px}
+  .market-heavy-symbol{font-family:var(--f-head);font-size:16px;font-weight:700;color:#24295B}
+  .market-heavy-name{margin-top:3px;font-size:11px;line-height:1.45;color:#6C7390}
+  .market-heavy-price{margin-top:12px;font-size:26px;font-weight:700;color:#131C36}
+  .market-heavy-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+  .market-heavy-stat{padding:8px 9px;border-radius:12px;background:#F7F7FC}
+  .market-heavy-stat-label{font-size:9px;color:#757B94;text-transform:uppercase;letter-spacing:.07em}
+  .market-heavy-stat-value{margin-top:4px;font-size:12px;font-weight:700;color:#1C2547}
+  .market-main-grid{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(320px,.92fr);gap:18px;padding:18px;background:#FCFBFE}
+  .market-panel{border:1px solid #EEEAF8;border-radius:20px;background:#fff;padding:16px}
+  .market-panel-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .market-panel-title{font-family:var(--f-head);font-size:17px;font-weight:700;color:#24295B}
+  .market-panel-subtitle,.market-panel-meta{font-size:11px;line-height:1.55;color:#6C7390}
+  .market-meta-chip{display:inline-flex;align-items:center;justify-content:center;padding:5px 9px;border-radius:999px;background:#F6F1FF;color:#5A4AA0;font-size:10px;font-weight:700}
+  .option-mode-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .option-mode-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .option-mode-btn{padding:10px 14px;border:1px solid #DED7F2;border-radius:999px;background:#fff;font-family:var(--f-head);font-size:13px;font-weight:700;color:#2A2F60;cursor:pointer;transition:all .15s}
+  .option-mode-btn.active{background:#32256C;border-color:#32256C;color:#fff}
+  .plan-style-select{min-width:190px;padding:10px 13px;border:1px solid #DED7F2;border-radius:999px;background:#fff;color:#2A2F60;font-family:var(--f-mono);font-size:12px}
+  .forecast-focus-card{margin-bottom:14px;padding:16px;border:1px solid #ECE7F7;border-radius:20px;background:linear-gradient(180deg,#FFFFFF,#F7F4FF)}
+  .forecast-focus-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+  .forecast-focus-title{font-family:var(--f-head);font-size:18px;font-weight:700;color:#252B5B}
+  .forecast-focus-copy{margin-top:4px;font-size:12px;line-height:1.7;color:#5D6781}
+  .forecast-focus-bias{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:999px;font-size:11px;font-weight:700}
+  .forecast-focus-bias.call{background:#E1F5EE;color:#0F6E56}
+  .forecast-focus-bias.put{background:#FCEBEB;color:#A32D2D}
+  .forecast-focus-bias.wait{background:#FFF4DD;color:#8C5A00}
+  .forecast-focus-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .forecast-focus-metric{padding:11px 12px;border-radius:16px;background:#FFFFFF;border:1px solid #EAE5F6}
+  .forecast-focus-label{font-size:10px;color:#727894;text-transform:uppercase;letter-spacing:.06em}
+  .forecast-focus-value{margin-top:5px;font-size:15px;font-weight:700;color:#1B2342}
+  .forecast-focus-note{margin-top:12px;padding:11px 12px;border-radius:14px;background:#F7F7FC;font-size:12px;line-height:1.65;color:#4E5771}
+  .option-kpi-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+  .option-kpi-card{padding:11px 12px;border-radius:16px;background:#F8F8FD;border:1px solid #EAE5F6}
+  .option-kpi-label{font-size:10px;color:#727894;text-transform:uppercase;letter-spacing:.06em}
+  .option-kpi-value{margin-top:5px;font-size:14px;font-weight:700;color:#1B2342}
+  .option-plan-card{padding:16px;border:1px solid #ECE7F7;border-radius:20px;background:linear-gradient(180deg,#FFFFFF,#FAF8FF)}
+  .option-plan-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .option-plan-title{font-family:var(--f-head);font-size:17px;font-weight:700;color:#252B5B}
+  .option-plan-copy{font-size:12px;line-height:1.7;color:#5D6781}
+  .option-bias-chip{display:inline-flex;align-items:center;justify-content:center;padding:7px 11px;border-radius:999px;font-size:11px;font-weight:700}
+  .option-bias-chip.call{background:#E1F5EE;color:#0F6E56}
+  .option-bias-chip.put{background:#FCEBEB;color:#A32D2D}
+  .option-bias-chip.wait{background:#FFF4DD;color:#8C5A00}
+  .option-level-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:12px 0}
+  .option-level-card{padding:10px;border-radius:14px;background:#F7F7FC}
+  .option-level-label{font-size:9px;color:#717794;text-transform:uppercase;letter-spacing:.06em}
+  .option-level-value{margin-top:4px;font-size:13px;font-weight:700;color:#1B2342}
+  .option-callout{padding:11px 12px;border-radius:14px;background:#F7F4FF;font-size:12px;line-height:1.65;color:#453C75}
+  .option-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .option-detail-card{padding:14px;border:1px solid #ECE7F7;border-radius:18px;background:#fff}
+  .option-detail-title{font-family:var(--f-head);font-size:14px;font-weight:700;color:#252B5B}
+  .option-detail-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+  .option-detail-item{padding:9px 10px;border-radius:12px;background:#F7F7FC;font-size:12px;line-height:1.6;color:#4E5771}
+  .mover-tabs{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .mover-tab{padding:9px 13px;border:none;border-bottom:3px solid transparent;background:transparent;font-family:var(--f-head);font-size:15px;font-weight:700;color:#272C58;cursor:pointer}
+  .mover-tab.active{color:#3D3A8A;border-color:#F1BC37}
+  .movers-table-shell{border:1px solid #ECE8F6;border-radius:18px;overflow:hidden}
+  .movers-table{width:100%;border-collapse:collapse}
+  .movers-table thead th{background:#40337F;color:#fff;font-size:12px;font-weight:700;padding:13px 10px;text-align:left}
+  .movers-table tbody td{padding:14px 10px;border-bottom:1px solid #EEEAF8;font-size:13px;color:#1B2141;vertical-align:top}
+  .movers-table tbody tr:last-child td{border-bottom:none}
+  .movers-symbol{font-family:var(--f-head);font-size:16px;font-weight:700;color:#3A3D82}
+  .movers-company{margin-top:3px;font-size:11px;line-height:1.45;color:#69708C}
+  .movers-muted{font-size:11px;color:#6B7089}
+  .mover-chart-card{margin-top:16px;padding:14px;border:1px solid #ECE8F6;border-radius:18px;background:#fff}
+  .mover-chart-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .mover-chart-title{font-family:var(--f-head);font-size:15px;font-weight:700;color:#252A58}
+  .mover-chart-meta{font-size:11px;color:#6C7390}
+  .mover-chart-wrap{padding:12px 10px 8px;border:1px solid #F1EDF9;border-radius:16px;background:#FCFCFE;min-height:248px}
+  .mover-chart-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;align-items:end;min-height:210px}
+  .mover-bar-col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:8px;min-height:210px}
+  .mover-bar-value{font-size:11px;font-weight:700}
+  .mover-bar-shell{display:flex;align-items:flex-end;justify-content:center;width:100%;height:160px;padding:0 6px;border-bottom:1px solid #E8E4F3}
+  .mover-bar{width:100%;max-width:52px;border-radius:14px 14px 6px 6px;box-shadow:inset 0 -10px 18px rgba(255,255,255,.15)}
+  .mover-bar-label{font-family:var(--f-head);font-size:13px;font-weight:700;color:#24295B}
+  .mover-bar-note{font-size:10px;color:#6D7490}
+  .heatmap-summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .heatmap-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+  .heatmap-tile{min-height:92px;padding:12px;border-radius:16px;border:1px solid rgba(20,27,58,.08);display:flex;flex-direction:column;justify-content:space-between;gap:8px;box-shadow:inset 0 -10px 18px rgba(255,255,255,.08)}
+  .heatmap-tile-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .heatmap-tile-symbol{font-family:var(--f-head);font-size:15px;font-weight:700;color:#182038}
+  .heatmap-tile-sector{font-size:10px;line-height:1.35;color:#3F5065;opacity:.8}
+  .heatmap-tile-price{font-size:22px;font-weight:700;color:#17203A}
+  .heatmap-tile-change{font-size:13px;font-weight:700}
+  .heatmap-tile-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;color:#3E4C64}
+  .heatmap-chip{display:inline-flex;align-items:center;justify-content:center;padding:3px 7px;border-radius:999px;background:rgba(255,255,255,.58);font-size:10px;font-weight:700;color:#1E2443}
+  .stock-board{margin:0 16px 16px;padding:14px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:linear-gradient(180deg,var(--color-background-secondary),var(--color-background-primary))}
+  .stock-board-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .stock-title{font-family:var(--f-head);font-size:16px;font-weight:700;color:var(--color-text-primary)}
+  .stock-subtitle,.stock-updated,.stock-coverage{font-size:11px;color:var(--color-text-secondary)}
+  .stock-watch-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+  .watch-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px}
+  .watch-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .watch-symbol{font-family:var(--f-head);font-size:15px;font-weight:700;color:var(--color-text-primary)}
+  .watch-name{margin-top:3px;font-size:11px;color:var(--color-text-secondary);line-height:1.5}
+  .watch-price{margin-top:10px;font-size:22px;font-weight:700;color:var(--color-text-primary)}
+  .watch-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .watch-stat{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:8px 10px}
+  .watch-stat-label{font-size:10px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em}
+  .watch-stat-value{margin-top:4px;font-size:13px;font-weight:600;color:var(--color-text-primary)}
+  .stock-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .stock-panel{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px}
+  .stock-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+  .stock-panel-title{font-size:12px;font-weight:700;color:var(--color-text-primary);text-transform:uppercase;letter-spacing:.05em}
+  .stock-panel-count{font-size:10px;color:var(--color-text-secondary)}
+  .stock-list{display:flex;flex-direction:column;gap:9px}
+  .stock-row{display:grid;grid-template-columns:auto minmax(0,1.15fr) auto auto;gap:10px;align-items:center;padding:10px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-secondary)}
+  .stock-rank{width:26px;height:26px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:#10171F;color:#F7FBFF}
+  .stock-rank-wrap{display:flex;align-items:center;gap:8px}
+  .stock-avatar{width:34px;height:34px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;box-shadow:inset 0 -10px 18px rgba(255,255,255,.08)}
+  .stock-row-main{min-width:0}
+  .stock-row-symbol{font-family:var(--f-head);font-size:13px;font-weight:700;color:var(--color-text-primary)}
+  .stock-row-company{margin-top:3px;font-size:11px;line-height:1.45;color:var(--color-text-secondary)}
+  .stock-row-sector{margin-top:4px;font-size:10px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em}
+  .stock-row-price{text-align:right}
+  .stock-row-last{font-size:14px;font-weight:700;color:var(--color-text-primary)}
+  .stock-row-change{margin-top:4px;font-size:11px;font-weight:700}
+  .stock-row-signal{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+  .stock-row-score{font-size:10px;color:var(--color-text-secondary)}
+  .stock-row-extra{margin-top:4px;font-size:10px;color:var(--color-text-secondary)}
+  .news-board{margin:0 16px 16px;padding:16px;border:0.5px solid var(--color-border-tertiary);border-radius:22px;background:linear-gradient(180deg,#FFFFFF,var(--color-background-primary));box-shadow:0 16px 36px rgba(26,39,74,.05);order:4}
+  .news-board-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .news-title{font-family:var(--f-head);font-size:16px;font-weight:700;color:var(--color-text-primary)}
+  .news-subtitle{font-size:11px;color:var(--color-text-secondary);margin-top:2px}
+  .news-updated{font-size:11px;color:var(--color-text-secondary)}
+  .news-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .news-panel{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px}
+  .news-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+  .news-panel-title{font-size:12px;font-weight:700;color:var(--color-text-primary);text-transform:uppercase;letter-spacing:.05em}
+  .news-panel-count{font-size:10px;color:var(--color-text-secondary)}
+  .news-list{display:flex;flex-direction:column;gap:10px}
+  .news-item{padding:10px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-secondary)}
+  .news-kicker{font-size:10px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.05em}
+  .news-item-title{margin-top:5px;font-family:var(--f-head);font-size:13px;line-height:1.35;color:var(--color-text-primary)}
+  .news-meta{margin-top:7px;font-size:10px;color:var(--color-text-secondary);display:flex;justify-content:space-between;gap:8px}
+  .news-link{color:inherit;text-decoration:none;display:block}
+  .news-link:hover .news-item-title{text-decoration:underline}
+  .news-empty{padding:12px;border:0.5px dashed var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:11px;color:var(--color-text-secondary)}
+  .header,.controls,.action-row,.terminal,.trade-board{display:none}
+  .loading-dots::after{content:'.';animation:dots 1.2s steps(3,end) infinite}
+  @keyframes dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}100%{content:'.'}}
+  @media (max-width: 1180px){
+    .dashboard-layout{grid-template-columns:238px minmax(0,1fr)}
+    .feature-sidebar{padding:14px 10px}
+    .market-brandbar{grid-template-columns:1fr}
+    .chart-board-grid{grid-template-columns:1fr}
+  }
+  @media (max-width: 900px){
+    .dashboard-layout{display:block}
+    .feature-sidebar{position:static;height:auto;max-height:none}
+    .feature-group{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .feature-group-title{grid-column:1 / -1}
+    .dashboard-main{padding:12px;gap:12px}
+    .controls,.action-row,.signal-grid,.metric-row,.levels-row,.news-grid,.chart-board-grid,.action-kpi-grid,.stock-grid,.stock-watch-grid,.trade-grid,.trade-kpi-grid,.trade-mini-grid,.market-header-cards,.market-main-grid,.market-heavyweights,.mover-chart-grid,.heatmap-grid,.forecast-focus-grid,.option-kpi-strip,.option-level-grid,.option-detail-grid,.scenario-mini-grid,.scanner-ticker-strip,.scanner-card-grid,.scanner-side-grid,.next50-grid{grid-template-columns:1fr;display:grid}
+    .next50-path{grid-template-columns:1fr 1fr}
+    .metric-row,.levels-row{display:grid}
+    .news-board-head,.pred-header,.chart-board-head,.live-action-head,.stock-board-head,.trade-board-head,.trade-card-head,.market-panel-head,.mover-chart-head,.scanner-hero-head,.scanner-board-head,.scanner-stock-foot{align-items:flex-start;flex-direction:column}
+    .market-nav,.market-topbar,.market-command-actions,.option-mode-group,.scanner-summary-row,.scanner-toggle-group{gap:12px}
+    .stock-row{grid-template-columns:auto 1fr;align-items:flex-start}
+    .stock-row-price,.stock-row-signal{text-align:left;align-items:flex-start}
+    .market-commandbar,.option-mode-row,.option-plan-head,.scenario-card-head{align-items:flex-start;flex-direction:column}
+    .movers-table thead{display:none}
+    .movers-table,.movers-table tbody,.movers-table tr,.movers-table td{display:block;width:100%}
+    .movers-table tbody tr{border-bottom:1px solid #EEEAF8}
+    .movers-table tbody tr:last-child{border-bottom:none}
+    .movers-table tbody td{padding:8px 12px;border-bottom:none}
+    .scanner-table thead{display:none}
+    .scanner-table,.scanner-table tbody,.scanner-table tr,.scanner-table td{display:block;width:100%}
+    .scanner-table tbody tr{border-bottom:1px solid #EEEAF8}
+    .scanner-table tbody td{padding:8px 12px;border-bottom:none}
+    .scanner-table-badges{min-width:0}
+  }
+  @media (max-width: 560px){
+    .feature-group{grid-template-columns:1fr}
+    .market-logo-title{font-size:21px}
+    .chart-frame{min-height:300px}
+    .chart-empty{min-height:278px}
+    .next50-path{grid-template-columns:1fr}
+  }
+</style>
+
+<div class="app">
+  <div class="header">
+    <div class="header-left">
+      <div class="live-dot"></div>
+      <div class="logo">Nifty<span>50</span>.AI</div>
+      <div class="badge">PREDICTION ENGINE</div>
+    </div>
+    <div class="date-info" id="cur-date"></div>
+  </div>
+
+  <div class="controls">
+    <div class="ctrl-group">
+      <div class="ctrl-label">Prediction Modes</div>
+      <div class="ctrl-note">Use <strong>Live Market View</strong> for the current market tone and Next 50 Minutes forecast.</div>
+      <div class="ctrl-sub">The live view now includes real minute candles for the latest session and a rules-based next-candle action bias.</div>
+    </div>
+    <div class="ctrl-group">
+      <div class="ctrl-label">Analysis Depth</div>
+      <select id="depth-sel">
+        <option value="standard">Standard (Domestic + Global)</option>
+        <option value="deep">Deep (+ Geopolitics + FII)</option>
+        <option value="quick">Quick (Technical Only)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="action-row">
+    <button class="btn-run" id="tomorrow-btn" onclick="runPrediction('live')">
+      Refresh Live
+    </button>
+    <button class="btn-live" id="live-btn" onclick="runPrediction('live')">
+      Live Market View
+    </button>
+    <button class="btn-load" id="load-btn" onclick="document.getElementById('snapshot-file').click()">
+      Load Snapshot JSON
+    </button>
+  </div>
+  <input id="snapshot-file" type="file" accept=".json,application/json" style="display:none">
+
+  <div class="terminal">
+    <div class="term-bar">
+      <div class="dot d-r"></div><div class="dot d-y"></div><div class="dot d-g"></div>
+      <div class="term-title">nifty50-predict - zsh</div>
+    </div>
+    <div class="term-body" id="term">
+      <div class="t-muted">$ nifty50-ai --init</div>
+      <div style="margin-top:4px">
+        <span class="t-green">[OK]</span> Engine ready &nbsp;<span class="t-muted">v2.1.0</span><br>
+        <span class="t-green">[OK]</span> Source map configured &nbsp;<span class="t-muted">[NSE, NSE IX, RBI, Nifty Indices, Yahoo, GDELT]</span><br>
+        <span class="t-green">[OK]</span> Prediction engine loaded &nbsp;<span class="t-muted">[rules-v1 + normalized snapshot]</span><br>
+        <span class="t-muted">--------------------------------</span><br>
+        <span class="t-muted">Start serve_nifty50_app.py for one-click live refresh, or load a saved snapshot manually.</span><br>
+        <span class="t-muted">The stock dashboard and hot-news board below update from the latest real refresh after every run.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="trade-board">
+    <div class="trade-board-head">
+      <div>
+        <div class="trade-title">Trade Setup</div>
+        <div class="trade-subtitle">Structured call / put / wait plan with targets, triggers, and invalidation.</div>
+      </div>
+      <div class="trade-updated" id="trade-updated">Waiting for the first prediction run...</div>
+    </div>
+    <div class="trade-grid">
+      <div class="trade-card" id="trade-plan-card">
+        <div class="news-empty">Run a prediction to build the call / put setup.</div>
+      </div>
+      <div class="trade-card" id="trade-drivers-card">
+        <div class="news-empty">The main drivers and risks will appear here after the next run.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-layout">
+    <aside class="feature-sidebar">
+      <div class="feature-brand">
+        <div class="feature-logo">NSE</div>
+        <div>
+          <div class="feature-brand-title">Nifty Desk</div>
+          <div class="feature-brand-sub">Live option workspace</div>
+        </div>
+      </div>
+
+      <div class="feature-actions">
+        <button class="feature-run live" type="button" onclick="runPrediction('live')">Run Live Prediction</button>
+        <button class="feature-run tomorrow" type="button" onclick="runPrediction('live')">Refresh Live</button>
+        <button class="feature-run load" type="button" onclick="document.getElementById('snapshot-file').click()">Load Snapshot</button>
+      </div>
+
+      <div class="feature-group">
+        <div class="feature-group-title">Feature Options</div>
+        <label class="feature-check">
+          <input type="checkbox" data-feature-toggle="option-analysis" checked>
+          <span><span class="feature-check-title">Option Analysis</span><span class="feature-check-sub">Auto, call, put, target and stop loss</span></span>
+        </label>
+        <label class="feature-check">
+          <input type="checkbox" data-feature-toggle="live-prediction" checked>
+          <span><span class="feature-check-title">Live Market Prediction</span><span class="feature-check-sub">5m action bias and candle chart</span></span>
+        </label>
+        <label class="feature-check">
+          <input type="checkbox" data-feature-toggle="tomorrow-prediction" checked>
+          <span><span class="feature-check-title">Live 50m Forecast</span><span class="feature-check-sub">Current candle path and plan</span></span>
+        </label>
+        <label class="feature-check">
+          <input type="checkbox" data-feature-toggle="market-scanner" checked>
+          <span><span class="feature-check-title">Market Scanner</span><span class="feature-check-sub">Top bullish and bearish stocks</span></span>
+        </label>
+        <label class="feature-check">
+          <input type="checkbox" data-feature-toggle="heatmap" checked>
+          <span><span class="feature-check-title">Heatmap</span><span class="feature-check-sub">NIFTY 50 breadth and movers</span></span>
+        </label>
+        <label class="feature-check">
+          <input type="checkbox" data-feature-toggle="news" checked>
+          <span><span class="feature-check-title">24h News</span><span class="feature-check-sub">India market and geopolitics</span></span>
+        </label>
+      </div>
+
+      <div class="feature-status" id="feature-status">Latest snapshot will load automatically from the local live server.</div>
+    </aside>
+
+    <main class="dashboard-main">
+  <section class="live-hero">
+    <div>
+      <div class="live-hero-title">NIFTY 50 Live Prediction</div>
+      <div class="live-hero-sub">Live chart plus a rules-based Next 50 Minutes probability read. The app refreshes market data, candles, and last-24h news every 1 minute when the Python live API is available.</div>
+      <div class="live-hero-meta">
+        <span class="live-pill"><span class="live-pulse"></span>Live-only mode</span>
+        <span class="live-pill warn">Deployment view: live forecast only</span>
+      </div>
+    </div>
+    <div class="live-hero-actions">
+      <button class="live-refresh-btn" id="live-refresh-now-btn" type="button" onclick="runPrediction('live')">Refresh Live Now</button>
+      <div class="auto-refresh-status" id="auto-refresh-status">Auto refresh starts after the first snapshot loads.</div>
+    </div>
+  </section>
+
+  <div class="chart-board feature-section" data-feature-section="live-prediction">
+    <div class="chart-board-head">
+      <div>
+        <div class="chart-title">NIFTY 50 Live Chart + Next 50 Minutes</div>
+        <div class="chart-subtitle">Real minute candles for the latest NIFTY session with call/put/wait bias, target, stop loss, and invalidation.</div>
+      </div>
+      <div class="chart-updated" id="chart-updated">Waiting for intraday candles...</div>
+    </div>
+    <div class="chart-board-grid">
+      <div class="chart-stage">
+        <div class="chart-toolbar">
+          <div class="tf-group">
+            <button class="tf-btn" data-timeframe="1m">1m</button>
+            <button class="tf-btn active" data-timeframe="5m">5m</button>
+            <button class="tf-btn" data-timeframe="15m">15m</button>
+            <button class="tf-btn" data-timeframe="1h">1h</button>
+          </div>
+          <div class="chart-status" id="chart-status">Run a live refresh to load the latest session bars.</div>
+        </div>
+        <div class="chart-frame" id="chart-frame">
+          <div class="chart-empty" id="chart-empty">Run a real refresh to load minute candles for the latest NIFTY session.</div>
+          <div id="chart-svg-wrap"></div>
+        </div>
+        <div class="chart-legend">
+          <span class="legend-swatch"><span class="legend-box" style="background:#1D9E75"></span> Bull candle</span>
+          <span class="legend-swatch"><span class="legend-box" style="background:#E24B4A"></span> Bear candle</span>
+          <span class="legend-line"><span class="legend-stroke" style="border-color:#2A6FDB"></span> EMA 9</span>
+          <span class="legend-line"><span class="legend-stroke" style="border-color:#A64CE6"></span> EMA 21</span>
+        </div>
+      </div>
+      <div class="live-action-card" id="live-action-card">
+        <div class="chart-empty">Run a live refresh to compute the next-action bias from the intraday candle structure.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="market-browser">
+    <div class="market-topbar">
+      <span>Option Chain</span>
+      <span>Market Turnover</span>
+      <span>Listings</span>
+      <span>Daily Report</span>
+      <span>Corporates</span>
+      <span>Press Releases</span>
+      <span>Research</span>
+    </div>
+
+    <div class="market-brandbar">
+      <div class="market-logo-lockup">
+        <div class="market-logo-badge">NSE</div>
+        <div class="market-logo-copy">
+          <div class="market-logo-title">Nifty Market Board</div>
+          <div class="market-logo-subtitle">Live Option Desk, Heatmap And News</div>
+        </div>
+      </div>
+
+      <div class="market-search-shell">
+        <span>Search by Company name, Index or Symbol</span>
+        <span class="market-search-accent" aria-hidden="true"></span>
+      </div>
+
+      <div class="market-header-cards">
+        <div class="market-header-card">
+          <div class="market-header-label">Nifty 50 Live</div>
+          <div class="market-header-price" id="market-last-price">--</div>
+          <div class="market-header-change" id="market-last-change">Waiting for live refresh</div>
+          <div class="market-header-note" id="market-session-note">Run a real refresh to load the latest NIFTY level and session context.</div>
+        </div>
+        <div class="market-header-card">
+          <div class="market-header-label">Trade Setup</div>
+          <div class="market-header-chip wait" id="market-setup-chip">WAIT</div>
+          <div class="market-header-note" id="market-setup-trigger">Run a prediction to build the next call / put setup.</div>
+          <div class="market-header-mini" id="market-setup-copy">Targets, stop loss, and invalidation will appear here after the next real-data run.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="market-commandbar">
+      <div class="market-command-actions">
+        <button class="market-action-btn live" id="hero-live-btn" onclick="runPrediction('live')">Run Live Option Desk</button>
+        <button class="market-action-btn tomorrow" id="hero-tomorrow-btn" onclick="runPrediction('live')">Refresh Live</button>
+        <button class="market-action-btn load" id="hero-load-btn" onclick="document.getElementById('snapshot-file').click()">Load Snapshot JSON</button>
+      </div>
+      <div class="market-action-meta" id="market-command-meta">Start a live refresh to get the current call / put setup, targets, stop loss, and invalidation.</div>
+    </div>
+
+    <div class="market-nav">
+      <span class="market-nav-item active">Option Desk</span>
+      <span class="market-nav-item">Live Chart</span>
+      <span class="market-nav-item">Heatmap</span>
+      <span class="market-nav-item">Risk Plan</span>
+      <span class="market-nav-item">24h News</span>
+    </div>
+
+    <div class="scanner-hero-board feature-section" data-feature-section="market-scanner">
+      <div class="scanner-hero-head">
+        <div>
+          <div class="scanner-hero-title">Futures &amp; Options Stocks</div>
+          <div class="scanner-hero-subtitle">Live public-market scanner with bullish and bearish momentum buckets, previous-day level breaks, and volume pressure.</div>
+        </div>
+        <div class="scanner-toggle-group">
+          <button class="scanner-toggle-btn" data-scanner-view="heatmap" type="button">Heatmap</button>
+          <button class="scanner-toggle-btn active" data-scanner-view="table" type="button">Table</button>
+        </div>
+      </div>
+      <div class="scanner-summary-row">
+        <div class="scanner-summary-pill bull">Bullish <span id="scanner-bullish-count">0</span></div>
+        <div class="scanner-summary-pill bear">Bearish <span id="scanner-bearish-count">0</span></div>
+        <div class="scanner-summary-pill neutral">Neutral <span id="scanner-neutral-count">0</span></div>
+      </div>
+      <div class="scanner-ticker-strip" id="scanner-ticker-strip">
+        <div class="news-empty">Run a real refresh to load the live ticker strip.</div>
+      </div>
+    </div>
+
+    <div class="scanner-card-board feature-section" data-feature-section="market-scanner">
+      <div class="scanner-board-head">
+        <div>
+          <div class="scanner-board-title">Top Momentum Stocks</div>
+          <div class="scanner-board-subtitle">Highest live conviction names on the bullish and bearish side.</div>
+        </div>
+        <div class="scanner-board-meta" id="scanner-momentum-meta">Waiting for live momentum buckets...</div>
+      </div>
+      <div class="scanner-card-grid">
+        <div class="scanner-side-panel bull">
+          <div class="scanner-side-head">
+            <div class="scanner-side-title">Bullish</div>
+            <div class="scanner-side-count" id="scanner-top-bullish-count">0</div>
+          </div>
+          <div class="scanner-side-grid" id="scanner-top-bullish-grid">
+            <div class="news-empty">Run a real refresh to load the bullish momentum leaders.</div>
+          </div>
+        </div>
+        <div class="scanner-side-panel bear">
+          <div class="scanner-side-head">
+            <div class="scanner-side-title">Bearish</div>
+            <div class="scanner-side-count" id="scanner-top-bearish-count">0</div>
+          </div>
+          <div class="scanner-side-grid" id="scanner-top-bearish-grid">
+            <div class="news-empty">Run a real refresh to load the bearish momentum leaders.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scanner-card-board opening feature-section" data-feature-section="market-scanner">
+      <div class="scanner-board-head">
+        <div>
+          <div class="scanner-board-title">Opening Momentum</div>
+          <div class="scanner-board-subtitle">Pre-open gap, opening push, and trend follow-through tags refreshed with the live stock snapshot.</div>
+        </div>
+        <div class="scanner-board-meta" id="scanner-opening-meta">Waiting for opening-momentum buckets...</div>
+      </div>
+      <div class="scanner-card-grid">
+        <div class="scanner-side-panel opening-bull">
+          <div class="scanner-side-head">
+            <div class="scanner-side-title">Bullish</div>
+            <div class="scanner-side-count" id="scanner-opening-bullish-count">0</div>
+          </div>
+          <div class="scanner-side-grid" id="scanner-opening-bullish-grid">
+            <div class="news-empty">Run a real refresh to load the opening bullish basket.</div>
+          </div>
+        </div>
+        <div class="scanner-side-panel opening-bear">
+          <div class="scanner-side-head">
+            <div class="scanner-side-title">Bearish</div>
+            <div class="scanner-side-count" id="scanner-opening-bearish-count">0</div>
+          </div>
+          <div class="scanner-side-grid" id="scanner-opening-bearish-grid">
+            <div class="news-empty">Run a real refresh to load the opening bearish basket.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scanner-table-board feature-section" data-feature-section="market-scanner">
+      <div class="scanner-board-head">
+        <div>
+          <div class="scanner-board-title">Live Scanner Table</div>
+          <div class="scanner-board-subtitle">Time, price, change, volume curve average, momentum multiple, market pressure, level break, and session momentum.</div>
+        </div>
+        <div class="scanner-board-meta" id="scanner-table-meta">Waiting for the live stock table...</div>
+      </div>
+      <div class="scanner-table-stage" id="scanner-table-stage">
+        <div class="news-empty">Run a real refresh to load the live stock table.</div>
+      </div>
+    </div>
+
+    <div class="market-heavyweights" id="heavyweight-list">
+      <div class="news-empty">Run a live refresh to compare the `Auto`, `Call`, and `Put` scenarios for the current market state.</div>
+    </div>
+
+    <div class="market-main-grid">
+      <div class="market-panel feature-section" data-feature-section="option-analysis live-prediction tomorrow-prediction">
+        <div class="market-panel-head">
+          <div>
+            <div class="market-panel-title" id="option-desk-title">Live Option Trade Desk</div>
+            <div class="market-panel-subtitle" id="option-desk-subtitle">Choose `Auto`, `Call`, or `Put` and read the live trigger, targets, stop loss, and invalidation.</div>
+          </div>
+          <div>
+            <div class="market-panel-meta" id="stock-updated">Waiting for the first option run...</div>
+            <div class="market-panel-meta" id="stock-coverage">No live option setup yet</div>
+          </div>
+        </div>
+
+        <div class="option-mode-row">
+          <div class="option-mode-group">
+            <button class="option-mode-btn active" data-option-mode="auto" type="button">Auto Decide</button>
+            <button class="option-mode-btn" data-option-mode="call" type="button">Call View</button>
+            <button class="option-mode-btn" data-option-mode="put" type="button">Put View</button>
+          </div>
+          <select class="plan-style-select" id="plan-style-select">
+            <option value="scalp">Scalp Targets</option>
+            <option value="standard" selected>Standard Targets</option>
+            <option value="runner">Runner Targets</option>
+          </select>
+        </div>
+
+        <div class="forecast-focus-card" id="forecast-focus-card">
+          <div class="news-empty">Run a real refresh to build the next-session probability and option-side forecast.</div>
+        </div>
+
+        <div class="option-kpi-strip" id="option-kpi-strip">
+          <div class="news-empty">Run a real refresh to fill the option desk.</div>
+        </div>
+
+        <div class="option-plan-card" id="option-plan-card">
+          <div class="news-empty">Run a real refresh to get the option-side plan.</div>
+        </div>
+
+        <div class="option-detail-grid">
+          <div class="option-detail-card" id="option-drivers-card">
+            <div class="news-empty">The live bullish and bearish drivers will appear here after the next run.</div>
+          </div>
+          <div class="option-detail-card" id="option-risk-card">
+            <div class="news-empty">The key invalidation and risk notes will appear here after the next run.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="market-panel feature-section" data-feature-section="heatmap market-scanner">
+        <div class="market-panel-head">
+          <div>
+            <div class="market-panel-title">Market Heatmap</div>
+            <div class="market-panel-subtitle">Live NIFTY 50 stock tiles sorted by daily percentage change.</div>
+          </div>
+          <div class="market-meta-chip" id="heatmap-summary">Waiting for live breadth...</div>
+        </div>
+        <div class="heatmap-grid" id="heatmap-grid">
+          <div class="news-empty">Run a live refresh to paint the NIFTY 50 heatmap.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="news-board feature-section" data-feature-section="news">
+    <div class="news-board-head">
+      <div>
+        <div class="news-title">Last 24h Live News</div>
+        <div class="news-subtitle">Only the two news feeds used by the live model: geopolitics and India market hot news.</div>
+      </div>
+      <div class="news-updated" id="news-updated">Waiting for the first refresh...</div>
+    </div>
+    <div class="news-grid">
+      <div class="news-panel">
+        <div class="news-panel-head">
+          <div class="news-panel-title">Geopolitical News</div>
+          <div class="news-panel-count" id="geo-news-count">0 headlines</div>
+        </div>
+        <div class="news-list" id="geo-news-list">
+          <div class="news-empty">Run a real refresh to load the latest geopolitical headlines from the last 24 hours.</div>
+        </div>
+      </div>
+      <div class="news-panel">
+        <div class="news-panel-head">
+          <div class="news-panel-title">India Stock Market / Hot News</div>
+          <div class="news-panel-count" id="india-news-count">0 headlines</div>
+        </div>
+        <div class="news-list" id="india-news-list">
+          <div class="news-empty">Run a real refresh to load the latest India market headlines from the last 24 hours.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+    </main>
+  </div>
+</div>
+
+<script>
+const INDIA_TZ = 'Asia/Kolkata';
+const d = new Date();
+document.getElementById('cur-date').textContent = d.toLocaleDateString('en-IN',{timeZone:INDIA_TZ,weekday:'short',day:'numeric',month:'short',year:'numeric'});
+
+const term = document.getElementById('term');
+const tomorrowBtn = document.getElementById('tomorrow-btn');
+const liveBtn = document.getElementById('live-btn');
+const snapshotFileInput = document.getElementById('snapshot-file');
+const loadBtn = document.getElementById('load-btn');
+const heroLiveBtn = document.getElementById('hero-live-btn');
+const heroTomorrowBtn = document.getElementById('hero-tomorrow-btn');
+const heroLoadBtn = document.getElementById('hero-load-btn');
+const liveRefreshNowBtn = document.getElementById('live-refresh-now-btn');
+const autoRefreshStatus = document.getElementById('auto-refresh-status');
+const geoNewsList = document.getElementById('geo-news-list');
+const indiaNewsList = document.getElementById('india-news-list');
+const geoNewsCount = document.getElementById('geo-news-count');
+const indiaNewsCount = document.getElementById('india-news-count');
+const newsUpdated = document.getElementById('news-updated');
+const chartUpdated = document.getElementById('chart-updated');
+const chartStatus = document.getElementById('chart-status');
+const chartEmpty = document.getElementById('chart-empty');
+const chartSvgWrap = document.getElementById('chart-svg-wrap');
+const liveActionCard = document.getElementById('live-action-card');
+const tradeUpdated = document.getElementById('trade-updated');
+const tradePlanCard = document.getElementById('trade-plan-card');
+const tradeDriversCard = document.getElementById('trade-drivers-card');
+const stockUpdated = document.getElementById('stock-updated');
+const stockCoverage = document.getElementById('stock-coverage');
+const marketLastPrice = document.getElementById('market-last-price');
+const marketLastChange = document.getElementById('market-last-change');
+const marketSessionNote = document.getElementById('market-session-note');
+const marketSetupChip = document.getElementById('market-setup-chip');
+const marketSetupTrigger = document.getElementById('market-setup-trigger');
+const marketSetupCopy = document.getElementById('market-setup-copy');
+const marketCommandMeta = document.getElementById('market-command-meta');
+const moverModeChip = document.getElementById('mover-mode-chip');
+const moverTableBody = document.getElementById('mover-table-body');
+const moverChartTitle = document.getElementById('mover-chart-title');
+const moverChartMeta = document.getElementById('mover-chart-meta');
+const moverChartWrap = document.getElementById('mover-chart-wrap');
+const heatmapSummary = document.getElementById('heatmap-summary');
+const heatmapGrid = document.getElementById('heatmap-grid');
+const scannerBullishCount = document.getElementById('scanner-bullish-count');
+const scannerBearishCount = document.getElementById('scanner-bearish-count');
+const scannerNeutralCount = document.getElementById('scanner-neutral-count');
+const scannerTickerStrip = document.getElementById('scanner-ticker-strip');
+const scannerMomentumMeta = document.getElementById('scanner-momentum-meta');
+const scannerOpeningMeta = document.getElementById('scanner-opening-meta');
+const scannerTableMeta = document.getElementById('scanner-table-meta');
+const scannerTopBullishCount = document.getElementById('scanner-top-bullish-count');
+const scannerTopBearishCount = document.getElementById('scanner-top-bearish-count');
+const scannerOpeningBullishCount = document.getElementById('scanner-opening-bullish-count');
+const scannerOpeningBearishCount = document.getElementById('scanner-opening-bearish-count');
+const scannerTopBullishGrid = document.getElementById('scanner-top-bullish-grid');
+const scannerTopBearishGrid = document.getElementById('scanner-top-bearish-grid');
+const scannerOpeningBullishGrid = document.getElementById('scanner-opening-bullish-grid');
+const scannerOpeningBearishGrid = document.getElementById('scanner-opening-bearish-grid');
+const scannerTableStage = document.getElementById('scanner-table-stage');
+const heavyweightList = document.getElementById('heavyweight-list');
+const optionDeskTitle = document.getElementById('option-desk-title');
+const optionDeskSubtitle = document.getElementById('option-desk-subtitle');
+const forecastFocusCard = document.getElementById('forecast-focus-card');
+const optionKpiStrip = document.getElementById('option-kpi-strip');
+const optionPlanCard = document.getElementById('option-plan-card');
+const optionDriversCard = document.getElementById('option-drivers-card');
+const optionRiskCard = document.getElementById('option-risk-card');
+const planStyleSelect = document.getElementById('plan-style-select');
+const timeframeButtons = Array.from(document.querySelectorAll('[data-timeframe]'));
+const moverModeButtons = Array.from(document.querySelectorAll('[data-mover-mode]'));
+const optionModeButtons = Array.from(document.querySelectorAll('[data-option-mode]'));
+const scannerViewButtons = Array.from(document.querySelectorAll('[data-scanner-view]'));
+const featureToggleInputs = Array.from(document.querySelectorAll('[data-feature-toggle]'));
+const featureStatus = document.getElementById('feature-status');
+let selectedSnapshot = null;
+let activeTimeframe = '5m';
+let activeMoverMode = 'upward';
+let selectedOptionMode = 'auto';
+let scannerDisplayMode = 'table';
+let autoRefreshTimer = null;
+let autoRefreshInFlight = false;
+const AUTO_REFRESH_MS = 60000;
+let intradayRenderContext = {
+  snapshot: null,
+  prediction: null,
+  requestedTarget: 'live',
+  sessionContext: null
+};
+let marketBoardContext = {
+  snapshot: null,
+  prediction: null,
+  requestedTarget: 'live',
+  sessionContext: null
+};
+const DEFAULT_SERVER_ORIGIN = 'http://127.0.0.1:8000';
+
+function sanitizeServerOrigin(value){
+  const raw = String(value || '').trim();
+  if(!raw) return '';
+  return raw.replace(/\/+$/,'');
+}
+
+function getServerOrigin(){
+  const params = new URLSearchParams(location.search);
+  const queryOrigin = sanitizeServerOrigin(params.get('server'));
+  let storedOrigin = '';
+  try{
+    if(queryOrigin){
+      localStorage.setItem('nifty50_server_origin', queryOrigin);
+      storedOrigin = queryOrigin;
+    }else{
+      storedOrigin = sanitizeServerOrigin(localStorage.getItem('nifty50_server_origin'));
+    }
+  }catch(err){
+    storedOrigin = queryOrigin;
+  }
+
+  if(location.protocol !== 'file:'){
+    return queryOrigin || storedOrigin || location.origin;
+  }
+
+  return queryOrigin || storedOrigin || DEFAULT_SERVER_ORIGIN;
+}
+
+function buildServerUrl(path){
+  const origin = getServerOrigin();
+  const normalizedPath = String(path || '').startsWith('/') ? String(path || '') : `/${String(path || '')}`;
+  return `${origin}${normalizedPath}`;
+}
+
+function explainFileModeServer(){
+  return `File mode detected. Live refresh will try ${getServerOrigin()}. If that server is not running, start serve_nifty50_app.py first.`;
+}
+
+async function refreshLiveSnapshot(){
+  let resp;
+  try{
+    resp = await fetch(buildServerUrl('/api/refresh'), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      cache: 'no-store',
+      body: JSON.stringify({requested_at: new Date().toISOString()})
+    });
+  }catch(err){
+    throw new Error(location.protocol === 'file:'
+      ? `Automatic refresh server is unavailable at ${getServerOrigin()}. Start serve_nifty50_app.py or open the localhost URL directly.`
+      : 'Automatic refresh endpoint is unavailable. Start serve_nifty50_app.py instead of python3 -m http.server.');
+  }
+
+  let payload = null;
+  try{
+    payload = await resp.json();
+  }catch(err){
+    throw new Error('Automatic refresh endpoint returned an unreadable response.');
+  }
+
+  if(!resp.ok || !payload?.ok){
+    const message = payload?.message || payload?.error || 'Automatic refresh failed.';
+    throw new Error(message);
+  }
+
+  selectedSnapshot = null;
+  return payload;
+}
+
+function log(html, delay=0){
+  return new Promise(r=>setTimeout(()=>{
+    term.innerHTML += '<div>'+html+'</div>';
+    term.scrollTop = term.scrollHeight;
+    r();
+  }, delay));
+}
+function logSep(){return log('<div class="sep"></div>');}
+
+function clamp(num, min, max){
+  return Math.min(max, Math.max(min, num));
+}
+
+function deriveDirectionalProbabilities(score, confidence, config={}){
+  const baseImpact = Number(config.baseImpact ?? 30);
+  const confidenceImpact = Number(config.confidenceImpact ?? 0.16);
+  const floor = Number(config.floor ?? 18);
+  const ceiling = Number(config.ceiling ?? 82);
+  const centeredConfidence = (Number(confidence || 50) - 50) * confidenceImpact;
+  const bullish = Math.round(clamp(50 + (clamp(Number(score || 0), -1, 1) * baseImpact) + centeredConfidence, floor, ceiling));
+  return {
+    bullish,
+    bearish: 100 - bullish
+  };
+}
+
+function formatNum(value, digits=2){
+  if(value === null || value === undefined || Number.isNaN(Number(value))) return 'n/a';
+  return Number(value).toLocaleString('en-IN',{maximumFractionDigits:digits,minimumFractionDigits:digits});
+}
+
+function formatSignedPct(value, digits=2){
+  if(value === null || value === undefined || Number.isNaN(Number(value))) return 'n/a';
+  const n = Number(value);
+  const prefix = n > 0 ? '+' : '';
+  return prefix + n.toFixed(digits) + '%';
+}
+
+function formatInteger(value){
+  if(value === null || value === undefined || Number.isNaN(Number(value))) return 'n/a';
+  return Number(value).toLocaleString('en-IN',{maximumFractionDigits:0});
+}
+
+function roundValue(value, digits=2){
+  if(value === null || value === undefined || Number.isNaN(Number(value))) return null;
+  return Number(Number(value).toFixed(digits));
+}
+
+function titleCase(text){
+  return String(text || '').charAt(0).toUpperCase() + String(text || '').slice(1);
+}
+
+function toneWordFromDirection(direction){
+  if(direction === 'BULLISH') return 'higher';
+  if(direction === 'BEARISH') return 'lower';
+  return 'sideways';
+}
+
+function escapeHtml(text){
+  return String(text)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+function hashString(text){
+  let hash = 0;
+  const value = String(text || '');
+  for(let index = 0; index < value.length; index += 1){
+    hash = ((hash << 5) - hash) + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function companyBadgeStyle(symbol){
+  const palette = [
+    ['#1D9E75','#12785B'],
+    ['#2A6FDB','#1C4FA5'],
+    ['#D97706','#A8550A'],
+    ['#C2410C','#9A3412'],
+    ['#7C3AED','#5B21B6'],
+    ['#0F766E','#115E59'],
+    ['#BE123C','#9F1239'],
+    ['#4F46E5','#3730A3']
+  ];
+  const picked = palette[hashString(symbol) % palette.length];
+  return `background:linear-gradient(135deg,${picked[0]},${picked[1]})`;
+}
+
+function companyMonogram(symbol){
+  const cleaned = String(symbol || '').replace(/[^A-Za-z]/g,'').toUpperCase();
+  return cleaned.slice(0,2) || 'ST';
+}
+
+function formatDriverValue(driver){
+  if(driver.display === 'pct') return formatSignedPct(driver.raw);
+  if(driver.display === 'crore'){
+    const n = Number(driver.raw);
+    const prefix = n > 0 ? '+' : '';
+    return prefix + formatNum(n) + ' cr';
+  }
+  const n = Number(driver.raw);
+  const prefix = n > 0 ? '+' : '';
+  return prefix + n.toFixed(2) + ' score';
+}
+
+function setLoadButtonLabel(label){
+  loadBtn.textContent = label;
+  if(heroLoadBtn) heroLoadBtn.textContent = label;
+}
+
+function updateAutoRefreshStatus(message, tone=''){
+  if(!autoRefreshStatus) return;
+  const prefix = tone === 'error' ? 'Refresh issue: ' : tone === 'running' ? 'Refreshing: ' : '';
+  autoRefreshStatus.textContent = prefix + message;
+  autoRefreshStatus.style.borderColor = tone === 'error' ? '#F3B0B0' : tone === 'running' ? '#F1D08A' : '#E4EAF5';
+  autoRefreshStatus.style.color = tone === 'error' ? '#A32D2D' : tone === 'running' ? '#8C5A00' : '#5D6680';
+}
+
+function setRunButtonsState(activeMode=null, disabled=false){
+  if(tomorrowBtn) tomorrowBtn.disabled = disabled;
+  if(liveBtn) liveBtn.disabled = disabled;
+  if(loadBtn) loadBtn.disabled = disabled;
+  if(heroTomorrowBtn) heroTomorrowBtn.disabled = disabled;
+  if(heroLiveBtn) heroLiveBtn.disabled = disabled;
+  if(heroLoadBtn) heroLoadBtn.disabled = disabled;
+  if(liveRefreshNowBtn) liveRefreshNowBtn.disabled = disabled;
+  if(tomorrowBtn) tomorrowBtn.textContent = activeMode === 'live' && disabled ? 'Refreshing Live Data' : 'Refresh Live';
+  if(liveBtn) liveBtn.textContent = activeMode === 'live' && disabled ? 'Running Live View' : 'Live Market View';
+  if(heroTomorrowBtn) heroTomorrowBtn.textContent = activeMode === 'live' && disabled ? 'Refreshing Live Data' : 'Refresh Live';
+  if(heroLiveBtn) heroLiveBtn.textContent = activeMode === 'live' && disabled ? 'Running Live Option Desk' : 'Run Live Option Desk';
+  if(liveRefreshNowBtn) liveRefreshNowBtn.textContent = activeMode === 'live' && disabled ? 'Refreshing Live Data...' : 'Refresh Live Now';
+}
+
+function formatDateTimeInIndia(value){
+  const dt = new Date(value);
+  if(Number.isNaN(dt.getTime())) return 'latest refresh';
+  return dt.toLocaleString('en-IN', {
+    timeZone: INDIA_TZ,
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }) + ' IST';
+}
+
+function parsePublishedDate(value){
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function formatRelativeAge(dt){
+  if(!dt) return 'time unknown';
+  const diffMs = Math.max(0, Date.now() - dt.getTime());
+  const diffHours = diffMs / (1000 * 60 * 60);
+  if(diffHours < 1){
+    const mins = Math.max(1, Math.round(diffMs / (1000 * 60)));
+    return mins + 'm ago';
+  }
+  if(diffHours < 24){
+    return Math.round(diffHours) + 'h ago';
+  }
+  return Math.round(diffHours / 24) + 'd ago';
+}
+
+function filterRecentArticles(articles, hours=24){
+  const cutoffMs = hours * 60 * 60 * 1000;
+  return (articles || [])
+    .map(article => ({...article, _publishedDate: parsePublishedDate(article.published_at)}))
+    .sort((left, right) => {
+      const leftMs = left._publishedDate ? left._publishedDate.getTime() : 0;
+      const rightMs = right._publishedDate ? right._publishedDate.getTime() : 0;
+      return rightMs - leftMs;
+    })
+    .filter(article => article._publishedDate && (Date.now() - article._publishedDate.getTime()) <= cutoffMs);
+}
+
+function renderNewsColumn(listEl, countEl, articles, emptyMessage){
+  const recent = filterRecentArticles(articles, 24).slice(0, 6);
+  countEl.textContent = recent.length + (recent.length === 1 ? ' headline' : ' headlines');
+  if(!recent.length){
+    listEl.innerHTML = '<div class="news-empty">'+escapeHtml(emptyMessage)+'</div>';
+    return;
+  }
+
+  listEl.innerHTML = recent.map(article => {
+    const published = article._publishedDate || parsePublishedDate(article.published_at);
+    const href = article.url ? escapeHtml(article.url) : '#';
+    const title = escapeHtml(article.title || 'Untitled headline');
+    const source = escapeHtml(article.source || 'Live source');
+    const publishedLabel = formatRelativeAge(published);
+    return `
+      <article class="news-item">
+        <a class="news-link" href="${href}" target="_blank" rel="noreferrer">
+          <div class="news-kicker">${source}</div>
+          <div class="news-item-title">${title}</div>
+          <div class="news-meta">
+            <span>${publishedLabel}</span>
+            <span>${escapeHtml(article.published_at || 'time unavailable')}</span>
+          </div>
+        </a>
+      </article>
+    `;
+  }).join('');
+}
+
+function renderHotNews(snapshot){
+  const geopolitical = snapshot?.news?.headlines?.geopolitical || [];
+  const indiaMarket = snapshot?.news?.headlines?.india_market || [];
+  renderNewsColumn(
+    geoNewsList,
+    geoNewsCount,
+    geopolitical,
+    'No geopolitical headlines matched the last 24 hours during this refresh.'
+  );
+  renderNewsColumn(
+    indiaNewsList,
+    indiaNewsCount,
+    indiaMarket,
+    'No India market headlines matched the last 24 hours during this refresh.'
+  );
+  newsUpdated.textContent = 'Updated: ' + formatDateTimeInIndia(snapshot?.meta?.generated_at);
+}
+
+function signalBadgeClass(signal){
+  if(signal === 'bullish') return 'bull';
+  if(signal === 'bearish') return 'bear';
+  return 'neut';
+}
+
+function signalLabel(signal){
+  if(signal === 'bullish') return 'BULL';
+  if(signal === 'bearish') return 'BEAR';
+  return 'NEUT';
+}
+
+function formatSignedNumber(value){
+  if(value === null || value === undefined || Number.isNaN(Number(value))) return '--';
+  const num = Number(value);
+  return `${num > 0 ? '+' : ''}${formatNum(num)}`;
+}
+
+function formatVolumeLakhs(volume){
+  if(volume === null || volume === undefined || Number.isNaN(Number(volume))) return '--';
+  return Number(Number(volume) / 100000).toFixed(2);
+}
+
+function formatValueCrores(price, volume){
+  if(price === null || price === undefined || volume === null || volume === undefined) return '--';
+  const value = (Number(price) * Number(volume)) / 10000000;
+  if(!Number.isFinite(value)) return '--';
+  return value.toFixed(2);
+}
+
+function formatVolumeMillions(volume){
+  if(volume === null || volume === undefined || Number.isNaN(Number(volume))) return '--';
+  return `${Number(Number(volume) / 1000000).toFixed(2)} M`;
+}
+
+function setActiveMoverModeButton(){
+  moverModeButtons.forEach(button => {
+    button.classList.toggle('active', button.dataset.moverMode === activeMoverMode);
+  });
+}
+
+function setActiveOptionModeButton(){
+  optionModeButtons.forEach(button => {
+    button.classList.toggle('active', button.dataset.optionMode === selectedOptionMode);
+  });
+}
+
+function setActiveScannerViewButton(){
+  scannerViewButtons.forEach(button => {
+    button.classList.toggle('active', button.dataset.scannerView === scannerDisplayMode);
+  });
+}
+
+function setFeatureVisibility(){
+  const enabled = new Set(featureToggleInputs.filter(input => input.checked).map(input => input.dataset.featureToggle));
+  document.querySelectorAll('[data-feature-section]').forEach(section => {
+    const keys = String(section.dataset.featureSection || '').split(/\s+/).filter(Boolean);
+    section.classList.toggle('is-hidden', !keys.some(key => enabled.has(key)));
+  });
+  if(featureStatus){
+    featureStatus.textContent = `${enabled.size} sections active | ${marketBoardContext.requestedTarget === 'tomorrow' ? 'Tomorrow mode' : 'Live mode'}`;
+  }
+}
+
+function scannerToneClass(stock){
+  if((stock?.signal || '') === 'bullish') return 'tone-bull';
+  if((stock?.signal || '') === 'bearish') return 'tone-bear';
+  return 'tone-neutral';
+}
+
+function scannerBiasClass(stock){
+  if((stock?.signal || '') === 'bullish') return 'bull';
+  if((stock?.signal || '') === 'bearish') return 'bear';
+  return 'neutral';
+}
+
+function signalArrowGlyph(signalArrow){
+  if(signalArrow === 'up') return 'UP';
+  if(signalArrow === 'down') return 'DN';
+  return '--';
+}
+
+function scannerLevelClass(direction){
+  if(direction === 'up') return 'up';
+  if(direction === 'down') return 'down';
+  return 'flat';
+}
+
+function renderScannerTags(tags){
+  const list = Array.isArray(tags) ? tags : [];
+  if(!list.length) return '';
+  return `<div class="scanner-stock-tags">${list.slice(0,3).map(tag => `<span class="scanner-tag ${String(tag).toLowerCase()}">${escapeHtml(tag)}</span>`).join('')}</div>`;
+}
+
+function renderScannerStockCard(stock){
+  const biasClass = scannerBiasClass(stock);
+  const changeClass = Number(stock?.day_change_pct || 0) >= 0 ? 't-green' : 't-red';
+  return `
+    <article class="scanner-stock-card ${biasClass}">
+      <div class="scanner-stock-top">
+        <div>
+          <div class="scanner-stock-symbol">${escapeHtml(stock.symbol || 'N/A')}</div>
+          <div class="scanner-stock-bias ${biasClass}">${escapeHtml((stock.session_momentum || 'Neutral').toUpperCase())}</div>
+        </div>
+        <div class="scanner-stock-rv">${escapeHtml(stock.volume_multiple !== null && stock.volume_multiple !== undefined ? `${formatNum(stock.volume_multiple)}x` : '--')}</div>
+      </div>
+      ${renderScannerTags(stock.momentum_tags)}
+      <div class="scanner-stock-foot">
+        <div class="scanner-stock-change ${changeClass}">${formatSignedPct(stock.day_change_pct)}</div>
+        <div class="scanner-stock-price">${formatNum(stock.last_price)}</div>
+      </div>
+    </article>
+  `;
+}
+
+function renderScannerTickerStrip(board){
+  const items = Array.isArray(board?.ticker_strip) ? board.ticker_strip : [];
+  if(!items.length){
+    scannerTickerStrip.innerHTML = '<div class="news-empty">Run a real refresh to load the live ticker strip.</div>';
+    return;
+  }
+  scannerTickerStrip.innerHTML = items.map(item => `
+    <article class="scanner-ticker-item">
+      <div class="scanner-ticker-symbol">${escapeHtml(item.symbol || 'N/A')}</div>
+      <div class="scanner-ticker-meta">
+        <span class="scanner-ticker-change ${Number(item.day_change_pct || 0) >= 0 ? 't-green' : 't-red'}">${formatSignedPct(item.day_change_pct)}</span>
+        <span>${formatNum(item.last_price)}</span>
+      </div>
+    </article>
+  `).join('');
+}
+
+function renderScannerCardSection(container, countNode, items, emptyMessage){
+  const list = Array.isArray(items) ? items : [];
+  countNode.textContent = String(list.length);
+  if(!list.length){
+    container.innerHTML = `<div class="news-empty">${escapeHtml(emptyMessage)}</div>`;
+    return;
+  }
+  container.innerHTML = list.map(renderScannerStockCard).join('');
+}
+
+function scannerHeatmapHtml(stocks){
+  const items = [...(stocks || [])].sort((left, right) => Number(right.day_change_pct || 0) - Number(left.day_change_pct || 0));
+  return `<div class="heatmap-grid">${items.map(item => {
+    const dayPct = Number(item.day_change_pct || 0);
+    return `
+      <article class="heatmap-tile" style="${heatmapTileStyle(dayPct)}">
+        <div class="heatmap-tile-top">
+          <div>
+            <div class="heatmap-tile-symbol">${escapeHtml(item.symbol || 'N/A')}</div>
+            <div class="heatmap-tile-sector">${escapeHtml(item.session_momentum || item.sector || 'Live')}</div>
+          </div>
+          <span class="heatmap-chip">${escapeHtml(signalArrowGlyph(item.signal_arrow || 'flat'))}</span>
+        </div>
+        <div>
+          <div class="heatmap-tile-price">${formatNum(item.last_price)}</div>
+          <div class="heatmap-tile-change ${dayPct >= 0 ? 't-green' : 't-red'}">${formatSignedPct(dayPct)}</div>
+        </div>
+        <div class="heatmap-tile-foot">
+          <span>${escapeHtml(item.level_status || '--')}</span>
+          <span>${escapeHtml(item.break_time_market || formatClockLabel(item.last_bar_market_time))}</span>
+        </div>
+      </article>
+    `;
+  }).join('')}</div>`;
+}
+
+function renderScannerTable(board){
+  const stocks = Array.isArray(board?.stocks) ? board.stocks : [];
+  if(!stocks.length){
+    scannerTableMeta.textContent = 'Waiting for the live stock table...';
+    scannerTableStage.innerHTML = '<div class="news-empty">Run a real refresh to load the live stock table.</div>';
+    return;
+  }
+
+  scannerTableMeta.textContent = `Updated ${formatDateTimeInIndia(board.generated_at)} | ${stocks.length} stocks | ${scannerDisplayMode === 'table' ? 'table view' : 'heatmap view'}`;
+  if(scannerDisplayMode === 'heatmap'){
+    scannerTableStage.innerHTML = scannerHeatmapHtml(stocks);
+    return;
+  }
+
+  const bullish = stocks.filter(item => item.signal === 'bullish').sort((left, right) => Number(right.momentum_rank || 0) - Number(left.momentum_rank || 0));
+  const bearish = stocks.filter(item => item.signal === 'bearish').sort((left, right) => Number(right.momentum_rank || 0) - Number(left.momentum_rank || 0));
+  const neutral = stocks.filter(item => item.signal === 'neutral').sort((left, right) => Math.abs(Number(right.score || 0)) - Math.abs(Number(left.score || 0)));
+  const ordered = [...bullish, ...neutral, ...bearish];
+
+  scannerTableStage.innerHTML = `
+    <div class="scanner-table-shell">
+      <table class="scanner-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Symbol</th>
+            <th>Time</th>
+            <th>Price</th>
+            <th>% Change</th>
+            <th>Volume</th>
+            <th>VC Avg</th>
+            <th>Momentum</th>
+            <th>M.P.</th>
+            <th>Signal</th>
+            <th>Level</th>
+            <th>Break Event</th>
+            <th>Session Momentum</th>
+            <th>View</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${ordered.map((item, index) => `
+            <tr class="${scannerToneClass(item)}">
+              <td>${index + 1}</td>
+              <td>
+                <div class="scanner-table-badges">
+                  <div>
+                    <div class="scanner-table-symbol">${escapeHtml(item.symbol || 'N/A')}</div>
+                    <div class="scanner-table-company">${escapeHtml(item.company_name || item.sector || '')}</div>
+                  </div>
+                  <span class="scanner-table-badge ${scannerBiasClass(item)}">${escapeHtml(item.session_momentum || 'Neutral')}</span>
+                  <span class="scanner-table-subtag">${escapeHtml(item.session_trend_label || 'Balanced Session')}</span>
+                </div>
+              </td>
+              <td>${escapeHtml(item.break_time_market || formatClockLabel(item.last_bar_market_time))}</td>
+              <td>${formatNum(item.last_price)}</td>
+              <td class="${Number(item.day_change_pct || 0) >= 0 ? 't-green' : 't-red'}">${formatSignedPct(item.day_change_pct)}</td>
+              <td>${formatInteger(item.volume)}</td>
+              <td>${escapeHtml(item.volume_curve_average_m !== null && item.volume_curve_average_m !== undefined ? `${formatNum(item.volume_curve_average_m)} M` : '--')}</td>
+              <td>${escapeHtml(item.volume_multiple !== null && item.volume_multiple !== undefined ? `${formatNum(item.volume_multiple)}x` : '--')}</td>
+              <td><span class="scanner-table-chip ${scannerLevelClass(item.signal_arrow)}">${escapeHtml(formatSignedNumber(item.market_pressure))}</span></td>
+              <td><span class="scanner-table-chip ${scannerLevelClass(item.signal_arrow)}">${escapeHtml(`${signalArrowGlyph(item.signal_arrow)} ${String(item.signal || 'neutral').toUpperCase()}`)}</span></td>
+              <td>${escapeHtml(item.level_status || '--')}</td>
+              <td><span class="scanner-break-chip ${scannerLevelClass(item.break_direction)}">${escapeHtml(item.break_label || '--')}</span></td>
+              <td>
+                <div class="scanner-table-meta">${escapeHtml((item.momentum_tags || []).join(' • ') || 'LIVE')}</div>
+                <div style="margin-top:6px">${escapeHtml(item.action_bias || 'WAIT')}</div>
+              </td>
+              <td><a class="scanner-view-btn" href="https://finance.yahoo.com/quote/${encodeURIComponent(item.yahoo_symbol || `${item.symbol}.NS`)}/chart" target="_blank" rel="noreferrer">View</a></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderScannerBoards(board){
+  if(!board){
+    scannerBullishCount.textContent = '0';
+    scannerBearishCount.textContent = '0';
+    scannerNeutralCount.textContent = '0';
+    scannerMomentumMeta.textContent = 'Waiting for live momentum buckets...';
+    scannerOpeningMeta.textContent = 'Waiting for opening-momentum buckets...';
+    scannerTickerStrip.innerHTML = '<div class="news-empty">Run a real refresh to load the live ticker strip.</div>';
+    scannerTopBullishGrid.innerHTML = '<div class="news-empty">Run a real refresh to load the bullish momentum leaders.</div>';
+    scannerTopBearishGrid.innerHTML = '<div class="news-empty">Run a real refresh to load the bearish momentum leaders.</div>';
+    scannerOpeningBullishGrid.innerHTML = '<div class="news-empty">Run a real refresh to load the opening bullish basket.</div>';
+    scannerOpeningBearishGrid.innerHTML = '<div class="news-empty">Run a real refresh to load the opening bearish basket.</div>';
+    renderScannerTable(null);
+    return;
+  }
+
+  const summary = board.market_summary || {};
+  scannerBullishCount.textContent = String(summary.bullish || 0);
+  scannerBearishCount.textContent = String(summary.bearish || 0);
+  scannerNeutralCount.textContent = String(summary.neutral || 0);
+  scannerMomentumMeta.textContent = `Updated ${formatDateTimeInIndia(board.generated_at)} | Universe: ${board.universe || 'Live watchlist'}`;
+  scannerOpeningMeta.textContent = `Opening push and live trend buckets from ${board.provider || 'real source'}`;
+  renderScannerTickerStrip(board);
+  renderScannerCardSection(scannerTopBullishGrid, scannerTopBullishCount, board.top_momentum_bullish, 'No bullish momentum leaders were found in the current refresh.');
+  renderScannerCardSection(scannerTopBearishGrid, scannerTopBearishCount, board.top_momentum_bearish, 'No bearish momentum leaders were found in the current refresh.');
+  renderScannerCardSection(scannerOpeningBullishGrid, scannerOpeningBullishCount, board.opening_momentum_bullish, 'No bullish opening-momentum names were found in the current refresh.');
+  renderScannerCardSection(scannerOpeningBearishGrid, scannerOpeningBearishCount, board.opening_momentum_bearish, 'No bearish opening-momentum names were found in the current refresh.');
+  renderScannerTable(board);
+}
+
+function heatmapTileStyle(changePct){
+  const pct = clamp(Number(changePct || 0), -4, 4);
+  if(pct >= 0){
+    const alpha = 0.12 + (Math.abs(pct) / 4) * 0.32;
+    return `background: rgba(111, 232, 163, ${alpha.toFixed(2)}); border-color: rgba(38, 171, 99, 0.18);`;
+  }
+  const alpha = 0.12 + (Math.abs(pct) / 4) * 0.28;
+  return `background: rgba(247, 169, 169, ${alpha.toFixed(2)}); border-color: rgba(187, 76, 76, 0.18);`;
+}
+
+function getPlanStyleConfig(style){
+  return {
+    scalp: {label: 'Scalp', target1Mult: 0.78, target2Mult: 0.92, stopMult: 0.88},
+    standard: {label: 'Standard', target1Mult: 1, target2Mult: 1, stopMult: 1},
+    runner: {label: 'Runner', target1Mult: 1.15, target2Mult: 1.35, stopMult: 1.08}
+  }[style] || {label: 'Standard', target1Mult: 1, target2Mult: 1, stopMult: 1};
+}
+
+function getOptionScenarioBundle(snapshot, prediction, sessionContext, requestedTarget){
+  const meta = {
+    signalTimeLabel: snapshot?.meta?.generated_at ? formatDateTimeInIndia(snapshot.meta.generated_at) : 'latest refresh',
+    timeframe: requestedTarget === 'live' ? activeTimeframe : 'daily',
+    livePrice: Number(snapshot?.intraday?.last_price ?? snapshot?.market?.last_close),
+    support: prediction?.support ?? snapshot?.market?.sma_5,
+    resistance: prediction?.resistance ?? snapshot?.market?.sma_20,
+    sessionLabel: sessionContext?.effectiveLabel || 'Market'
+  };
+
+  if(requestedTarget === 'live'){
+    const bars = getDisplayedBars(snapshot, activeTimeframe);
+    if(bars.length){
+      const action = buildIntradayAction(snapshot, activeTimeframe, bars, prediction);
+      return {
+        ...meta,
+        signalTimeLabel: formatClockLabel((bars[bars.length - 1] || {}).market_time || (bars[bars.length - 1] || {}).time_utc),
+        livePrice: action.lastClose,
+        support: prediction?.support ?? action.triggerDown,
+        resistance: prediction?.resistance ?? action.triggerUp,
+        scenarios: action.scenarios,
+        notes: action.notes,
+        callConfidence: action.scenarios.call.confidence,
+        putConfidence: action.scenarios.put.confidence,
+        autoBias: action.scenarios.auto.optionsBias,
+        bullishProbability: action.scenarios.call.confidence,
+        bearishProbability: action.scenarios.put.confidence,
+        forecastSummary: action.playbook,
+        actionExpectedMovePct: action.expectedMovePct,
+        actionConfidence: action.confidence,
+        actionBias: action.scenarios.auto.optionsBias
+      };
+    }
+  }
+
+  const lastClose = Number(snapshot?.market?.last_close || 0);
+  const resistance = Number(prediction?.resistance || (lastClose * 1.003));
+  const support = Number(prediction?.support || (lastClose * 0.997));
+  const workingRange = Math.max(Math.abs(resistance - support), lastClose * 0.0035, 14);
+  const callConfidence = Number(prediction?.upside_probability_pct ?? 50);
+  const putConfidence = Number(prediction?.downside_probability_pct ?? 50);
+  const callScenario = {
+    side: 'call',
+    optionsBias: 'BUY CALL',
+    chipClass: 'call',
+    confidence: callConfidence,
+    entryTrigger: resistance,
+    target1: resistance + (workingRange * 0.45),
+    target2: Math.max(Number(prediction?.target_level || resistance), resistance + (workingRange * 0.85)),
+    stopLoss: Math.max(support, resistance - (workingRange * 0.45)),
+    invalidation: support,
+    narrative: `Take the call view only if price sustains above ${formatNum(resistance)} in the next session.`,
+    why: 'This side needs bullish continuation above the daily resistance trigger.',
+    baseRange: workingRange
+  };
+  const putScenario = {
+    side: 'put',
+    optionsBias: 'BUY PUT',
+    chipClass: 'put',
+    confidence: putConfidence,
+    entryTrigger: support,
+    target1: support - (workingRange * 0.45),
+    target2: Math.min(Number(prediction?.target_level || support), support - (workingRange * 0.85)),
+    stopLoss: Math.min(resistance, support + (workingRange * 0.45)),
+    invalidation: resistance,
+    narrative: `Take the put view only if price breaks below ${formatNum(support)} in the next session.`,
+    why: 'This side needs bearish continuation below the daily support trigger.',
+    baseRange: workingRange
+  };
+  const autoScenario = prediction?.trade_plan?.optionsBias === 'BUY CALL'
+    ? {...callScenario}
+    : prediction?.trade_plan?.optionsBias === 'BUY PUT'
+      ? {...putScenario}
+      : {
+          side: 'auto',
+          optionsBias: 'WAIT',
+          chipClass: 'wait',
+          confidence: Number(prediction?.confidence || 0),
+          entryTrigger: null,
+          target1: null,
+          target2: null,
+          stopLoss: null,
+          invalidation: null,
+          narrative: prediction?.trade_plan?.executionNote || 'Wait while price is trapped inside the current daily range.',
+          why: 'The daily stack does not show a strong edge yet.',
+          baseRange: workingRange
+        };
+
+  return {
+    ...meta,
+    support,
+    resistance,
+    scenarios: {
+      auto: autoScenario,
+      call: callScenario,
+      put: putScenario
+    },
+    notes: (prediction?.topDrivers || []).map(driver => `${driver.name} (${formatDriverValue(driver)})`),
+    callConfidence,
+    putConfidence,
+    autoBias: autoScenario.optionsBias,
+    bullishProbability: callConfidence,
+    bearishProbability: putConfidence,
+    forecastSummary: prediction?.forecast_summary || prediction?.rationale || '',
+    actionExpectedMovePct: prediction?.expected_move_pct,
+    actionConfidence: prediction?.confidence,
+    actionBias: autoScenario.optionsBias
+  };
+}
+
+function applyStyleToScenario(scenario, style){
+  if(!scenario) return null;
+  const cfg = getPlanStyleConfig(style);
+  if(scenario.entryTrigger === null || scenario.entryTrigger === undefined || Number.isNaN(Number(scenario.entryTrigger))){
+    return {...scenario, styleLabel: cfg.label};
+  }
+  const sign = scenario.side === 'put' ? -1 : 1;
+  const entry = Number(scenario.entryTrigger);
+  const baseRange = Math.max(Number(scenario.baseRange || 0), 12);
+  return {
+    ...scenario,
+    styleLabel: cfg.label,
+    target1: entry + (sign * baseRange * 0.55 * cfg.target1Mult),
+    target2: entry + (sign * baseRange * 1.05 * cfg.target2Mult),
+    stopLoss: entry - (sign * baseRange * 0.45 * cfg.stopMult)
+  };
+}
+
+function renderHeatmap(stocks){
+  const items = [...(stocks || [])].sort((left, right) => Number(right.day_change_pct || 0) - Number(left.day_change_pct || 0));
+  if(!items.length){
+    heatmapGrid.innerHTML = '<div class="news-empty">Run a live refresh to paint the NIFTY 50 heatmap.</div>';
+    heatmapSummary.textContent = 'Waiting for live breadth...';
+    return;
+  }
+
+  const advancing = items.filter(item => Number(item.day_change_pct || 0) > 0).length;
+  const declining = items.filter(item => Number(item.day_change_pct || 0) < 0).length;
+  const flat = items.length - advancing - declining;
+  heatmapSummary.textContent = `${advancing} advancing | ${declining} declining | ${flat} flat`;
+
+  heatmapGrid.innerHTML = items.map(item => {
+    const dayPct = Number(item.day_change_pct || 0);
+    return `
+      <article class="heatmap-tile" style="${heatmapTileStyle(dayPct)}">
+        <div class="heatmap-tile-top">
+          <div>
+            <div class="heatmap-tile-symbol">${escapeHtml(item.symbol || 'N/A')}</div>
+            <div class="heatmap-tile-sector">${escapeHtml(item.sector || 'Sector unavailable')}</div>
+          </div>
+          <span class="heatmap-chip">${escapeHtml(signalLabel(item.signal))}</span>
+        </div>
+        <div>
+          <div class="heatmap-tile-price">${formatNum(item.last_price)}</div>
+          <div class="heatmap-tile-change ${dayPct >= 0 ? 't-green' : 't-red'}">${formatSignedPct(dayPct)}</div>
+        </div>
+        <div class="heatmap-tile-foot">
+          <span>Intraday ${formatSignedPct(item.intraday_change_pct)}</span>
+          <span>${item.corporate_action_adjusted ? 'Adjusted' : 'Live'}</span>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+function renderScenarioBand(bundle, style){
+  if(!bundle){
+    heavyweightList.innerHTML = '<div class="news-empty">Run a live refresh to compare the `Auto`, `Call`, and `Put` scenarios for the current market state.</div>';
+    return;
+  }
+
+  const autoScenario = applyStyleToScenario(bundle.scenarios.auto, style);
+  const callScenario = applyStyleToScenario(bundle.scenarios.call, style);
+  const putScenario = applyStyleToScenario(bundle.scenarios.put, style);
+  const cards = [
+    {title: 'System View', copy: bundle.sessionLabel, scenario: autoScenario},
+    {title: 'Call Scenario', copy: 'Use only if bullish trigger confirms.', scenario: callScenario},
+    {title: 'Put Scenario', copy: 'Use only if bearish trigger confirms.', scenario: putScenario}
+  ];
+
+  heavyweightList.innerHTML = cards.map(card => {
+    const scenario = card.scenario || {};
+    return `
+      <article class="scenario-card">
+        <div class="scenario-card-head">
+          <div>
+            <div class="scenario-card-title">${escapeHtml(card.title)}</div>
+            <div class="scenario-card-copy">${escapeHtml(card.copy)}</div>
+          </div>
+          <span class="scenario-chip ${escapeHtml(scenario.chipClass || 'wait')}">${escapeHtml(scenario.optionsBias || 'WAIT')}</span>
+        </div>
+        <div class="scenario-main-value">${scenario.entryTrigger ? `Entry ${formatNum(scenario.entryTrigger)}` : 'Wait'}</div>
+        <div class="scenario-mini-grid">
+          <div class="scenario-mini">
+            <div class="scenario-mini-label">Confidence</div>
+            <div class="scenario-mini-value">${Number(scenario.confidence || 0)}%</div>
+          </div>
+          <div class="scenario-mini">
+            <div class="scenario-mini-label">Target 1</div>
+            <div class="scenario-mini-value">${formatNum(scenario.target1)}</div>
+          </div>
+          <div class="scenario-mini">
+            <div class="scenario-mini-label">Stop</div>
+            <div class="scenario-mini-value">${formatNum(scenario.stopLoss)}</div>
+          </div>
+          <div class="scenario-mini">
+            <div class="scenario-mini-label">Invalidation</div>
+            <div class="scenario-mini-value">${formatNum(scenario.invalidation)}</div>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+function renderForecastFocus(bundle, prediction, sessionContext, requestedTarget){
+  if(!forecastFocusCard){
+    return;
+  }
+
+  if(!bundle || !prediction){
+    forecastFocusCard.innerHTML = '<div class="news-empty">Run a real refresh to build the next-session probability and option-side forecast.</div>';
+    return;
+  }
+
+  const isTomorrow = requestedTarget === 'tomorrow';
+  const closeDateUsed = marketBoardContext?.snapshot?.meta?.as_of_date || 'n/a';
+  const biasChipClass = isTomorrow
+    ? prediction.direction === 'BULLISH' ? 'call' : prediction.direction === 'BEARISH' ? 'put' : 'wait'
+    : bundle.actionBias === 'BUY CALL' ? 'call' : bundle.actionBias === 'BUY PUT' ? 'put' : 'wait';
+  const biasChipLabel = isTomorrow
+    ? prediction.direction === 'BULLISH' ? 'UPSIDE BIAS' : prediction.direction === 'BEARISH' ? 'DOWNSIDE BIAS' : 'RANGE BIAS'
+    : bundle.actionBias === 'BUY CALL' ? 'CALL BIAS' : bundle.actionBias === 'BUY PUT' ? 'PUT BIAS' : 'WAIT';
+  const headline = isTomorrow ? 'Tomorrow Session Forecast' : `Live ${activeTimeframe} Action Outlook`;
+  const copy = isTomorrow
+    ? `Built from the latest official NIFTY close, trend history, GIFT Nifty, VIX, flows, FX, and filtered 24-hour news.`
+    : `Built from live ${activeTimeframe} candles plus the broader daily signal stack.`;
+  const focusMetrics = isTomorrow
+    ? [
+        ['Expected Move', formatSignedPct(prediction.expected_move_pct)],
+        ['Model Confidence', `${prediction.confidence}%`],
+        ['Upside Probability', `${prediction.upside_probability_pct}%`],
+        ['Downside Probability', `${prediction.downside_probability_pct}%`],
+        ['Tomorrow Target', formatNum(prediction.target_level)],
+        ['Close Date Used', sessionContext?.effectiveLabel === "Today's Session" ? `${closeDateUsed} (overnight)` : closeDateUsed]
+      ]
+    : [
+        ['Expected Move', formatSignedPct(bundle.actionExpectedMovePct)],
+        ['Model Confidence', `${bundle.actionConfidence}%`],
+        ['Call Probability', `${bundle.bullishProbability}%`],
+        ['Put Probability', `${bundle.bearishProbability}%`],
+        ['Live Price', formatNum(bundle.livePrice)],
+        ['Timeframe', bundle.timeframe]
+      ];
+
+  forecastFocusCard.innerHTML = `
+    <div class="forecast-focus-head">
+      <div>
+        <div class="forecast-focus-title">${escapeHtml(headline)}</div>
+        <div class="forecast-focus-copy">${escapeHtml(copy)}</div>
+      </div>
+      <span class="forecast-focus-bias ${biasChipClass}">${escapeHtml(biasChipLabel)}</span>
+    </div>
+    <div class="forecast-focus-grid">
+      ${focusMetrics.map(([label, value]) => `
+        <div class="forecast-focus-metric">
+          <div class="forecast-focus-label">${escapeHtml(label)}</div>
+          <div class="forecast-focus-value">${escapeHtml(String(value))}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="forecast-focus-note">${escapeHtml(bundle.forecastSummary || prediction.forecast_summary || prediction.rationale || '')}</div>
+  `;
+}
+
+function renderOptionDesk(bundle, prediction, sessionContext, requestedTarget){
+  if(optionDeskTitle){
+    optionDeskTitle.textContent = requestedTarget === 'tomorrow' ? 'Tomorrow Option Forecast' : 'Live Option Trade Desk';
+  }
+  if(optionDeskSubtitle){
+    optionDeskSubtitle.textContent = requestedTarget === 'tomorrow'
+      ? 'See the next-session percentage outlook first, then map it into a call, put, or wait plan.'
+      : 'Choose Auto, Call, or Put and read the live trigger, targets, stop loss, and invalidation.';
+  }
+
+  if(!bundle || !prediction){
+    renderForecastFocus(bundle, prediction, sessionContext, requestedTarget);
+    optionKpiStrip.innerHTML = '<div class="news-empty">Run a real refresh to fill the option desk.</div>';
+    optionPlanCard.innerHTML = '<div class="news-empty">Run a real refresh to get the option-side plan.</div>';
+    optionDriversCard.innerHTML = '<div class="news-empty">The main bullish and bearish drivers will appear here after the next run.</div>';
+    optionRiskCard.innerHTML = '<div class="news-empty">The key invalidation and risk notes will appear here after the next run.</div>';
+    marketCommandMeta.textContent = 'Start a real refresh to get the current call / put setup, targets, stop loss, and invalidation.';
+    return;
+  }
+
+  const style = planStyleSelect ? planStyleSelect.value : 'standard';
+  const scenarioKey = selectedOptionMode === 'call' ? 'call' : selectedOptionMode === 'put' ? 'put' : 'auto';
+  const selectedScenario = applyStyleToScenario(bundle.scenarios[scenarioKey], style) || {};
+  const autoScenario = applyStyleToScenario(bundle.scenarios.auto, style) || {};
+  const callScenario = applyStyleToScenario(bundle.scenarios.call, style) || {};
+  const putScenario = applyStyleToScenario(bundle.scenarios.put, style) || {};
+  const styleCfg = getPlanStyleConfig(style);
+  const againstSystem = selectedOptionMode !== 'auto' && autoScenario.optionsBias !== 'WAIT' && autoScenario.optionsBias !== selectedScenario.optionsBias;
+  const isTomorrow = requestedTarget === 'tomorrow';
+
+  renderForecastFocus(bundle, prediction, sessionContext, requestedTarget);
+
+  const optionKpis = isTomorrow
+    ? [
+        ['Forecast Bias', `${prediction.direction} (${prediction.magnitude})`],
+        ['Expected Move', formatSignedPct(prediction.expected_move_pct)],
+        ['Model Confidence', `${prediction.confidence}%`],
+        ['Tomorrow Target', formatNum(prediction.target_level)],
+        ['Upside Probability', `${bundle.bullishProbability}%`],
+        ['Downside Probability', `${bundle.bearishProbability}%`],
+        ['Support', formatNum(bundle.support)],
+        ['Resistance', formatNum(bundle.resistance)]
+      ]
+    : [
+        ['Signal Time', bundle.signalTimeLabel],
+        ['Timeframe', bundle.timeframe],
+        ['Live Price', formatNum(bundle.livePrice)],
+        ['Plan Style', styleCfg.label],
+        ['Call Probability', `${bundle.bullishProbability}%`],
+        ['Put Probability', `${bundle.bearishProbability}%`],
+        ['Support', formatNum(bundle.support)],
+        ['Resistance', formatNum(bundle.resistance)]
+      ];
+
+  optionKpiStrip.innerHTML = optionKpis.map(([label, value]) => `
+    <div class="option-kpi-card">
+      <div class="option-kpi-label">${escapeHtml(label)}</div>
+      <div class="option-kpi-value">${escapeHtml(String(value))}</div>
+    </div>
+  `).join('');
+
+  optionPlanCard.innerHTML = `
+    <div class="option-plan-head">
+      <div>
+        <div class="option-plan-title">${escapeHtml(isTomorrow ? (selectedOptionMode === 'auto' ? 'Tomorrow Option Plan' : `${titleCase(selectedOptionMode)} Side Plan`) : (selectedOptionMode === 'auto' ? 'System Selected Option Side' : `${titleCase(selectedOptionMode)} Side View`))}</div>
+        <div class="option-plan-copy">${escapeHtml(selectedScenario.narrative || 'No trade narrative is available yet.')}</div>
+      </div>
+      <span class="option-bias-chip ${escapeHtml(selectedScenario.chipClass || 'wait')}">${escapeHtml(selectedScenario.optionsBias || 'WAIT')}</span>
+    </div>
+    <div class="option-level-grid">
+      <div class="option-level-card">
+        <div class="option-level-label">Entry Trigger</div>
+        <div class="option-level-value">${formatNum(selectedScenario.entryTrigger)}</div>
+      </div>
+      <div class="option-level-card">
+        <div class="option-level-label">Target 1</div>
+        <div class="option-level-value">${formatNum(selectedScenario.target1)}</div>
+      </div>
+      <div class="option-level-card">
+        <div class="option-level-label">Target 2</div>
+        <div class="option-level-value">${formatNum(selectedScenario.target2)}</div>
+      </div>
+      <div class="option-level-card">
+        <div class="option-level-label">Stop Loss</div>
+        <div class="option-level-value">${formatNum(selectedScenario.stopLoss)}</div>
+      </div>
+      <div class="option-level-card">
+        <div class="option-level-label">Invalidation</div>
+        <div class="option-level-value">${formatNum(selectedScenario.invalidation)}</div>
+      </div>
+    </div>
+    <div class="option-callout">${escapeHtml(selectedScenario.why || prediction.rationale || 'No option note is available yet.')}</div>
+    <div class="option-callout" style="margin-top:10px">${escapeHtml(againstSystem ? `Manual ${titleCase(selectedOptionMode)} view is currently against the system bias (${autoScenario.optionsBias}). Be more selective with confirmation.` : `${isTomorrow ? 'Tomorrow bias' : 'System bias'}: ${autoScenario.optionsBias || 'WAIT'} | Upside ${bundle.bullishProbability || 0}% | Downside ${bundle.bearishProbability || 0}%` )}</div>
+  `;
+
+  optionDriversCard.innerHTML = `
+    <div class="option-detail-title">Why This Side</div>
+    <div class="option-detail-list">
+      ${(bundle.notes || []).slice(0, 4).map(note => `<div class="option-detail-item">${escapeHtml(note)}</div>`).join('')}
+      ${(prediction.topDrivers || []).slice(0, 2).map(driver => `<div class="option-detail-item">${escapeHtml(driver.name)} ${escapeHtml(formatDriverValue(driver))}</div>`).join('')}
+    </div>
+  `;
+
+  optionRiskCard.innerHTML = `
+    <div class="option-detail-title">Risk Control</div>
+    <div class="option-detail-list">
+      <div class="option-detail-item">Stop loss: ${escapeHtml(formatNum(selectedScenario.stopLoss))}</div>
+      <div class="option-detail-item">Invalidation: ${escapeHtml(formatNum(selectedScenario.invalidation))}</div>
+      <div class="option-detail-item">${escapeHtml(selectedScenario.narrative || 'Wait for the trigger to confirm before taking the side.')}</div>
+      ${(prediction.key_risks || []).slice(0, 3).map(risk => `<div class="option-detail-item">${escapeHtml(risk)}</div>`).join('')}
+    </div>
+  `;
+
+  const closeDateUsed = marketBoardContext?.snapshot?.meta?.as_of_date || 'n/a';
+  marketCommandMeta.textContent = isTomorrow
+    ? `Updated ${formatDateTimeInIndia(prediction ? new Date().toISOString() : bundle.signalTimeLabel)} | ${sessionContext?.effectiveLabel || bundle.sessionLabel} | Close ${closeDateUsed} | Expected ${formatSignedPct(prediction.expected_move_pct)}`
+    : `Updated ${formatDateTimeInIndia(prediction ? new Date().toISOString() : bundle.signalTimeLabel)} | ${sessionContext?.effectiveLabel || bundle.sessionLabel} | ${bundle.timeframe}`;
+}
+
+function renderMarketHeader(snapshot, prediction, sessionContext, requestedTarget, bundle=null){
+  if(!snapshot){
+    marketLastPrice.textContent = '--';
+    marketLastChange.textContent = 'Waiting for live refresh';
+    marketSessionNote.textContent = 'Run a real refresh to load the latest NIFTY level and session context.';
+    marketSetupChip.className = 'market-header-chip wait';
+    marketSetupChip.textContent = 'WAIT';
+    marketSetupTrigger.textContent = 'Run a prediction to build the next call / put setup.';
+    marketSetupCopy.textContent = 'Targets, stop loss, and invalidation will appear here after the next real-data run.';
+    return;
+  }
+
+  const liveValue = requestedTarget === 'live'
+    ? Number(snapshot?.intraday?.last_price ?? snapshot?.market?.last_close)
+    : Number(snapshot?.market?.last_close);
+  const previous = Number(snapshot?.market?.previous_close);
+  const deltaPct = previous ? ((liveValue - previous) / previous) * 100 : Number(snapshot?.market?.return_1d_pct || 0);
+  marketLastPrice.textContent = formatNum(liveValue);
+  marketLastChange.className = `market-header-change ${deltaPct >= 0 ? 't-green' : 't-red'}`;
+  marketLastChange.textContent = `${formatSignedPct(deltaPct)} | Prev ${formatNum(previous)}`;
+  marketSessionNote.textContent = sessionContext?.message || 'Latest real market snapshot.';
+
+  const activeBundle = bundle || (prediction ? getOptionScenarioBundle(snapshot, prediction, sessionContext, requestedTarget) : null);
+  if(activeBundle && prediction){
+    const scenarioKey = selectedOptionMode === 'call' ? 'call' : selectedOptionMode === 'put' ? 'put' : 'auto';
+    const selectedScenario = applyStyleToScenario(activeBundle.scenarios[scenarioKey], planStyleSelect ? planStyleSelect.value : 'standard') || {};
+    marketSetupChip.className = `market-header-chip ${selectedScenario.chipClass || 'wait'}`;
+    marketSetupChip.textContent = selectedScenario.optionsBias || 'WAIT';
+    if(requestedTarget === 'tomorrow'){
+      marketSetupTrigger.textContent = `${prediction.direction} | ${formatSignedPct(prediction.expected_move_pct)} | Confidence ${prediction.confidence}%`;
+      marketSetupCopy.textContent = prediction.forecast_summary || selectedScenario.narrative || prediction.rationale || 'No setup copy is available yet.';
+    }else{
+      marketSetupTrigger.textContent = selectedScenario.entryTrigger !== null && selectedScenario.entryTrigger !== undefined
+        ? `${selectedScenario.styleLabel || 'Standard'} | Entry ${formatNum(selectedScenario.entryTrigger)} | T1 ${formatNum(selectedScenario.target1)}`
+        : `${activeBundle.sessionLabel} | Wait for a cleaner break`;
+      marketSetupCopy.textContent = selectedScenario.narrative || prediction.rationale || 'No setup copy is available yet.';
+    }
+    return;
+  }
+
+  marketSetupChip.className = 'market-header-chip wait';
+  marketSetupChip.textContent = 'WAIT';
+  marketSetupTrigger.textContent = 'Run a prediction to build the next call / put setup.';
+  marketSetupCopy.textContent = 'Targets, stop loss, and invalidation will appear here after the next real-data run.';
+}
+
+function renderStockDashboard(snapshot, prediction=null, sessionContext=null, requestedTarget='live'){
+  marketBoardContext = {snapshot, prediction, sessionContext, requestedTarget};
+  const board = snapshot?.stock_dashboard;
+  renderScannerBoards(board || null);
+  const bundle = snapshot && prediction ? getOptionScenarioBundle(snapshot, prediction, sessionContext, requestedTarget) : null;
+  renderMarketHeader(snapshot, prediction, sessionContext, requestedTarget, bundle);
+  renderScenarioBand(bundle, planStyleSelect ? planStyleSelect.value : 'standard');
+  renderOptionDesk(bundle, prediction, sessionContext, requestedTarget);
+
+  if(!board){
+    stockUpdated.textContent = 'Waiting for the first option run...';
+    stockCoverage.textContent = 'No live option setup yet';
+    heatmapSummary.textContent = 'Waiting for live breadth...';
+    heatmapGrid.innerHTML = '<div class="news-empty">Run a live refresh to paint the NIFTY 50 heatmap.</div>';
+    setFeatureVisibility();
+    return;
+  }
+
+  renderHeatmap(board.stocks || []);
+  const coverage = board.coverage || {};
+  stockUpdated.textContent = 'Updated: ' + formatDateTimeInIndia(board.generated_at || snapshot?.meta?.generated_at);
+  stockCoverage.textContent = bundle
+    ? requestedTarget === 'tomorrow'
+      ? `${prediction?.direction || 'NEUTRAL'} | Up ${bundle.bullishProbability}% | Down ${bundle.bearishProbability}%`
+      : `Auto ${bundle.autoBias || 'WAIT'} | Call ${bundle.bullishProbability}% | Put ${bundle.bearishProbability}%`
+    : `${coverage.loaded || 0} / ${coverage.requested || 50} stocks loaded`;
+  setFeatureVisibility();
+}
+
+function resetTradeBoard(){
+  tradeUpdated.textContent = 'Waiting for the first prediction run...';
+  tradePlanCard.innerHTML = '<div class="news-empty">Run a prediction to build the call / put setup.</div>';
+  tradeDriversCard.innerHTML = '<div class="news-empty">The main drivers and risks will appear here after the next run.</div>';
+}
+
+function buildSignalTimeline(snapshot, prediction, timeframe){
+  const bars = getDisplayedBars(snapshot, timeframe);
+  if(bars.length < 8) return [];
+  const startIndex = Math.max(7, bars.length - 6);
+  const timeline = [];
+  for(let index = startIndex; index < bars.length; index += 1){
+    const windowBars = bars.slice(0, index + 1);
+    const action = buildIntradayAction(snapshot, timeframe, windowBars, prediction);
+    const latestBar = windowBars[windowBars.length - 1];
+    timeline.push({
+      timeLabel: formatClockLabel(latestBar.market_time || latestBar.time_utc),
+      price: latestBar.close,
+      bias: action.optionsBias,
+      trigger: action.entryTrigger,
+      stopLoss: action.stopLoss,
+      target1: action.target1,
+      confidence: action.confidence
+    });
+  }
+  return timeline;
+}
+
+function resolveTradePlan(snapshot, prediction, sessionContext, requestedTarget){
+  let plan = prediction.trade_plan || {};
+  let planModeLabel = sessionContext.effectiveLabel;
+  let signalTimeLabel = snapshot?.meta?.generated_at ? formatDateTimeInIndia(snapshot.meta.generated_at) : 'latest refresh';
+  let livePrice = snapshot?.intraday?.last_price ?? snapshot?.market?.last_close;
+  let signalTimeline = [];
+  if(requestedTarget === 'live'){
+    const bars = getDisplayedBars(snapshot, activeTimeframe);
+    if(bars.length){
+      const intradayAction = buildIntradayAction(snapshot, activeTimeframe, bars, prediction);
+      plan = {
+        optionsBias: intradayAction.optionsBias,
+        chipClass: intradayAction.optionsBias === 'BUY CALL' ? 'call' : intradayAction.optionsBias === 'BUY PUT' ? 'put' : 'wait',
+        entryTrigger: intradayAction.entryTrigger,
+        target1: intradayAction.target1,
+        target2: intradayAction.target2,
+        stopLoss: intradayAction.stopLoss,
+        invalidation: intradayAction.invalidation,
+        executionNote: intradayAction.playbook,
+        alternateNote: intradayAction.narrative,
+      };
+      planModeLabel = `Live ${activeTimeframe} Setup`;
+      signalTimeLabel = formatClockLabel((bars[bars.length - 1] || {}).market_time || (bars[bars.length - 1] || {}).time_utc);
+      livePrice = intradayAction.lastClose;
+      signalTimeline = buildSignalTimeline(snapshot, prediction, activeTimeframe);
+    }
+  }
+
+  const planClass = plan.chipClass || (plan.optionsBias === 'BUY CALL' ? 'call' : plan.optionsBias === 'BUY PUT' ? 'put' : 'wait');
+  const headline = plan.optionsBias === 'BUY CALL'
+    ? 'Upside continuation is favored if the bullish trigger confirms.'
+    : plan.optionsBias === 'BUY PUT'
+      ? 'Downside continuation is favored if the bearish trigger confirms.'
+      : 'The model is not seeing a clean option-side edge right now.';
+  return {plan, planClass, planModeLabel, headline, signalTimeLabel, livePrice, signalTimeline};
+}
+
+function renderTradeBoard(snapshot, prediction, sessionContext, requestedTarget){
+  if(!snapshot || !prediction || !sessionContext){
+    resetTradeBoard();
+    return;
+  }
+
+  const {plan, planClass, planModeLabel, headline, signalTimeLabel, livePrice, signalTimeline} = resolveTradePlan(snapshot, prediction, sessionContext, requestedTarget);
+
+  tradeUpdated.textContent = `Updated: ${formatDateTimeInIndia(snapshot?.meta?.generated_at)} | ${planModeLabel}`;
+  tradePlanCard.innerHTML = `
+    <div class="trade-card-head">
+      <div>
+        <div class="trade-card-title">${escapeHtml(planModeLabel)}</div>
+        <div class="trade-subtitle">${escapeHtml(headline)}</div>
+      </div>
+      <div class="trade-chip ${planClass}">${escapeHtml(plan.optionsBias || 'WAIT')}</div>
+    </div>
+    <div class="trade-summary">${escapeHtml(plan.executionNote || prediction.rationale || 'No execution note is available yet.')}</div>
+    <div class="trade-kpi-grid">
+      <div class="trade-kpi">
+        <div class="trade-kpi-label">Confidence</div>
+        <div class="trade-kpi-value">${prediction.confidence}%</div>
+      </div>
+      <div class="trade-kpi">
+        <div class="trade-kpi-label">Expected Move</div>
+        <div class="trade-kpi-value">${formatSignedPct(prediction.expected_move_pct)}</div>
+      </div>
+      <div class="trade-kpi">
+        <div class="trade-kpi-label">Live Price</div>
+        <div class="trade-kpi-value">${formatNum(livePrice)}</div>
+      </div>
+      <div class="trade-kpi">
+        <div class="trade-kpi-label">Entry Trigger</div>
+        <div class="trade-kpi-value">${formatNum(plan.entryTrigger)}</div>
+      </div>
+      <div class="trade-kpi">
+        <div class="trade-kpi-label">Target 1</div>
+        <div class="trade-kpi-value">${formatNum(plan.target1)}</div>
+      </div>
+      <div class="trade-kpi">
+        <div class="trade-kpi-label">Target 2</div>
+        <div class="trade-kpi-value">${formatNum(plan.target2)}</div>
+      </div>
+    </div>
+    <div class="trade-mini-grid">
+      <div class="trade-mini">
+        <div class="trade-mini-label">Signal Time</div>
+        <div class="trade-mini-value">${escapeHtml(signalTimeLabel)}</div>
+      </div>
+      <div class="trade-mini">
+        <div class="trade-mini-label">Timeframe</div>
+        <div class="trade-mini-value">${escapeHtml(requestedTarget === 'live' ? activeTimeframe : 'daily')}</div>
+      </div>
+      <div class="trade-mini">
+        <div class="trade-mini-label">Stop Loss</div>
+        <div class="trade-mini-value">${formatNum(plan.stopLoss)}</div>
+      </div>
+      <div class="trade-mini">
+        <div class="trade-mini-label">Invalidation</div>
+        <div class="trade-mini-value">${formatNum(plan.invalidation)}</div>
+      </div>
+      <div class="trade-mini">
+        <div class="trade-mini-label">Model Direction</div>
+        <div class="trade-mini-value">${escapeHtml(prediction.direction)} (${escapeHtml(prediction.magnitude)})</div>
+      </div>
+      <div class="trade-mini">
+        <div class="trade-mini-label">Session Context</div>
+        <div class="trade-mini-value">${escapeHtml(sessionContext.effectiveLabel)}</div>
+      </div>
+    </div>
+  `;
+
+  tradeDriversCard.innerHTML = `
+    <div class="trade-card-head">
+      <div>
+        <div class="trade-card-title">Drivers And Risk Control</div>
+        <div class="trade-subtitle">What is supporting the setup and what can invalidate it.</div>
+      </div>
+      <div class="trade-chip ${planClass}">${escapeHtml(plan.optionsBias || 'WAIT')}</div>
+    </div>
+    <div class="trade-list">
+      <div class="trade-item"><strong>Primary Plan:</strong> ${escapeHtml(plan.executionNote || 'No primary plan available.')}</div>
+      <div class="trade-item"><strong>What Cancels It:</strong> ${escapeHtml(plan.alternateNote || 'No invalidation text available.')}</div>
+      <div class="trade-item"><strong>Top Drivers:</strong> ${escapeHtml((prediction.topDrivers || []).map(driver => `${driver.name} (${formatDriverValue(driver)})`).join(', ') || 'No top drivers available.')}</div>
+      <div class="trade-item"><strong>Positive Catalysts:</strong> ${escapeHtml((prediction.key_catalysts || []).join(', ') || 'No positive catalyst was derived from the latest dataset.')}</div>
+      <div class="trade-item"><strong>Main Risks:</strong> ${escapeHtml((prediction.key_risks || []).join(', ') || 'No negative risk factor was derived from the latest dataset.')}</div>
+      ${signalTimeline.length ? `<div class="trade-item"><strong>Recent Signal Trail:</strong> ${escapeHtml(signalTimeline.map(item => `${item.timeLabel} ${item.bias} @ ${formatNum(item.price)} | trg ${formatNum(item.trigger)} | sl ${formatNum(item.stopLoss)} | t1 ${formatNum(item.target1)}`).join('  ||  '))}</div>` : ''}
+    </div>
+  `;
+}
+
+function setActiveTimeframeButton(){
+  timeframeButtons.forEach(button => {
+    button.classList.toggle('active', button.dataset.timeframe === activeTimeframe);
+  });
+}
+
+function resetIntradayBoard(message='Run a live refresh to load minute candles for the latest NIFTY session.'){
+  chartSvgWrap.innerHTML = '';
+  chartEmpty.style.display = 'flex';
+  chartEmpty.textContent = message;
+  chartStatus.textContent = 'No intraday candle set loaded.';
+  chartUpdated.textContent = 'Waiting for intraday candles...';
+  liveActionCard.innerHTML = '<div class="chart-empty">'+escapeHtml(message)+'</div>';
+}
+
+function candleDate(candle){
+  return new Date(candle.market_time || candle.time_utc);
+}
+
+function sortCandles(candles){
+  return [...(candles || [])].sort((left, right) => candleDate(left).getTime() - candleDate(right).getTime());
+}
+
+function latestSessionBars(candles){
+  const sorted = sortCandles(candles);
+  if(!sorted.length) return [];
+  const latestDate = sorted[sorted.length - 1].market_date;
+  return sorted.filter(candle => candle.market_date === latestDate);
+}
+
+function aggregateCandles(candles, intervalMinutes){
+  const sorted = sortCandles(candles);
+  if(!sorted.length) return [];
+
+  const bucketMs = intervalMinutes * 60 * 1000;
+  const sessionStartMs = candleDate(sorted[0]).getTime();
+  const aggregated = [];
+  let current = null;
+
+  for(const candle of sorted){
+    const bucketIndex = Math.floor((candleDate(candle).getTime() - sessionStartMs) / bucketMs);
+    if(!current || current.bucketIndex !== bucketIndex){
+      if(current) aggregated.push(current);
+      current = {
+        bucketIndex,
+        time_utc: candle.time_utc,
+        market_time: candle.market_time,
+        market_date: candle.market_date,
+        open: Number(candle.open),
+        high: Number(candle.high),
+        low: Number(candle.low),
+        close: Number(candle.close),
+        volume: candle.volume === null || candle.volume === undefined ? null : Number(candle.volume)
+      };
+      continue;
+    }
+
+    current.high = Math.max(current.high, Number(candle.high));
+    current.low = Math.min(current.low, Number(candle.low));
+    current.close = Number(candle.close);
+    if(candle.volume !== null && candle.volume !== undefined){
+      current.volume = (current.volume || 0) + Number(candle.volume);
+    }
+  }
+  if(current) aggregated.push(current);
+
+  return aggregated.map(candle => ({
+    time_utc: candle.time_utc,
+    market_time: candle.market_time,
+    market_date: candle.market_date,
+    open: Number(candle.open.toFixed(2)),
+    high: Number(candle.high.toFixed(2)),
+    low: Number(candle.low.toFixed(2)),
+    close: Number(candle.close.toFixed(2)),
+    volume: candle.volume === null ? null : Math.round(candle.volume)
+  }));
+}
+
+function getDisplayedBars(snapshot, timeframe){
+  const intraday = snapshot?.intraday;
+  if(!intraday?.series) return [];
+
+  const base1m = latestSessionBars(intraday.series['1m'] || []);
+  const raw5m = latestSessionBars(intraday.series['5m'] || []);
+  const base5m = raw5m.length ? raw5m : aggregateCandles(base1m, 5);
+
+  if(timeframe === '1m') return base1m;
+  if(timeframe === '5m') return base5m;
+  if(timeframe === '15m') return aggregateCandles(base5m, 15);
+  if(timeframe === '1h') return aggregateCandles(base5m, 60);
+  return base5m;
+}
+
+function average(values){
+  const usable = (values || []).map(Number).filter(value => Number.isFinite(value));
+  if(!usable.length) return null;
+  return usable.reduce((sum, value) => sum + value, 0) / usable.length;
+}
+
+function computeEmaSeries(candles, period){
+  const multiplier = 2 / (period + 1);
+  const values = [];
+  let ema = null;
+  for(const candle of candles){
+    const close = Number(candle.close);
+    if(!Number.isFinite(close)){
+      values.push(null);
+      continue;
+    }
+    ema = ema === null ? close : ((close - ema) * multiplier) + ema;
+    values.push(Number(ema.toFixed(2)));
+  }
+  return values;
+}
+
+function linePath(values, xForIndex, yForValue){
+  let path = '';
+  values.forEach((value, index) => {
+    if(value === null || value === undefined || !Number.isFinite(Number(value))) return;
+    const x = xForIndex(index);
+    const y = yForValue(Number(value));
+    path += (path ? ' L ' : 'M ') + x.toFixed(1) + ' ' + y.toFixed(1);
+  });
+  return path;
+}
+
+function formatClockLabel(value){
+  const dt = new Date(value);
+  if(Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleTimeString('en-IN', {
+    timeZone: INDIA_TZ,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: false
+  });
+}
+
+function renderChartSvg(bars, timeframe){
+  if(!bars.length){
+    return '';
+  }
+
+  const width = 920;
+  const height = 360;
+  const margin = {top: 18, right: 64, bottom: 34, left: 10};
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const lows = bars.map(candle => Number(candle.low));
+  const highs = bars.map(candle => Number(candle.high));
+  const sessionLow = Math.min(...lows);
+  const sessionHigh = Math.max(...highs);
+  const padding = Math.max((sessionHigh - sessionLow) * 0.08, 14);
+  const minPrice = sessionLow - padding;
+  const maxPrice = sessionHigh + padding;
+  const candleWidth = Math.max(3, Math.min(18, (plotWidth / Math.max(bars.length, 1)) * 0.68));
+  const ema9 = computeEmaSeries(bars, 9);
+  const ema21 = computeEmaSeries(bars, 21);
+
+  const xForIndex = (index) => margin.left + ((plotWidth / Math.max(bars.length - 1, 1)) * index);
+  const yForValue = (value) => margin.top + (((maxPrice - value) / Math.max(maxPrice - minPrice, 1)) * plotHeight);
+
+  const gridLines = [];
+  for(let step = 0; step <= 4; step += 1){
+    const y = margin.top + ((plotHeight / 4) * step);
+    const price = maxPrice - (((maxPrice - minPrice) / 4) * step);
+    gridLines.push(`
+      <line x1="${margin.left}" y1="${y.toFixed(1)}" x2="${width - margin.right + 8}" y2="${y.toFixed(1)}" stroke="rgba(16,23,31,0.08)" stroke-dasharray="4 6" />
+      <text x="${width - margin.right + 14}" y="${(y + 4).toFixed(1)}" fill="#5B6675" font-size="11">${formatNum(price)}</text>
+    `);
+  }
+
+  const xLabels = [];
+  const labelIndexes = new Set([0, Math.floor(bars.length / 3), Math.floor((bars.length * 2) / 3), bars.length - 1]);
+  for(const index of labelIndexes){
+    if(index < 0 || index >= bars.length) continue;
+    const x = xForIndex(index);
+    xLabels.push(
+      `<text x="${x.toFixed(1)}" y="${height - 8}" text-anchor="middle" fill="#5B6675" font-size="10">${escapeHtml(formatClockLabel(bars[index].market_time || bars[index].time_utc))}</text>`
+    );
+  }
+
+  const candleShapes = bars.map((candle, index) => {
+    const openValue = Number(candle.open);
+    const closeValue = Number(candle.close);
+    const highValue = Number(candle.high);
+    const lowValue = Number(candle.low);
+    const x = xForIndex(index);
+    const wickTop = yForValue(highValue);
+    const wickBottom = yForValue(lowValue);
+    const openY = yForValue(openValue);
+    const closeY = yForValue(closeValue);
+    const bodyTop = Math.min(openY, closeY);
+    const bodyHeight = Math.max(Math.abs(closeY - openY), 1.5);
+    const fill = closeValue >= openValue ? '#1D9E75' : '#E24B4A';
+    return `
+      <line x1="${x.toFixed(1)}" y1="${wickTop.toFixed(1)}" x2="${x.toFixed(1)}" y2="${wickBottom.toFixed(1)}" stroke="${fill}" stroke-width="1.2" />
+      <rect x="${(x - (candleWidth / 2)).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${candleWidth.toFixed(1)}" height="${bodyHeight.toFixed(1)}" rx="1.6" fill="${fill}" opacity="0.92" />
+    `;
+  }).join('');
+
+  const lastClose = Number(bars[bars.length - 1].close);
+  const lastCloseY = yForValue(lastClose);
+  const lastCloseTone = lastClose >= Number(bars[bars.length - 1].open) ? '#1D9E75' : '#E24B4A';
+
+  return `
+    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="NIFTY intraday ${escapeHtml(timeframe)} candlestick chart">
+      <rect x="0" y="0" width="${width}" height="${height}" rx="12" fill="#FBFDFF" />
+      ${gridLines.join('')}
+      ${xLabels.join('')}
+      <path d="${linePath(ema21, xForIndex, yForValue)}" fill="none" stroke="#A64CE6" stroke-width="2" opacity="0.95" />
+      <path d="${linePath(ema9, xForIndex, yForValue)}" fill="none" stroke="#2A6FDB" stroke-width="2.2" opacity="0.95" />
+      ${candleShapes}
+      <line x1="${margin.left}" y1="${lastCloseY.toFixed(1)}" x2="${width - margin.right + 8}" y2="${lastCloseY.toFixed(1)}" stroke="${lastCloseTone}" stroke-width="1.1" stroke-dasharray="6 6" opacity="0.7" />
+      <rect x="${width - margin.right - 4}" y="${(lastCloseY - 10).toFixed(1)}" width="58" height="20" rx="10" fill="${lastCloseTone}" />
+      <text x="${width - margin.right + 25}" y="${(lastCloseY + 4).toFixed(1)}" text-anchor="middle" fill="#FFFFFF" font-size="11" font-weight="700">${formatNum(lastClose)}</text>
+    </svg>
+  `;
+}
+
+function buildIntradayAction(snapshot, timeframe, bars, prediction){
+  const last = bars[bars.length - 1];
+  const sessionOpen = Number(bars[0].open);
+  const lastClose = Number(last.close);
+  const sessionHigh = Math.max(...bars.map(candle => Number(candle.high)));
+  const sessionLow = Math.min(...bars.map(candle => Number(candle.low)));
+  const ema9Series = computeEmaSeries(bars, 9);
+  const ema21Series = computeEmaSeries(bars, 21);
+  const ema9 = ema9Series[ema9Series.length - 1];
+  const ema21 = ema21Series[ema21Series.length - 1];
+  const closeThreeBarsAgo = Number((bars[Math.max(0, bars.length - 4)] || bars[0]).close);
+  const momentumPct = closeThreeBarsAgo ? ((lastClose - closeThreeBarsAgo) / closeThreeBarsAgo) * 100 : 0;
+  const rangePosition = sessionHigh === sessionLow ? 0.5 : (lastClose - sessionLow) / (sessionHigh - sessionLow);
+  const recentWindow = bars.slice(-6, -1);
+  const triggerUp = recentWindow.length ? Math.max(...recentWindow.map(candle => Number(candle.high))) : sessionHigh;
+  const triggerDown = recentWindow.length ? Math.min(...recentWindow.map(candle => Number(candle.low))) : sessionLow;
+  const avgRange = average(bars.slice(-10).map(candle => Number(candle.high) - Number(candle.low))) || Math.max((sessionHigh - sessionLow) / Math.max(bars.length, 1), 1);
+
+  const reasons = [];
+  function addReason(label, signal, weight, positiveText, negativeText){
+    reasons.push({label, signal, weight, positiveText, negativeText});
+  }
+
+  addReason(
+    'Price vs EMA 9',
+    lastClose >= ema9 ? 1 : -1,
+    1.1,
+    `Price is trading above the ${timeframe} EMA 9, which keeps the short-term tape constructive.`,
+    `Price is trading below the ${timeframe} EMA 9, which keeps the short-term tape heavy.`
+  );
+  addReason(
+    'EMA structure',
+    ema9 >= ema21 ? 1 : -1,
+    1.0,
+    `EMA 9 remains above EMA 21, so the current ${timeframe} structure still leans upward.`,
+    `EMA 9 remains below EMA 21, so the current ${timeframe} structure still leans downward.`
+  );
+  addReason(
+    'Recent momentum',
+    clamp(momentumPct / 0.35, -1, 1),
+    0.9,
+    `The last few ${timeframe} bars have pushed higher, so immediate momentum is supportive.`,
+    `The last few ${timeframe} bars have slipped lower, so immediate momentum is fading.`
+  );
+  addReason(
+    'Session position',
+    clamp((rangePosition - 0.5) * 2, -1, 1),
+    0.7,
+    'Price is holding in the upper half of the session range, which usually favors follow-through on strength.',
+    'Price is stuck in the lower half of the session range, which usually favors follow-through on weakness.'
+  );
+  addReason(
+    'Daily signal anchor',
+    prediction ? clamp(prediction.score, -1, 1) : 0,
+    0.55,
+    'The broader daily signal stack is aligned with this intraday push.',
+    'The broader daily signal stack is leaning against the tape, so intraday rallies carry more risk.'
+  );
+  addReason(
+    'Session open',
+    lastClose >= sessionOpen ? 0.65 : -0.65,
+    0.5,
+    'Price is holding above the session open, so buyers still have some control.',
+    'Price is holding below the session open, so sellers still have some control.'
+  );
+
+  const totalWeight = reasons.reduce((sum, item) => sum + item.weight, 0) || 1;
+  const score = reasons.reduce((sum, item) => sum + (item.signal * item.weight), 0) / totalWeight;
+  const absScore = Math.abs(score);
+  const bias = score > 0.18 ? 'BUY BIAS' : score < -0.18 ? 'SELL BIAS' : 'WAIT';
+  const biasClass = bias === 'BUY BIAS' ? 'buy' : bias === 'SELL BIAS' ? 'sell' : 'wait';
+  const confidence = Math.round(clamp(52 + (absScore * 26) + Math.min(bars.length, 40) * 0.35, 52, 84));
+  const expectedMovePct = clamp(score * Math.max((avgRange / Math.max(lastClose, 1)) * 100 * 0.95, 0.08), -1.25, 1.25);
+  const target = lastClose * (1 + (expectedMovePct / 100));
+  const projectedRange = Math.max(avgRange, Math.max(lastClose * 0.0016, 12));
+  const invalidation = bias === 'BUY BIAS'
+    ? Math.min(triggerDown, ema21 || triggerDown)
+    : bias === 'SELL BIAS'
+      ? Math.max(triggerUp, ema21 || triggerUp)
+      : (ema9 || lastClose);
+  const narrative = bias === 'BUY BIAS'
+    ? `The chart is leaning higher for the next ${timeframe} candle as long as price stays above the nearby trigger band.`
+    : bias === 'SELL BIAS'
+      ? `The chart is leaning lower for the next ${timeframe} candle unless price reclaims the nearby trigger band.`
+      : `The tape is mixed right now, so the safer read is to wait for a clean break above or below the trigger band.`;
+
+  const optionsBias = bias === 'BUY BIAS' ? 'BUY CALL' : bias === 'SELL BIAS' ? 'BUY PUT' : 'WAIT';
+  const entryTrigger = bias === 'BUY BIAS' ? triggerUp : bias === 'SELL BIAS' ? triggerDown : null;
+  const stopLoss = bias === 'BUY BIAS'
+    ? Math.min(invalidation, triggerUp - (projectedRange * 0.45))
+    : bias === 'SELL BIAS'
+      ? Math.max(invalidation, triggerDown + (projectedRange * 0.45))
+      : invalidation;
+  const target1 = bias === 'BUY BIAS'
+    ? triggerUp + (projectedRange * 0.55)
+    : bias === 'SELL BIAS'
+      ? triggerDown - (projectedRange * 0.55)
+      : null;
+  const target2 = bias === 'BUY BIAS'
+    ? Math.max(target, triggerUp + (projectedRange * 1.05))
+    : bias === 'SELL BIAS'
+      ? Math.min(target, triggerDown - (projectedRange * 1.05))
+      : null;
+  const playbook = bias === 'BUY BIAS'
+    ? `Consider a call-side setup only if price sustains above ${formatNum(triggerUp)} on the ${timeframe} chart.`
+    : bias === 'SELL BIAS'
+      ? `Consider a put-side setup only if price slips below ${formatNum(triggerDown)} on the ${timeframe} chart.`
+      : `Wait for price to break above ${formatNum(triggerUp)} or below ${formatNum(triggerDown)} before taking fresh option-side exposure.`;
+
+  const probabilities = deriveDirectionalProbabilities(score, confidence, {baseImpact: 26, confidenceImpact: 0.12, floor: 24, ceiling: 76});
+  const callConfidence = probabilities.bullish;
+  const putConfidence = probabilities.bearish;
+  const callScenario = {
+    side: 'call',
+    optionsBias: 'BUY CALL',
+    chipClass: 'call',
+    confidence: callConfidence,
+    entryTrigger: triggerUp,
+    target1: triggerUp + (projectedRange * 0.55),
+    target2: Math.max(lastClose * (1 + Math.max(expectedMovePct, 0.12) / 100), triggerUp + (projectedRange * 1.05)),
+    stopLoss: Math.min(triggerDown, triggerUp - (projectedRange * 0.45)),
+    invalidation: Math.min(triggerDown, ema21 || triggerDown),
+    narrative: `Take the call view only if price sustains above ${formatNum(triggerUp)} on the ${timeframe} chart.`,
+    why: 'This side works when buyers reclaim the recent swing high and keep the tape above the breakout trigger.',
+    baseRange: projectedRange
+  };
+  const putScenario = {
+    side: 'put',
+    optionsBias: 'BUY PUT',
+    chipClass: 'put',
+    confidence: putConfidence,
+    entryTrigger: triggerDown,
+    target1: triggerDown - (projectedRange * 0.55),
+    target2: Math.min(lastClose * (1 + Math.min(expectedMovePct, -0.12) / 100), triggerDown - (projectedRange * 1.05)),
+    stopLoss: Math.max(triggerUp, triggerDown + (projectedRange * 0.45)),
+    invalidation: Math.max(triggerUp, ema21 || triggerUp),
+    narrative: `Take the put view only if price slips below ${formatNum(triggerDown)} on the ${timeframe} chart.`,
+    why: 'This side works when sellers break the recent swing low and keep price below the breakdown trigger.',
+    baseRange: projectedRange
+  };
+  const autoScenario = bias === 'BUY BIAS'
+    ? {...callScenario}
+    : bias === 'SELL BIAS'
+      ? {...putScenario}
+      : {
+          side: 'auto',
+          optionsBias: 'WAIT',
+          chipClass: 'wait',
+          confidence,
+          entryTrigger: null,
+          target1: null,
+          target2: null,
+          stopLoss: invalidation,
+          invalidation,
+          narrative: `Wait for price to break above ${formatNum(triggerUp)} or below ${formatNum(triggerDown)} before taking a fresh option-side position.`,
+          why: 'The chart does not yet show a clean edge for either side.',
+          baseRange: projectedRange
+        };
+
+  return {
+    bias,
+    biasClass,
+    score,
+    confidence,
+    expectedMovePct,
+    target,
+    optionsBias,
+    entryTrigger,
+    stopLoss,
+    target1,
+    target2,
+    triggerUp,
+    triggerDown,
+    invalidation,
+    lastClose,
+    notes: reasons
+      .sort((left, right) => Math.abs(right.signal * right.weight) - Math.abs(left.signal * left.weight))
+      .slice(0, 4)
+      .map(item => item.signal >= 0 ? item.positiveText : item.negativeText),
+    narrative,
+    playbook,
+    projectedRange,
+    scenarios: {
+      auto: autoScenario,
+      call: callScenario,
+      put: putScenario
+    }
+  };
+}
+
+function isIndiaMarketLiveNow(){
+  const indiaNow = getIndiaNowParts();
+  const minutes = (indiaNow.hour * 60) + indiaNow.minute;
+  const isWeekend = indiaNow.weekday === 'Sat' || indiaNow.weekday === 'Sun';
+  return !isWeekend && minutes >= ((9 * 60) + 15) && minutes <= ((15 * 60) + 30);
+}
+
+function buildNext50MinuteForecast(snapshot, prediction){
+  const fiveMinuteBars = getDisplayedBars(snapshot, '5m');
+  const bars = fiveMinuteBars.length ? fiveMinuteBars : getDisplayedBars(snapshot, activeTimeframe);
+  if(bars.length < 6) return null;
+
+  const last = bars[bars.length - 1];
+  const lastClose = Number(last.close);
+  const recent = bars.slice(-10);
+  const prior = bars.slice(Math.max(0, bars.length - 20), Math.max(0, bars.length - 10));
+  const firstRecentClose = Number((recent[0] || bars[0]).close);
+  const momentum50Pct = firstRecentClose ? ((lastClose - firstRecentClose) / firstRecentClose) * 100 : 0;
+  const ema9Series = computeEmaSeries(bars, 9);
+  const ema21Series = computeEmaSeries(bars, 21);
+  const ema9 = ema9Series[ema9Series.length - 1];
+  const ema21 = ema21Series[ema21Series.length - 1];
+  const sessionHigh = Math.max(...bars.map(candle => Number(candle.high)));
+  const sessionLow = Math.min(...bars.map(candle => Number(candle.low)));
+  const rangePosition = sessionHigh === sessionLow ? 0.5 : (lastClose - sessionLow) / (sessionHigh - sessionLow);
+  const avgRange = average(recent.map(candle => Number(candle.high) - Number(candle.low))) || Math.max(lastClose * 0.001, 10);
+  const recentVolume = average(recent.map(candle => Number(candle.volume || 0)));
+  const priorVolume = average(prior.map(candle => Number(candle.volume || 0)));
+  const volumeSignal = priorVolume ? clamp((recentVolume - priorVolume) / priorVolume, -1, 1) : 0;
+  const breadth = snapshot?.stock_dashboard?.market_summary || {};
+  const breadthTotal = Number(breadth.bullish || 0) + Number(breadth.bearish || 0) + Number(breadth.neutral || 0);
+  const breadthSignal = breadthTotal ? clamp((Number(breadth.bullish || 0) - Number(breadth.bearish || 0)) / breadthTotal, -1, 1) : 0;
+
+  const pieces = [
+    {label: '50m momentum', signal: clamp(momentum50Pct / 0.45, -1, 1), weight: 1.25},
+    {label: 'EMA stack', signal: ema9 >= ema21 ? 1 : -1, weight: 1.0},
+    {label: 'Price vs EMA 9', signal: lastClose >= ema9 ? 1 : -1, weight: 0.85},
+    {label: 'Range position', signal: clamp((rangePosition - 0.5) * 2, -1, 1), weight: 0.8},
+    {label: 'Market breadth', signal: breadthSignal, weight: 0.75},
+    {label: 'Volume pressure', signal: volumeSignal, weight: 0.45},
+    {label: 'Daily anchor', signal: prediction ? clamp(prediction.score, -1, 1) : 0, weight: 0.45}
+  ];
+  const totalWeight = pieces.reduce((sum, item) => sum + item.weight, 0) || 1;
+  const score = pieces.reduce((sum, item) => sum + (item.signal * item.weight), 0) / totalWeight;
+  const marketLive = isIndiaMarketLiveNow();
+  const lastBarDate = String(last.market_date || '');
+  const today = getIndiaNowParts().isoDate;
+  const isFreshSession = marketLive && lastBarDate === today;
+  const confidenceCap = isFreshSession ? 82 : 62;
+  const confidence = Math.round(clamp(50 + (Math.abs(score) * 32) + Math.min(recent.length, 10), 50, confidenceCap));
+  const movePoints = clamp(score * Math.max(avgRange * 3.2, lastClose * 0.0018), -avgRange * 7, avgRange * 7);
+  const expectedMovePct = (movePoints / Math.max(lastClose, 1)) * 100;
+  const target = lastClose + movePoints;
+  const band = Math.max(avgRange * 1.8, lastClose * 0.0015);
+  const upperBand = target + band;
+  const lowerBand = target - band;
+  const bias = score > 0.18 ? 'BUY CALL' : score < -0.18 ? 'BUY PUT' : 'WAIT';
+  const chipClass = bias === 'BUY CALL' ? 'call' : bias === 'BUY PUT' ? 'put' : 'wait';
+  const triggerUp = Math.max(...recent.slice(-6).map(candle => Number(candle.high)));
+  const triggerDown = Math.min(...recent.slice(-6).map(candle => Number(candle.low)));
+  const entry = bias === 'BUY CALL' ? triggerUp : bias === 'BUY PUT' ? triggerDown : null;
+  const stopLoss = bias === 'BUY CALL'
+    ? Math.min(triggerDown, lastClose - (avgRange * 1.4))
+    : bias === 'BUY PUT'
+      ? Math.max(triggerUp, lastClose + (avgRange * 1.4))
+      : null;
+  const invalidation = bias === 'BUY CALL' ? triggerDown : bias === 'BUY PUT' ? triggerUp : null;
+  const latestTime = new Date(last.market_time || last.time_utc);
+  const steps = [10, 20, 30, 40, 50].map(minutes => {
+    const dt = new Date(latestTime.getTime() + (minutes * 60 * 1000));
+    const progress = minutes / 50;
+    const pathPrice = lastClose + (movePoints * progress);
+    return {
+      minutes,
+      time: dt.toLocaleTimeString('en-IN', {timeZone: INDIA_TZ, hour: 'numeric', minute: '2-digit', hour12: false}),
+      price: pathPrice
+    };
+  });
+  const topDrivers = pieces
+    .sort((left, right) => Math.abs(right.signal * right.weight) - Math.abs(left.signal * left.weight))
+    .slice(0, 4)
+    .map(item => `${item.label}: ${item.signal >= 0 ? 'bullish' : 'bearish'}`);
+
+  return {
+    bias,
+    chipClass,
+    confidence,
+    score,
+    lastClose,
+    expectedMovePct,
+    target,
+    upperBand,
+    lowerBand,
+    entry,
+    stopLoss,
+    invalidation,
+    marketLive,
+    isFreshSession,
+    lastBarDate,
+    lastBarTime: formatClockLabel(last.market_time || last.time_utc),
+    steps,
+    topDrivers
+  };
+}
+
+function renderLiveActionCard(snapshot, bars, timeframe, prediction, requestedTarget){
+  if(!bars.length){
+    liveActionCard.innerHTML = '<div class="chart-empty">Intraday candles are not available yet for the current snapshot.</div>';
+    return;
+  }
+
+  const next50 = buildNext50MinuteForecast(snapshot, prediction);
+  if(!next50){
+    liveActionCard.innerHTML = '<div class="chart-empty">Need at least 6 live candles to build the Next 50 Minutes read.</div>';
+    return;
+  }
+
+  const next50FreshNote = next50?.isFreshSession
+    ? 'Live session candles'
+    : `Market closed or stale session (${next50?.lastBarDate || 'n/a'}). Refresh during NSE hours for live use.`;
+
+  liveActionCard.innerHTML = `
+    <div class="next50-card">
+      <div class="next50-head">
+        <div>
+          <div class="next50-title">Live Option Signal</div>
+          <div class="next50-sub">Next 50 minutes | ${escapeHtml(next50FreshNote)} | Last bar ${escapeHtml(next50.lastBarTime)}</div>
+        </div>
+        <div class="next50-bias ${next50.chipClass}">${escapeHtml(next50.bias)}</div>
+      </div>
+      <div class="next50-grid compact">
+        <div class="next50-kpi primary"><div class="next50-label">Which Option To Take</div><div class="next50-value">${escapeHtml(next50.bias)}</div></div>
+        <div class="next50-kpi"><div class="next50-label">Confidence</div><div class="next50-value">${next50.confidence}%</div></div>
+        <div class="next50-kpi"><div class="next50-label">Current Price</div><div class="next50-value">${formatNum(next50.lastClose)}</div></div>
+        <div class="next50-kpi"><div class="next50-label">Target Price</div><div class="next50-value">${formatNum(next50.target)}</div></div>
+        <div class="next50-kpi"><div class="next50-label">Stop Loss</div><div class="next50-value">${formatNum(next50.stopLoss)}</div></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderIntradayBoard(snapshot, prediction=null, requestedTarget='live'){
+  intradayRenderContext = {
+    snapshot,
+    prediction,
+    requestedTarget,
+    sessionContext: intradayRenderContext.sessionContext
+  };
+  const intraday = snapshot?.intraday;
+  if(!intraday?.series){
+    resetIntradayBoard('This snapshot does not contain intraday candle data yet. Run the live refresh again to build the chart dataset.');
+    return;
+  }
+
+  const bars = getDisplayedBars(snapshot, activeTimeframe);
+  if(!bars.length){
+    resetIntradayBoard('The snapshot contains intraday data, but no usable bars were found for the selected timeframe.');
+    return;
+  }
+
+  chartEmpty.style.display = 'none';
+  chartSvgWrap.innerHTML = renderChartSvg(bars, activeTimeframe);
+  chartStatus.textContent = `${bars.length} bars | ${activeTimeframe} timeframe | Session ${bars[0].market_date}`;
+  chartUpdated.textContent = `Intraday feed: ${intraday.provider || 'live source'} | Latest bar: ${formatDateTimeInIndia(intraday.as_of_utc || bars[bars.length - 1].time_utc)}`;
+  renderLiveActionCard(snapshot, bars, activeTimeframe, prediction, requestedTarget);
+}
+
+function getIndiaNowParts(){
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: INDIA_TZ,
+    weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(new Date());
+  const mapped = {};
+  for(const part of parts){
+    if(part.type !== 'literal') mapped[part.type] = part.value;
+  }
+  return {
+    isoDate: `${mapped.year}-${mapped.month}-${mapped.day}`,
+    weekday: mapped.weekday,
+    hour: Number(mapped.hour || 0) % 24,
+    minute: Number(mapped.minute || 0),
+    second: Number(mapped.second || 0)
+  };
+}
+
+function compareIsoDates(left, right){
+  if(!left || !right) return 0;
+  if(left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function describeSessionContext(snapshot, requestedTarget){
+  const indiaNow = getIndiaNowParts();
+  const asOfDate = String(snapshot?.meta?.as_of_date || '');
+  const marketMinutes = (indiaNow.hour * 60) + indiaNow.minute;
+  const cashOpenMinutes = (9 * 60) + 15;
+  const cashCloseMinutes = (15 * 60) + 30;
+  const isWeekend = indiaNow.weekday === 'Sat' || indiaNow.weekday === 'Sun';
+  const baseLabel = {tomorrow:"Tomorrow's Session",live:"Live Market View"}[requestedTarget] || "Prediction";
+
+  if(requestedTarget === 'live'){
+    if(isWeekend){
+      return {
+        effectiveLabel: 'Next Open Live Bias',
+        toneClass: 't-amber',
+        message: `India market is closed on ${indiaNow.isoDate} (${indiaNow.weekday}). This live view is showing the next-open bias from the latest real signals.`
+      };
+    }
+
+    if(marketMinutes < cashOpenMinutes){
+      return {
+        effectiveLabel: 'Pre-Open Live Bias',
+        toneClass: 't-blue',
+        message: `India market is in pre-open on ${indiaNow.isoDate} IST. This live view reflects the current opening tone from GIFT Nifty, VIX, flows, FX, and news.`
+      };
+    }
+
+    if(marketMinutes <= cashCloseMinutes){
+      return {
+        effectiveLabel: 'Live Market Bias',
+        toneClass: 't-blue',
+        message: `India cash market is live on ${indiaNow.isoDate} IST. This live view combines fresh real signals with minute candles for a rules-based intraday action readout.`
+      };
+    }
+
+    if(compareIsoDates(asOfDate, indiaNow.isoDate) === 0){
+      return {
+        effectiveLabel: 'Post-Close Live Recap',
+        toneClass: 't-amber',
+        message: `India cash market is now closed and the latest official close is ${asOfDate}. This live view is now a post-close recap of the latest session tone.`
+      };
+    }
+
+    return {
+      effectiveLabel: 'Live View Waiting For Close',
+      toneClass: 't-amber',
+      message: `India cash market is closed, but the latest official close in the snapshot is still ${asOfDate}. Refresh again after the official close is published.`
+    };
+  }
+
+  if(requestedTarget !== 'tomorrow'){
+    return {
+      effectiveLabel: baseLabel,
+      toneClass: 't-blue',
+      message: `Using the latest completed NIFTY close from ${asOfDate || 'the current snapshot'} for this ${baseLabel.toLowerCase()} run.`
+    };
+  }
+
+  if(!asOfDate){
+    return {
+      effectiveLabel: baseLabel,
+      toneClass: 't-amber',
+      message: 'The snapshot is missing an as-of date, so the daily session context could not be verified.'
+    };
+  }
+
+  if(compareIsoDates(asOfDate, indiaNow.isoDate) === 0){
+    return {
+      effectiveLabel: "Tomorrow's Session",
+      toneClass: 't-blue',
+      message: `Latest official NIFTY close is ${asOfDate}. This run is aligned to the next trading session.`
+    };
+  }
+
+  if(isWeekend){
+    return {
+      effectiveLabel: "Next Trading Session",
+      toneClass: 't-blue',
+      message: `India market is closed on ${indiaNow.isoDate} (${indiaNow.weekday}) and the latest completed close is ${asOfDate}. This run is effectively for the next trading session.`
+    };
+  }
+
+  if(marketMinutes < cashOpenMinutes){
+    return {
+      effectiveLabel: "Today's Session",
+      toneClass: 't-blue',
+      message: `Pre-open in India on ${indiaNow.isoDate} IST. The latest official close is ${asOfDate}, so the overnight signals are being used for today's session.`
+    };
+  }
+
+  if(marketMinutes <= cashCloseMinutes){
+    return {
+      effectiveLabel: "Daily Model Stale During Live Market",
+      toneClass: 't-amber',
+      message: `NSE cash market is live on ${indiaNow.isoDate} IST, but the daily next-session block still ends at ${asOfDate}. Use the intraday chart below for the live minute-candle action bias.`
+    };
+  }
+
+  return {
+    effectiveLabel: "Awaiting Official Close Refresh",
+    toneClass: 't-amber',
+    message: `After the market close on ${indiaNow.isoDate} IST, the latest official daily close in the snapshot is still ${asOfDate}. Re-run after NSE publishes the fresh close if you want the next-session forecast.`
+  };
+}
+
+function validateSnapshot(payload){
+  if(!payload || typeof payload !== 'object'){
+    throw new Error('Snapshot file is empty or invalid JSON.');
+  }
+  if(payload.meta?.data_mode !== 'real'){
+    throw new Error('Snapshot is not marked as real data.');
+  }
+  if((payload.missing_inputs || []).length){
+    throw new Error('Snapshot is incomplete. Missing: ' + payload.missing_inputs.join(', '));
+  }
+  if(Number(payload.meta?.completeness) !== 1){
+    throw new Error('Snapshot completeness must be 100% for prediction.');
+  }
+  if(payload.market?.last_close === null || payload.market?.last_close === undefined){
+    throw new Error('Snapshot is missing the latest NIFTY 50 close.');
+  }
+  return payload;
+}
+
+async function readSelectedSnapshotFile(file){
+  const text = await file.text();
+  const payload = JSON.parse(text);
+  const validated = validateSnapshot(payload);
+  validated._snapshotFile = file.name;
+  return validated;
+}
+
+snapshotFileInput.addEventListener('change', async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if(!file) return;
+  try{
+    selectedSnapshot = await readSelectedSnapshotFile(file);
+    setLoadButtonLabel('Snapshot Loaded');
+    const requestedTarget = chooseStartupTarget(selectedSnapshot);
+    const sessionContext = describeSessionContext(selectedSnapshot, requestedTarget);
+    const prediction = computePrediction(selectedSnapshot, requestedTarget, document.getElementById('depth-sel').value || 'standard');
+    intradayRenderContext.snapshot = selectedSnapshot;
+    intradayRenderContext.prediction = prediction;
+    intradayRenderContext.sessionContext = sessionContext;
+    intradayRenderContext.requestedTarget = requestedTarget;
+    renderHotNews(selectedSnapshot);
+    renderStockDashboard(selectedSnapshot, prediction, sessionContext, requestedTarget);
+    renderIntradayBoard(selectedSnapshot, prediction, requestedTarget);
+    renderTradeBoard(selectedSnapshot, prediction, sessionContext, requestedTarget);
+  }catch(err){
+    selectedSnapshot = null;
+    setLoadButtonLabel('Load Snapshot JSON');
+    alert('Selected file is not a valid real-data snapshot. ' + err.message);
+  }
+});
+
+timeframeButtons.forEach(button => {
+  button.addEventListener('click', () => {
+    activeTimeframe = button.dataset.timeframe || '5m';
+    setActiveTimeframeButton();
+    if(intradayRenderContext.snapshot){
+      renderIntradayBoard(intradayRenderContext.snapshot, intradayRenderContext.prediction, intradayRenderContext.requestedTarget);
+      if(intradayRenderContext.prediction && intradayRenderContext.sessionContext){
+        renderTradeBoard(
+          intradayRenderContext.snapshot,
+          intradayRenderContext.prediction,
+          intradayRenderContext.sessionContext,
+          intradayRenderContext.requestedTarget
+        );
+        renderStockDashboard(
+          intradayRenderContext.snapshot,
+          intradayRenderContext.prediction,
+          intradayRenderContext.sessionContext,
+          intradayRenderContext.requestedTarget
+        );
+      }
+    }
+  });
+});
+
+moverModeButtons.forEach(button => {
+  button.addEventListener('click', () => {
+    activeMoverMode = button.dataset.moverMode || 'upward';
+    setActiveMoverModeButton();
+    renderStockDashboard(
+      marketBoardContext.snapshot,
+      marketBoardContext.prediction,
+      marketBoardContext.sessionContext,
+      marketBoardContext.requestedTarget
+    );
+  });
+});
+
+optionModeButtons.forEach(button => {
+  button.addEventListener('click', () => {
+    selectedOptionMode = button.dataset.optionMode || 'auto';
+    setActiveOptionModeButton();
+    renderStockDashboard(
+      marketBoardContext.snapshot,
+      marketBoardContext.prediction,
+      marketBoardContext.sessionContext,
+      marketBoardContext.requestedTarget
+    );
+  });
+});
+
+scannerViewButtons.forEach(button => {
+  button.addEventListener('click', () => {
+    scannerDisplayMode = button.dataset.scannerView || 'table';
+    setActiveScannerViewButton();
+    renderScannerBoards(marketBoardContext.snapshot?.stock_dashboard || null);
+  });
+});
+
+featureToggleInputs.forEach(input => {
+  input.addEventListener('change', setFeatureVisibility);
+});
+
+if(planStyleSelect){
+  planStyleSelect.addEventListener('change', () => {
+    renderStockDashboard(
+      marketBoardContext.snapshot,
+      marketBoardContext.prediction,
+      marketBoardContext.sessionContext,
+      marketBoardContext.requestedTarget
+    );
+  });
+}
+
+setActiveTimeframeButton();
+setActiveMoverModeButton();
+setActiveOptionModeButton();
+setActiveScannerViewButton();
+setFeatureVisibility();
+resetIntradayBoard();
+renderStockDashboard(null);
+resetTradeBoard();
+if(location.protocol === 'file:'){
+  const serverHint = explainFileModeServer();
+  marketCommandMeta.textContent = serverHint;
+  marketSessionNote.textContent = serverHint;
+  setLoadButtonLabel('Load Snapshot Or Use Live Server');
+}
+
+async function loadSnapshot(){
+  const candidate = location.protocol === 'file:'
+    ? buildServerUrl('/market_snapshot.latest.json')
+    : 'market_snapshot.latest.json';
+  try{
+    const resp = await fetch(candidate+'?ts='+Date.now(),{cache:'no-store'});
+    if(!resp.ok){
+      if(selectedSnapshot) return selectedSnapshot;
+      throw new Error(location.protocol === 'file:'
+        ? `Real snapshot file was not found at ${getServerOrigin()}. Run the live refresh server or rebuild the snapshot manually first.`
+        : 'Real snapshot file was not found. Run the live refresh server or rebuild the snapshot manually first.');
+    }
+    const payload = await resp.json();
+    payload._snapshotFile = candidate.replace(/^.*\//,'');
+    return validateSnapshot(payload);
+  }catch(err){
+    if(selectedSnapshot) return selectedSnapshot;
+    throw err;
+  }
+}
+
+function chooseStartupTarget(snapshot){
+  return 'live';
+}
+
+async function bootstrapLatestSnapshot(){
+  try{
+    const snapshot = await loadSnapshot();
+    selectedSnapshot = snapshot;
+    const requestedTarget = chooseStartupTarget(snapshot);
+    const sessionContext = describeSessionContext(snapshot, requestedTarget);
+    const prediction = computePrediction(snapshot, requestedTarget, document.getElementById('depth-sel').value || 'standard');
+    intradayRenderContext.snapshot = snapshot;
+    intradayRenderContext.prediction = prediction;
+    intradayRenderContext.sessionContext = sessionContext;
+    intradayRenderContext.requestedTarget = requestedTarget;
+    renderHotNews(snapshot);
+    renderIntradayBoard(snapshot, prediction, requestedTarget);
+    renderTradeBoard(snapshot, prediction, sessionContext, requestedTarget);
+    renderStockDashboard(snapshot, prediction, sessionContext, requestedTarget);
+    setLoadButtonLabel('Latest Snapshot Loaded');
+    updateAutoRefreshStatus(`Snapshot loaded from ${formatDateTimeInIndia(snapshot.meta?.generated_at)}. Live refresh starts automatically.`);
+  }catch(err){
+    setLoadButtonLabel(location.protocol === 'file:' ? 'Load Snapshot Or Use Live Server' : 'Load Snapshot JSON');
+    updateAutoRefreshStatus('Waiting for live API. Auto refresh will retry every 1 minute.', 'error');
+  }
+}
+
+function startAutoRefresh(){
+  if(autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = setInterval(() => {
+    runPrediction('live');
+  }, AUTO_REFRESH_MS);
+  updateAutoRefreshStatus(`Auto refresh is ON. Refreshing every ${Math.round(AUTO_REFRESH_MS / 1000)} seconds.`);
+}
+
+bootstrapLatestSnapshot().finally(() => {
+  startAutoRefresh();
+  setTimeout(() => runPrediction('live'), 1200);
+});
+
+function computePrediction(snapshot, target, depth){
+  const market = snapshot.market || {};
+  const signals = snapshot.numeric_signals || {};
+  const depthScale = {
+    quick: {technical:1.2, flows:1.0, macro:0.75, news:0.2},
+    standard: {technical:1.0, flows:1.0, macro:1.0, news:0.8},
+    deep: {technical:1.0, flows:1.15, macro:1.15, news:1.2}
+  }[depth] || {technical:1.0, flows:1.0, macro:1.0, news:0.8};
+
+  const contributions = [];
+  function addContribution(name, raw, scale, weight, group, direction='direct', detail='', display='number'){
+    if(raw === null || raw === undefined || Number.isNaN(Number(raw))) return;
+    let normalized = clamp(Number(raw) / scale, -1, 1);
+    if(direction === 'inverse') normalized *= -1;
+    const groupMultiplier = depthScale[group] || 1;
+    const appliedWeight = weight * groupMultiplier;
+    contributions.push({
+      name,
+      raw: Number(raw),
+      normalized,
+      impact: normalized * appliedWeight,
+      weight: appliedWeight,
+      detail,
+      display
+    });
+  }
+
+  addContribution('GIFT Nifty', signals.gift_nifty_change_pct, 0.6, 1.35, 'technical', 'direct', 'Overnight offshore move before the NSE open.', 'pct');
+  addContribution('India VIX', signals.india_vix_change_pct, 4.0, 1.1, 'macro', 'inverse', 'Lower volatility is supportive; higher volatility is a caution signal.', 'pct');
+  addContribution('FII Flow', signals.fii_net_crore, 1500, 1.15, 'flows', 'direct', 'Foreign institutional net flow in crore rupees.', 'crore');
+  addContribution('DII Flow', signals.dii_net_crore, 1500, 0.65, 'flows', 'direct', 'Domestic institutional net flow in crore rupees.', 'crore');
+  addContribution('USD/INR', signals.usd_inr_change_pct, 0.35, 0.85, 'macro', 'inverse', 'A softer dollar versus rupee is treated as supportive.', 'pct');
+  addContribution('US Markets', signals.us_markets_change_pct, 1.0, 0.75, 'macro', 'direct', 'Previous global equity tone.', 'pct');
+  addContribution('Brent Crude', signals.brent_change_pct, 2.0, 0.65, 'macro', 'inverse', 'Lower crude helps India on inflation and import costs.', 'pct');
+  addContribution('India News', signals.news_sentiment_india, 1.0, 0.55, 'news', 'direct', 'Filtered domestic sentiment score.', 'score');
+  addContribution('Global News', signals.news_sentiment_global, 1.0, 0.35, 'news', 'direct', 'Filtered world-risk sentiment score.', 'score');
+
+  let trendScore = 0;
+  if(market.last_close !== null && market.last_close !== undefined && market.sma_5 !== null && market.sma_5 !== undefined){
+    trendScore += market.last_close >= market.sma_5 ? 0.55 : -0.55;
+  }
+  if(market.last_close !== null && market.last_close !== undefined && market.sma_20 !== null && market.sma_20 !== undefined){
+    trendScore += market.last_close >= market.sma_20 ? 0.45 : -0.45;
+  }
+  if(trendScore){
+    contributions.push({
+      name:'Trend Structure',
+      raw: trendScore,
+      normalized: clamp(trendScore, -1, 1),
+      impact: clamp(trendScore, -1, 1) * 0.95 * depthScale.technical,
+      weight: 0.95 * depthScale.technical,
+      detail:'Compares the latest close with the 5-day and 20-day averages.',
+      display:'score'
+    });
+  }
+
+  if(market.volatility_20d_pct !== null && market.volatility_20d_pct !== undefined){
+    const calmness = clamp((1.05 - market.volatility_20d_pct) / 1.05, -1, 1);
+    contributions.push({
+      name:'Realized Volatility',
+      raw: market.volatility_20d_pct,
+      normalized: calmness,
+      impact: calmness * 0.55 * depthScale.technical,
+      weight: 0.55 * depthScale.technical,
+      detail:'Lower realized volatility slightly improves confidence in directional calls.',
+      display:'pct'
+    });
+  }
+
+  const totalWeight = contributions.reduce((sum, item)=>sum + item.weight, 0) || 1;
+  const score = contributions.reduce((sum, item)=>sum + item.impact, 0) / totalWeight;
+  const completeness = Number(snapshot.meta?.completeness);
+  const horizonMultiplier = {tomorrow:1, live:0.55}[target] || 1;
+  const absScore = Math.abs(score);
+
+  let direction = 'NEUTRAL';
+  if(score > 0.12) direction = 'BULLISH';
+  if(score < -0.12) direction = 'BEARISH';
+
+  const magnitude = absScore > 0.5 ? 'strong' : absScore > 0.26 ? 'moderate' : 'mild';
+  const baseVol = Number(market.volatility_20d_pct);
+  const movePct = clamp(score * Math.max(baseVol * 0.85, 0.45) * horizonMultiplier, -3.8, 3.8);
+  const lastClose = Number(market.last_close ?? 0);
+  const targetLevel = lastClose ? lastClose * (1 + movePct / 100) : null;
+  const support = lastClose ? lastClose * (1 - Math.max(baseVol * 0.45, 0.3) / 100) : null;
+  const resistance = lastClose ? lastClose * (1 + Math.max(baseVol * 0.45, 0.3) / 100) : null;
+  const confidence = Math.round(clamp(50 + (absScore * 26) + (completeness * 10) - ((snapshot.missing_inputs || []).length * 2), 51, 88));
+  const probabilities = deriveDirectionalProbabilities(score, confidence, {baseImpact: 30, confidenceImpact: 0.16, floor: 18, ceiling: 82});
+  const workingRange = Math.max(Math.abs((resistance || lastClose) - (support || lastClose)), lastClose * 0.0035);
+
+  const topDrivers = [...contributions]
+    .sort((a,b)=>Math.abs(b.impact) - Math.abs(a.impact))
+    .slice(0,3);
+
+  const bullishDrivers = topDrivers.filter(item => item.impact > 0).map(item => item.name);
+  const bearishDrivers = topDrivers.filter(item => item.impact < 0).map(item => item.name);
+  const rationaleParts = [];
+  if(bullishDrivers.length){
+    rationaleParts.push('Positive pressure is coming mainly from ' + bullishDrivers.join(', ') + '.');
+  }
+  if(bearishDrivers.length){
+    rationaleParts.push('The main drag comes from ' + bearishDrivers.join(', ') + '.');
+  }
+  if(!bullishDrivers.length && !bearishDrivers.length){
+    rationaleParts.push('The available inputs are mixed, so the model keeps a balanced stance.');
+  }
+  rationaleParts.push('This output is rules-based and depends on how complete the latest input files are.');
+
+  const forecastSummary = direction === 'BULLISH'
+    ? `Base case for the next session: NIFTY has a ${probabilities.bullish}% upside probability and may trade higher toward ${formatNum(targetLevel)} while support holds above ${formatNum(support)}.`
+    : direction === 'BEARISH'
+      ? `Base case for the next session: NIFTY has a ${probabilities.bearish}% downside probability and may trade lower toward ${formatNum(targetLevel)} unless price recovers above ${formatNum(resistance)}.`
+      : `Base case for the next session: the model is close to balanced, so NIFTY may remain range-bound between ${formatNum(support)} and ${formatNum(resistance)} until a clearer break appears.`;
+
+  const catalysts = [
+    ...snapshot.domestic_factors.filter(item => item.impact === 'positive').map(item => item.factor),
+    ...snapshot.geopolitical_factors.filter(item => item.impact === 'positive').map(item => item.factor),
+    ...bullishDrivers
+  ].filter(Boolean).slice(0,4);
+
+  const risks = [
+    ...snapshot.domestic_factors.filter(item => item.impact === 'negative').map(item => item.factor),
+    ...snapshot.geopolitical_factors.filter(item => item.impact === 'negative').map(item => item.factor),
+    ...bearishDrivers,
+    ...(snapshot.missing_inputs || []).map(name => 'Missing input: ' + name)
+  ].filter(Boolean).slice(0,4);
+
+  const tradePlan = (() => {
+    if(direction === 'BULLISH'){
+      const entryTrigger = resistance || (lastClose * 1.0025);
+      const target1 = entryTrigger + (workingRange * 0.45);
+      const target2 = Math.max(targetLevel || target1, entryTrigger + (workingRange * 0.8));
+      const stopLoss = Math.max(support || (lastClose * 0.996), entryTrigger - (workingRange * 0.45));
+      return {
+        optionsBias: 'BUY CALL',
+        chipClass: 'call',
+        entryTrigger,
+        target1,
+        target2,
+        stopLoss,
+        invalidation: support,
+        executionNote: `Look for a call-side setup only if price sustains above ${formatNum(entryTrigger)} in the next session.`,
+        alternateNote: `If price fails to hold above ${formatNum(entryTrigger)}, avoid chasing the bullish view.`
+      };
+    }
+    if(direction === 'BEARISH'){
+      const entryTrigger = support || (lastClose * 0.9975);
+      const target1 = entryTrigger - (workingRange * 0.45);
+      const target2 = Math.min(targetLevel || target1, entryTrigger - (workingRange * 0.8));
+      const stopLoss = Math.min(resistance || (lastClose * 1.004), entryTrigger + (workingRange * 0.45));
+      return {
+        optionsBias: 'BUY PUT',
+        chipClass: 'put',
+        entryTrigger,
+        target1,
+        target2,
+        stopLoss,
+        invalidation: resistance,
+        executionNote: `Look for a put-side setup only if price breaks and stays below ${formatNum(entryTrigger)} in the next session.`,
+        alternateNote: `If price reclaims ${formatNum(stopLoss)}, the bearish setup is weakening.`
+      };
+    }
+    return {
+      optionsBias: 'WAIT',
+      chipClass: 'wait',
+      entryTrigger: null,
+      target1: resistance,
+      target2: support,
+      stopLoss: null,
+      invalidation: null,
+      executionNote: `Wait while price is trapped between ${formatNum(support)} and ${formatNum(resistance)}.`,
+      alternateNote: 'A fresh directional setup needs a clean break outside the current range.'
+    };
+  })();
+
+  return {
+    direction,
+    magnitude,
+    confidence,
+    upside_probability_pct: probabilities.bullish,
+    downside_probability_pct: probabilities.bearish,
+    expected_move_pct: movePct,
+    target_level: targetLevel,
+    support,
+    resistance,
+    rationale: rationaleParts.join(' '),
+    forecast_summary: forecastSummary,
+    key_catalysts: catalysts,
+    key_risks: risks,
+    score,
+    completeness,
+    topDrivers,
+    trade_plan: tradePlan
+  };
+}
+
+async function runPrediction(requestedTarget='live'){
+  requestedTarget = 'live';
+  if(autoRefreshInFlight){
+    updateAutoRefreshStatus('A live refresh is already running. Next automatic refresh will continue after it finishes.', 'running');
+    return;
+  }
+  autoRefreshInFlight = true;
+  const depth = document.getElementById('depth-sel').value;
+  setRunButtonsState(requestedTarget, true);
+  updateAutoRefreshStatus('fetching latest candles and news now...', 'running');
+
+  term.innerHTML = '';
+  const targetLabel = {tomorrow:"Tomorrow's Session",live:"Live Market View"}[requestedTarget] || 'Prediction';
+
+  await log('<span class="t-muted">$ nifty50-ai --predict --target='+requestedTarget+' --depth='+depth+'</span>');
+  await log('<br><span class="t-bold">NIFTY50 AI PREDICTION ENGINE</span> &nbsp;<span class="t-muted">----------------------</span>', 200);
+  await log('<span class="t-muted">Target: '+targetLabel+' &nbsp;|&nbsp; Date: '+new Date().toLocaleDateString('en-IN',{timeZone:INDIA_TZ})+' IST</span>', 100);
+  await logSep();
+
+  let snapshot;
+  let prediction;
+  let sessionContext;
+  try{
+    await log('<span class="t-muted">[1/4] Fetching latest market data and news<span class="loading-dots"></span></span>', 300);
+    const refreshResult = await refreshLiveSnapshot();
+    await new Promise(r=>setTimeout(r,450));
+    term.lastElementChild.innerHTML = '<span class="t-green">[OK]</span> <span class="t-muted">Live refresh completed</span> &nbsp;<span class="t-muted">[As of '+escapeHtml(refreshResult?.snapshot?.meta?.as_of_date || 'latest')+' | '+Number(refreshResult?.duration_seconds || 0).toFixed(2)+'s]</span>';
+
+    await log('<span class="t-muted">[2/4] Loading rebuilt snapshot<span class="loading-dots"></span></span>', 400);
+    snapshot = await loadSnapshot();
+    renderHotNews(snapshot);
+    sessionContext = describeSessionContext(snapshot, requestedTarget);
+    intradayRenderContext.sessionContext = sessionContext;
+    renderStockDashboard(snapshot, null, sessionContext, requestedTarget);
+    await new Promise(r=>setTimeout(r,450));
+    term.lastElementChild.innerHTML = '<span class="t-green">[OK]</span> <span class="t-muted">Snapshot loaded</span> &nbsp;<span class="t-muted">['+titleCase(snapshot.meta?.data_mode || 'unknown')+' | '+(snapshot._snapshotFile || 'file')+' | Close: '+escapeHtml(snapshot.meta?.as_of_date || 'n/a')+']</span>';
+    await log('<span class="'+sessionContext.toneClass+'">[INFO]</span> <span class="t-muted">'+escapeHtml(sessionContext.message)+'</span>', 100);
+    if(snapshot?.intraday?.series?.['1m']?.length || snapshot?.intraday?.series?.['5m']?.length){
+      await log('<span class="t-green">[OK]</span> <span class="t-muted">Intraday chart data ready</span> &nbsp;<span class="t-muted">[1m: '+(snapshot?.intraday?.series?.['1m']?.length || 0)+' | 5m: '+(snapshot?.intraday?.series?.['5m']?.length || 0)+']</span>', 100);
+    }
+    if(snapshot?.stock_dashboard?.coverage?.loaded){
+      await log('<span class="t-green">[OK]</span> <span class="t-muted">Stock dashboard ready</span> &nbsp;<span class="t-muted">['+(snapshot?.stock_dashboard?.coverage?.loaded || 0)+' / '+(snapshot?.stock_dashboard?.coverage?.requested || 50)+' NIFTY 50 stocks]</span>', 100);
+    }
+
+    await log('<span class="t-muted">[3/4] Scoring domestic, global and flow signals<span class="loading-dots"></span></span>', 400);
+    prediction = computePrediction(snapshot, requestedTarget, depth);
+    await new Promise(r=>setTimeout(r,450));
+    term.lastElementChild.innerHTML = '<span class="t-green">[OK]</span> <span class="t-muted">Signal score ready</span> &nbsp;<span class="t-muted">[Composite score: '+prediction.score.toFixed(2)+']</span>';
+
+    await log('<span class="t-muted">[4/4] Building deterministic forecast<span class="loading-dots"></span></span>', 400);
+    await new Promise(r=>setTimeout(r,400));
+    term.lastElementChild.innerHTML = '<span class="t-green">[OK]</span> <span class="t-muted">Forecast generated</span> &nbsp;<span class="t-muted">[rules-v1]</span>';
+    await logSep();
+    renderIntradayBoard(snapshot, prediction, requestedTarget);
+    renderTradeBoard(snapshot, prediction, sessionContext, requestedTarget);
+    renderStockDashboard(snapshot, prediction, sessionContext, requestedTarget);
+  }catch(err){
+    resetTradeBoard();
+    await log('<span class="t-red">[ERROR] Real data required</span> <span class="t-muted">'+escapeHtml(err.message)+'</span>');
+    await logSep();
+    await log('<span class="t-muted">For one-click live refresh, start `python3 serve_nifty50_app.py` and open the localhost URL it prints.</span>');
+    await log('<span class="t-muted">If you opened this HTML directly, use `Load Snapshot JSON` to choose a previously generated real snapshot.</span>');
+    updateAutoRefreshStatus(`${err.message}. Auto refresh will retry in 1 minute.`, 'error');
+    autoRefreshInFlight = false;
+    setRunButtonsState(null, false);
+    return;
+  }
+
+  const p = prediction;
+  const isUp = p.direction==='BULLISH';
+  const isDown = p.direction==='BEARISH';
+  const dirColor = isUp?'t-green':isDown?'t-red':'t-amber';
+  const dirArrow = isUp?'UP':isDown?'DOWN':'FLAT';
+
+  await log('<div class="t-head">MARKET OVERVIEW</div>');
+  await log('<span class="t-muted">Nifty50 Last Close:</span> <span class="t-bold">'+formatNum(snapshot.market?.last_close)+'</span>');
+  await log('<span class="t-muted">Previous Close:</span> <span class="t-bold">'+formatNum(snapshot.market?.previous_close)+'</span> &nbsp; <span class="'+((snapshot.market?.return_1d_pct || 0) >= 0 ? 't-green' : 't-red')+'">'+formatSignedPct(snapshot.market?.return_1d_pct)+'</span>');
+  await log('<span class="t-muted">Coverage:</span> <span class="t-bold">'+Math.round((snapshot.meta?.completeness || 0) * 100)+'%</span> &nbsp;<span class="t-muted">Mode: '+titleCase(snapshot.meta?.data_mode || 'unknown')+'</span>');
+  await log('<span class="t-muted">Session Context:</span> <span class="'+sessionContext.toneClass+'">'+escapeHtml(sessionContext.effectiveLabel)+'</span> &nbsp;<span class="t-muted">[Close date: '+escapeHtml(snapshot.meta?.as_of_date || 'n/a')+']</span>');
+  await logSep();
+
+  await log('<div class="t-head">GLOBAL SIGNALS</div>');
+  const sigGrid = (snapshot.global_signals || []).map(s=>{
+    const cls = s.signal==='bullish'?'bull':s.signal==='bearish'?'bear':'neut';
+    const lbl = s.signal==='bullish'?'BULL':s.signal==='bearish'?'BEAR':'NEUT';
+    return `<div class="signal-item"><span class="sig-name">${s.source}</span><span class="sig-badge ${cls}">${lbl}</span></div>`;
+  }).join('');
+  await log('<div class="signal-grid">'+sigGrid+'</div>');
+  await logSep();
+
+  await log('<div class="t-head">GEOPOLITICAL FACTORS</div>');
+  for(const g of (snapshot.geopolitical_factors || [])){
+    const c = g.impact==='positive'?'t-green':g.impact==='negative'?'t-red':'t-muted';
+    const sym = g.impact==='positive'?'+':g.impact==='negative'?'-':'o';
+    await log('<span class="'+c+'">'+sym+' '+g.factor+'</span> <span class="t-muted">- '+g.detail+'</span>');
+  }
+  await logSep();
+
+  await log('<div class="t-head">DOMESTIC FACTORS</div>');
+  for(const d2 of (snapshot.domestic_factors || [])){
+    const c = d2.impact==='positive'?'t-green':d2.impact==='negative'?'t-red':'t-muted';
+    const sym = d2.impact==='positive'?'+':d2.impact==='negative'?'-':'o';
+    await log('<span class="'+c+'">'+sym+' '+d2.factor+'</span> <span class="t-muted">- '+d2.detail+'</span>');
+  }
+  await logSep();
+
+  await log('<div class="t-head">AI PREDICTION - '+sessionContext.effectiveLabel.toUpperCase()+'</div>');
+
+  const confW = Math.round(p.confidence);
+  const predBoxHtml = `<div class="prediction-box">
+    <div class="pred-header">
+      <div class="pred-direction ${dirColor}">${dirArrow} ${p.direction} <span style="font-size:14px;font-weight:500">(${p.magnitude})</span></div>
+      <div class="pred-conf">Confidence: <strong>${confW}%</strong></div>
+    </div>
+    <div class="metric-row">
+      <div class="metric-block">
+        <div class="m-label">Expected Move</div>
+        <div class="m-val ${dirColor}">${formatSignedPct(p.expected_move_pct)}</div>
+        <div class="prog-bar"><div class="prog-fill" style="width:${Math.min(Math.abs(Number(p.expected_move_pct))*20,100)}%;background:${isUp?'#1D9E75':isDown?'#E24B4A':'#EF9F27'}"></div></div>
+      </div>
+      <div class="metric-block">
+        <div class="m-label">Model Confidence</div>
+        <div class="m-val">${confW}%</div>
+        <div class="prog-bar"><div class="prog-fill" style="width:${confW}%;background:#378ADD"></div></div>
+      </div>
+    </div>
+    <div class="levels-row">
+      <div class="level-item"><div class="lev-label">Target</div><div class="lev-val t-green">${formatNum(p.target_level)}</div></div>
+      <div class="level-item"><div class="lev-label">Support</div><div class="lev-val t-amber">${formatNum(p.support)}</div></div>
+      <div class="level-item"><div class="lev-label">Resistance</div><div class="lev-val t-red">${formatNum(p.resistance)}</div></div>
+    </div>
+  </div>`;
+  await log(predBoxHtml);
+  const resolvedPlan = resolveTradePlan(snapshot, p, sessionContext, requestedTarget);
+  await log('<br><span class="t-blue t-bold">TRADE SETUP:</span> <span class="t-bold">'+escapeHtml(resolvedPlan.plan.optionsBias || 'WAIT')+'</span>');
+  await log('<span class="t-muted">Entry Trigger:</span> <span class="t-bold">'+formatNum(resolvedPlan.plan.entryTrigger)+'</span>');
+  await log('<span class="t-muted">Target 1:</span> <span class="t-bold">'+formatNum(resolvedPlan.plan.target1)+'</span> &nbsp; <span class="t-muted">Target 2:</span> <span class="t-bold">'+formatNum(resolvedPlan.plan.target2)+'</span>');
+  await log('<span class="t-muted">Stop Loss:</span> <span class="t-bold">'+formatNum(resolvedPlan.plan.stopLoss)+'</span> &nbsp; <span class="t-muted">Invalidation:</span> <span class="t-bold">'+formatNum(resolvedPlan.plan.invalidation)+'</span>');
+  await log('<span class="t-muted">'+escapeHtml(resolvedPlan.plan.executionNote || '')+'</span>');
+
+  await log('<br><span class="t-bold">Rationale:</span> <span class="t-muted">'+p.rationale+'</span>');
+  await logSep();
+
+  await log('<span class="t-blue t-bold">Top Drivers:</span>');
+  for(const driver of p.topDrivers){
+    const driverColor = driver.impact >= 0 ? 't-green' : 't-red';
+    await log('  <span class="'+driverColor+'">-</span> <span class="t-muted">'+driver.name+' ('+formatDriverValue(driver)+')</span>');
+  }
+  await logSep();
+
+  await log('<span class="t-green t-bold">Key Catalysts:</span>');
+  if(p.key_catalysts.length){
+    for(const c of p.key_catalysts) await log('  <span class="t-green">-</span> <span class="t-muted">'+c+'</span>');
+  }else{
+    await log('  <span class="t-muted">No positive catalyst was derived from the loaded real dataset.</span>');
+  }
+  await log('<br><span class="t-red t-bold">Key Risks:</span>');
+  if(p.key_risks.length){
+    for(const r2 of p.key_risks) await log('  <span class="t-red">-</span> <span class="t-muted">'+r2+'</span>');
+  }else{
+    await log('  <span class="t-muted">No negative risk factor was derived from the loaded real dataset.</span>');
+  }
+  await logSep();
+
+  const sourceTags = (snapshot.sources_used || []).map(src=>'<span class="src-tag">'+src.name+'</span>').join('');
+  await log('<span class="t-muted">Sources: </span><div class="sources-row">'+sourceTags+'</div>');
+  if((snapshot.missing_inputs || []).length){
+    await log('<br><span class="t-amber">Missing inputs:</span> <span class="t-muted">'+snapshot.missing_inputs.join(', ')+'</span>');
+  }
+  await log('<br><span class="t-muted">NOTE: This is a rules-based research console. Use official data and backtests before trusting it in production.</span>');
+
+  updateAutoRefreshStatus(`Last refreshed ${formatDateTimeInIndia(snapshot.meta?.generated_at || new Date().toISOString())}. Next refresh in 1 minute.`);
+  autoRefreshInFlight = false;
+  setRunButtonsState(null, false);
+}
+</script>

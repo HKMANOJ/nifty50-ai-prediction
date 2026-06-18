@@ -1,0 +1,172 @@
+{
+  "meta": {
+    "generated_at": "2026-06-18T14:55:05.593058+00:00",
+    "data_mode": "real",
+    "notes": [
+      "All values in this file are derived from live source responses fetched during this run.",
+      "No synthetic or fallback market values are included."
+    ]
+  },
+  "us_markets": {
+    "provider": "Yahoo Finance",
+    "symbol": "^GSPC",
+    "date": "2026-06-18",
+    "value": 7496.9702,
+    "previous_value": 7420.1001,
+    "change_pct": 1.036
+  },
+  "brent": {
+    "provider": "Yahoo Finance",
+    "symbol": "BZ=F",
+    "date": "2026-06-18",
+    "value": 77.24,
+    "previous_value": 79.55,
+    "change_pct": -2.9038
+  },
+  "news_sentiment": {
+    "india": 0.052,
+    "global": -0.048
+  },
+  "geopolitical_factors": [
+    {
+      "factor": "Global risk coverage",
+      "impact": "neutral",
+      "detail": "Derived from live global-risk headline coverage. Article count: 100. Sentiment score: -0.048."
+    },
+    {
+      "factor": "Oil and commodity pressure",
+      "impact": "positive",
+      "detail": "Derived from Brent crude change and overlapping global commodity coverage. Article count: 100. Sentiment score: +0.968."
+    }
+  ],
+  "domestic_factors": [
+    {
+      "factor": "India macro and market coverage",
+      "impact": "neutral",
+      "detail": "Derived from live India-focused headline coverage. Article count: 150. Sentiment score: +0.052."
+    },
+    {
+      "factor": "US equity spillover",
+      "impact": "positive",
+      "detail": "Derived from the latest US equity move. Article count: 100. Sentiment score: +0.518."
+    }
+  ],
+  "article_counts": {
+    "india_market": 150,
+    "global_risk": 100
+  },
+  "headlines": {
+    "india_market": [
+      {
+        "title": "Bank of England freezes rates as US - Iran truce eases oil shock fears",
+        "url": "https://aa.com.tr/en/economy/bank-of-england-freezes-rates-as-us-iran-truce-eases-oil-shock-fears/3970797",
+        "published_at": "",
+        "source": "GDELT DOC 2.0 API"
+      },
+      {
+        "title": "SueWallSt Reminds SES AI Corporation Investors of the Pending Class Action Lawsuit With a Lead Plaintiff Deadline of June 26 , 2026",
+        "url": "http://www.prnewswire.com/news-releases/suewallst-reminds-ses-ai-corporation-investors-of-the-pending-class-action-lawsuit-with-a-lead-plaintiff-deadline-of-june-26-2026---ses-302803858.html",
+        "published_at": "",
+        "source": "GDELT DOC 2.0 API"
+      },
+      {
+        "title": "What prediction market trading is and why it gaining popularity",
+        "url": "https://www.stcatharinesstandard.ca/business/what-prediction-market-trading-is-and-why-its-gaining-popularity/article_a361c283-13ed-5656-b1ce-13fd1bc487fe.html",
+        "published_at": "",
+        "source": "GDELT DOC 2.0 API"
+      },
+      {
+        "title": "Emirados pro\u00edbem o uso de redes sociais por menores de 15 anos ; \u00e9 o 1\u00ba pa\u00eds \u00e1rabe a adotar restrio",
+        "url": "https://www.estadao.com.br/educacao/emirados-proibem-o-uso-de-redes-sociais-por-menores-de-15-anos-e-o-1-pais-arabe-a-tomar-tal-medida-npr/",
+        "published_at": "",
+        "source": "GDELT DOC 2.0 API"
+      },
+      {
+        "title": "Broad - Based Growth Drivers Lifted nLIGHT ( LASR ) in Q1",
+        "url": "https://finance.yahoo.com/markets/stocks/articles/broad-based-growth-drivers-lifted-140005067.html",
+        "published_at": "",
+        "source": "GDELT DOC 2.0 API"
+      }
+    ],
+    "global_risk": [
+      {
+        "title": "The Fed - June 16-17, 2026 FOMC Meeting - Federal Reserve (.gov)",
+        "url": "https://news.google.com/rss/articles/CBMiekFVX3lxTE8wajRNbjQxOGZzWmxHaDhEY3oyVUs3RnNja29rd0RjUmJrdlBMSWk2aklWb295Y1BNeHE2Nm16QlRwcHVfQ3RHWm9uUkFraVhoU1dpOXRvdXM0ckJQR0p4QWhXWkVNZUNBd0lraTZiNHF3b2tWaG9iTHh3?oc=5",
+        "published_at": "Wed, 17 Jun 2026 23:02:11 GMT",
+        "source": "Google News RSS"
+      },
+      {
+        "title": "Federal Reserve policymakers show support for rate hikes as Warsh reins in guidance - AP News",
+        "url": "https://news.google.com/rss/articles/CBMipAFBVV95cUxOQ1NBclF1MkF3bkJBNGNLbGpCaWVYMnNadFNpZk1wQjhnenhtMG0ya3FHbkhkdzJDTHB3MEtybmN6YzZlN29SUmpDekMxeUlPZzhJamYyaXVkVmJGV2dweGdJZ2NDdl9EdmhlWHlYaG43SFg4X3o1NXVfc2dMR05hMTI3N3F2b1ZTMlpBOGZ5TjhZVGNJSTNHVWpHaDFNc3A1NWw4Sg?oc=5",
+        "published_at": "Wed, 17 Jun 2026 21:54:00 GMT",
+        "source": "Google News RSS"
+      },
+      {
+        "title": "Federal Reserve holds interest rates steady as Trump\u2019s new chairman faces fresh inflation woes - NBC News",
+        "url": "https://news.google.com/rss/articles/CBMilAFBVV95cUxPdERIN3pDeThkLVR4YkNjUmF0WTlyR2RoZ0V4RzdxdDMxQlZJaEhPLXpBUXJ4VUsxZld1TTZ5Wk0xRXBMNHZ1dHBrbFVJM3FwQy1tUnZ4SU5VVTlxbldQcDZtNl9JRzdYUnRPaFR2TXAtWHJYWGZfUVRUWHVKRXAyVmlSMDFxcnRnRThlVGhkNURiVjhK?oc=5",
+        "published_at": "Wed, 17 Jun 2026 20:08:22 GMT",
+        "source": "Google News RSS"
+      },
+      {
+        "title": "Federal Reserve holds interest rates steady and hints at rate hike later this year - NPR",
+        "url": "https://news.google.com/rss/articles/CBMihgFBVV95cUxNS3NQY1lZdW5hdzBoUUpNYm5PVGRscEtwbGU4ZjlQRVZ5Rk8xempQVzg4QS1PUFpaanVDSEc3V1NoMFZsTVB6UXZxYjBLLVNLUDdIYm50VE1FXzA2Q2t0VGhNNkNsMm1DUFFiZ2tSZzQ1TktveWF5YlRla0MyVTlvN0RxWWdidw?oc=5",
+        "published_at": "Wed, 17 Jun 2026 18:34:51 GMT",
+        "source": "Google News RSS"
+      },
+      {
+        "title": "US Federal Reserve holds rates steady under new chair Warsh - Al Jazeera",
+        "url": "https://news.google.com/rss/articles/CBMipgFBVV95cUxOM3c5cXgydnhwSFlrWmlyVjJobnRCbFkxaHg2c3NtTEl6Z2VLSGNIMXN3dmlKS2JZSF9Gc2p1TTVrd1hEcVdxSzBRaU13RVh1eTJRLW1pRkp0cHdKbk9FSU5SZ2FncC1ZangzQzZkZjFSaHNRWm94TlNROExtSm56Zk1qckpwT1JweWVKV1daY0tUMk03eFZJakRpMjNBVzl5N1NEQzFn0gGrAUFVX3lxTE1wYkYxa2NtTktYZkMyQ3VCSG5vYkw3UkE1cGpqaTRwOXE1MVpsd1ZfbDA2X3lGOEF5WG51SHFBbEhXbWs1enFfS1k2ZWRDMzVUU21sT2RMbC04VkoxUXk0Z1pYMVpWejF0ZGNyaUpiVWxjLWZYWVVBU28tb082QWlwT29PX1o3ekFTUk1fdTdGb3drUm5FOEIzZEc3UGlCRjhaUDlsS3Y0Yk8wMA?oc=5",
+        "published_at": "Wed, 17 Jun 2026 19:48:09 GMT",
+        "source": "Google News RSS"
+      }
+    ]
+  },
+  "news_sources": {
+    "india_market": [
+      "GDELT DOC 2.0 API",
+      "Google News RSS"
+    ],
+    "global_risk": [
+      "Google News RSS"
+    ]
+  },
+  "provider_failures": {
+    "india_market": [],
+    "global_risk": [
+      "GDELT failed for global_risk: HTTP Error 429: Too Many Requests"
+    ]
+  },
+  "provenance": [
+    {
+      "provider": "GDELT DOC 2.0 API",
+      "query": "(\"india\" OR \"nifty\" OR \"sensex\" OR \"reserve bank of india\" OR \"rupee\" OR \"inflation\")",
+      "timespan": "3days",
+      "records": 50,
+      "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=%28%22india%22+OR+%22nifty%22+OR+%22sensex%22+OR+%22reserve+bank+of+india%22+OR+%22rupee%22+OR+%22inflation%22%29&mode=artlist&maxrecords=50&timespan=3days&sort=datedesc&format=jsonfeed"
+    },
+    {
+      "provider": "Google News RSS",
+      "query": "India stock market OR Nifty OR RBI OR rupee OR inflation",
+      "records": 100,
+      "url": "https://news.google.com/rss/search?q=India+stock+market+OR+Nifty+OR+RBI+OR+rupee+OR+inflation&hl=en-IN&gl=IN&ceid=IN%3Aen"
+    },
+    {
+      "provider": "Google News RSS",
+      "query": "war OR tariff OR sanctions OR oil OR inflation OR Federal Reserve",
+      "records": 100,
+      "url": "https://news.google.com/rss/search?q=war+OR+tariff+OR+sanctions+OR+oil+OR+inflation+OR+Federal+Reserve&hl=en-US&gl=US&ceid=US%3Aen"
+    },
+    {
+      "provider": "Yahoo Finance",
+      "symbol": "^GSPC",
+      "records": 23,
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/^GSPC?range=1mo&interval=1d"
+    },
+    {
+      "provider": "Yahoo Finance",
+      "symbol": "BZ=F",
+      "records": 23,
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/BZ=F?range=1mo&interval=1d"
+    }
+  ]
+}

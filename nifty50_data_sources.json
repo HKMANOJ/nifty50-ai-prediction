@@ -1,0 +1,417 @@
+{
+  "updated_at": "2026-05-29",
+  "market": "NIFTY 50",
+  "assumption": "Daily and next-session prediction for Indian equities, with world-news and macro context.",
+  "sources": [
+    {
+      "id": "nse_nifty50_history",
+      "category": "market_prices",
+      "priority": "core",
+      "provider": "NSE India / NSE Indices",
+      "use_for": [
+        "OHLC history",
+        "returns",
+        "volatility",
+        "lag features"
+      ],
+      "access": "Public historical CSV for research; licensed feed for production-scale/live use.",
+      "cadence": "Daily",
+      "reliability": "official",
+      "url": "https://www.nseindia.com/reports-indices-historical-index-data"
+    },
+    {
+      "id": "nse_india_vix",
+      "category": "volatility",
+      "priority": "core",
+      "provider": "NSE India",
+      "use_for": [
+        "risk regime",
+        "volatility state",
+        "event sensitivity"
+      ],
+      "access": "Public historical page",
+      "cadence": "Daily",
+      "reliability": "official",
+      "url": "https://www.nseindia.com/reports-indices-historical-vix"
+    },
+    {
+      "id": "nse_option_chain",
+      "category": "derivatives",
+      "priority": "core",
+      "provider": "NSE India",
+      "use_for": [
+        "put-call ratio",
+        "open interest",
+        "strike concentration",
+        "implied volatility"
+      ],
+      "access": "Public page with CSV download; use licensed access for production workflows.",
+      "cadence": "Intraday during market hours",
+      "reliability": "official",
+      "url": "https://www.nseindia.com/option-chain/"
+    },
+    {
+      "id": "nse_derivatives_archives",
+      "category": "derivatives",
+      "priority": "high",
+      "provider": "NSE India",
+      "use_for": [
+        "historical derivatives reports",
+        "contract-wise analytics",
+        "open interest backfills"
+      ],
+      "access": "Public archives",
+      "cadence": "Daily and monthly reports",
+      "reliability": "official",
+      "url": "https://www.nseindia.com/resources/historical-reports-capital-market-daily-monthly-archives-derivative-market"
+    },
+    {
+      "id": "nse_fii_dii",
+      "category": "institutional_flows",
+      "priority": "core",
+      "provider": "NSE India",
+      "use_for": [
+        "daily institutional flows",
+        "foreign versus domestic participation"
+      ],
+      "access": "Public page with CSV download",
+      "cadence": "Daily",
+      "reliability": "official_provisional",
+      "url": "https://www.nseindia.com/reports/fii-dii/"
+    },
+    {
+      "id": "nsdl_fpi_latest",
+      "category": "institutional_flows",
+      "priority": "high",
+      "provider": "NSDL",
+      "use_for": [
+        "confirmed FPI activity",
+        "cleaner foreign flow labels"
+      ],
+      "access": "Public reports page",
+      "cadence": "Daily reporting",
+      "reliability": "official",
+      "url": "https://pilot.fpi.nsdl.co.in/Reports/Latest.aspx"
+    },
+    {
+      "id": "nseix_gift_nifty",
+      "category": "global_signal",
+      "priority": "core",
+      "provider": "NSE International Exchange",
+      "use_for": [
+        "overnight gap signal",
+        "pre-open sentiment"
+      ],
+      "access": "Exchange site; live production usage may require market-data permissions.",
+      "cadence": "Near real time",
+      "reliability": "official",
+      "url": "https://www.nseix.com/"
+    },
+    {
+      "id": "yahoo_nsei_intraday",
+      "category": "intraday_chart",
+      "priority": "high",
+      "provider": "Yahoo Finance (public intraday chart API)",
+      "use_for": [
+        "1 minute candles",
+        "5 minute candles",
+        "live chart rendering",
+        "intraday action bias"
+      ],
+      "access": "Public unofficial chart API; validate and replace with licensed exchange feeds for production trading.",
+      "cadence": "Intraday during market hours and latest completed session after close",
+      "reliability": "third_party_public",
+      "url": "https://finance.yahoo.com/quote/%5ENSEI/chart"
+    },
+    {
+      "id": "nifty50_component_dashboard",
+      "category": "component_stocks",
+      "priority": "high",
+      "provider": "Nifty Indices constituent CSV + Yahoo Finance (public chart API)",
+      "use_for": [
+        "top 10 bullish NIFTY 50 stocks",
+        "top 10 bearish NIFTY 50 stocks",
+        "heavyweight watchlist",
+        "component strength dashboard"
+      ],
+      "access": "Universe membership from the official Nifty Indices CSV; live per-stock chart data from Yahoo Finance public endpoints.",
+      "cadence": "Intraday during market hours and latest completed session after close",
+      "reliability": "mixed_official_and_third_party_public",
+      "url": "https://niftyindices.com/indices/equity/broad-based-indices/nifty--50"
+    },
+    {
+      "id": "rbi_fbil_reference_rates",
+      "category": "fx",
+      "priority": "core",
+      "provider": "RBI / FBIL / NSE reference statistics",
+      "use_for": [
+        "USDINR features",
+        "currency pressure",
+        "macro regime"
+      ],
+      "access": "Public pages",
+      "cadence": "Daily",
+      "reliability": "official",
+      "url": "https://www.nseindia.com/report-detail/rbi-reference-rate-statistics"
+    },
+    {
+      "id": "nse_corporate_filings",
+      "category": "corporate_events",
+      "priority": "high",
+      "provider": "NSE India",
+      "use_for": [
+        "earnings dates",
+        "board meetings",
+        "corporate actions",
+        "company announcements"
+      ],
+      "access": "Public site",
+      "cadence": "Event driven",
+      "reliability": "official_dissemination_only",
+      "url": "https://www.nseindia.com/companies-listing/corporate-filings-application?id=allAnnouncements"
+    },
+    {
+      "id": "bse_rss",
+      "category": "corporate_events",
+      "priority": "medium",
+      "provider": "BSE",
+      "use_for": [
+        "corporate announcements",
+        "exchange notices",
+        "cross-checking disclosures"
+      ],
+      "access": "Public RSS",
+      "cadence": "Event driven",
+      "reliability": "official",
+      "url": "https://www.bseindia.com/rss-feed.html"
+    },
+    {
+      "id": "sebi_rss",
+      "category": "regulatory",
+      "priority": "medium",
+      "provider": "SEBI",
+      "use_for": [
+        "regulatory announcements",
+        "market rules",
+        "policy changes"
+      ],
+      "access": "Public RSS",
+      "cadence": "Event driven",
+      "reliability": "official",
+      "url": "https://www.sebi.gov.in/rss.html"
+    },
+    {
+      "id": "rbi_rss",
+      "category": "policy",
+      "priority": "high",
+      "provider": "Reserve Bank of India",
+      "use_for": [
+        "policy announcements",
+        "liquidity actions",
+        "press releases"
+      ],
+      "access": "Public RSS",
+      "cadence": "Event driven",
+      "reliability": "official",
+      "url": "https://www.rbi.org.in/Scripts/rss.aspx"
+    },
+    {
+      "id": "pib_rss",
+      "category": "policy",
+      "priority": "medium",
+      "provider": "Press Information Bureau, Government of India",
+      "use_for": [
+        "government policy announcements",
+        "official release monitoring"
+      ],
+      "access": "Public RSS",
+      "cadence": "Event driven",
+      "reliability": "official",
+      "url": "https://www.pib.gov.in/ViewRss.aspx?lang=1&reg=1"
+    },
+    {
+      "id": "mospi_api",
+      "category": "india_macro",
+      "priority": "high",
+      "provider": "MoSPI",
+      "use_for": [
+        "official Indian statistics",
+        "CPI and economic-release context"
+      ],
+      "access": "Official API / portal",
+      "cadence": "Release schedule dependent",
+      "reliability": "official",
+      "url": "https://www.api.mospi.gov.in/"
+    },
+    {
+      "id": "data_gov_in",
+      "category": "india_macro",
+      "priority": "medium",
+      "provider": "Open Government Data Platform India",
+      "use_for": [
+        "official datasets across ministries",
+        "supplementary policy and macro feeds"
+      ],
+      "access": "API key available through portal",
+      "cadence": "Dataset dependent",
+      "reliability": "official",
+      "url": "https://data.gov.in/"
+    },
+    {
+      "id": "gdelt_doc_api",
+      "category": "world_news",
+      "priority": "high",
+      "provider": "GDELT",
+      "use_for": [
+        "global article volume",
+        "multilingual event detection",
+        "topic tracking"
+      ],
+      "access": "Public API",
+      "cadence": "Frequent / near real time",
+      "reliability": "research_grade_public",
+      "url": "https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/"
+    },
+    {
+      "id": "gdelt_context_api",
+      "category": "world_news",
+      "priority": "medium",
+      "provider": "GDELT",
+      "use_for": [
+        "sentence-level context",
+        "noise reduction for sentiment features"
+      ],
+      "access": "Public API",
+      "cadence": "Frequent / near real time",
+      "reliability": "research_grade_public",
+      "url": "https://blog.gdeltproject.org/announcing-the-gdelt-context-2-0-api/"
+    },
+    {
+      "id": "gdelt_gkg",
+      "category": "world_news",
+      "priority": "medium",
+      "provider": "GDELT",
+      "use_for": [
+        "entity extraction",
+        "theme tagging",
+        "event graph features"
+      ],
+      "access": "Public documentation and feeds",
+      "cadence": "Frequent",
+      "reliability": "research_grade_public",
+      "url": "https://data.gdeltproject.org/documentation/GDELT-Global_Knowledge_Graph_Codebook-V2.1.pdf"
+    },
+    {
+      "id": "newsapi",
+      "category": "world_news",
+      "priority": "medium",
+      "provider": "NewsAPI",
+      "use_for": [
+        "easy development-time article search",
+        "publisher filtering",
+        "headline retrieval"
+      ],
+      "access": "API key required",
+      "cadence": "Frequent",
+      "reliability": "third_party_api",
+      "url": "https://newsapi.org/docs"
+    },
+    {
+      "id": "google_news_rss",
+      "category": "world_news",
+      "priority": "high",
+      "provider": "Google News RSS",
+      "use_for": [
+        "headline retrieval",
+        "live public news fallback",
+        "topic monitoring"
+      ],
+      "access": "Public RSS without key",
+      "cadence": "Frequent",
+      "reliability": "public_aggregator",
+      "url": "https://news.google.com/rss"
+    },
+    {
+      "id": "fred_api",
+      "category": "global_macro",
+      "priority": "medium",
+      "provider": "Federal Reserve Bank of St. Louis",
+      "use_for": [
+        "rates",
+        "spreads",
+        "macro releases",
+        "risk proxies"
+      ],
+      "access": "Public API with key registration",
+      "cadence": "Series dependent",
+      "reliability": "official_aggregator",
+      "url": "https://fred.stlouisfed.org/docs/api/fred/overview.html"
+    },
+    {
+      "id": "yahoo_finance_chart",
+      "category": "global_market_context",
+      "priority": "medium",
+      "provider": "Yahoo Finance",
+      "use_for": [
+        "S&P 500 daily move",
+        "Brent crude daily move",
+        "no-key public market context"
+      ],
+      "access": "Public chart endpoint",
+      "cadence": "Daily / near real time",
+      "reliability": "public_market_data",
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=1mo&interval=1d"
+    },
+    {
+      "id": "world_signals_bundle",
+      "category": "world_news",
+      "priority": "core",
+      "provider": "Mixed live public sources",
+      "use_for": [
+        "global risk snapshot",
+        "headline sentiment",
+        "US market and Brent context"
+      ],
+      "access": "Generated locally from live public APIs and feeds",
+      "cadence": "On demand",
+      "reliability": "derived_from_live_sources",
+      "url": "https://news.google.com/rss"
+    },
+    {
+      "id": "world_bank_indicators",
+      "category": "global_macro",
+      "priority": "low",
+      "provider": "World Bank",
+      "use_for": [
+        "long-run regime features",
+        "country indicators",
+        "development context"
+      ],
+      "access": "Public API without key",
+      "cadence": "Indicator dependent",
+      "reliability": "official",
+      "url": "https://datahelpdesk.worldbank.org/knowledgebase/articles/889392"
+    },
+    {
+      "id": "eia_open_data",
+      "category": "commodities",
+      "priority": "medium",
+      "provider": "U.S. Energy Information Administration",
+      "use_for": [
+        "oil and energy shocks",
+        "energy-price macro context"
+      ],
+      "access": "Public API",
+      "cadence": "Series dependent",
+      "reliability": "official",
+      "url": "https://www.eia.gov/opendata/documentation/"
+    }
+  ],
+  "warnings": [
+    "Do not use an LLM as the source of live market truth.",
+    "Public exchange pages are useful for prototypes but may have terms, throttling, or stability limits.",
+    "NSE FII/FPI data is provisional; use NSDL or CDSL for final confirmed numbers where needed.",
+    "The HTML demo mentions SGX Nifty, but current offshore signal tracking should use GIFT Nifty.",
+    "News sentiment adds noise unless you filter by source quality, entity, topic, and time window."
+  ]
+}
