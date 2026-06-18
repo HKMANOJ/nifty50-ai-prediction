@@ -41,6 +41,7 @@ DII_KEYS = ("dii_net_crore", "DII Net", "Net DII")
 CHANGE_PCT_KEYS = ("change_pct", "Change %", "% Change", "Percent Change")
 LAST_KEYS = ("last", "Last", "LAST", "Close", "close")
 USDINR_KEYS = ("reference_rate", "Reference Rate", "USDINR", "Rate", "Close")
+OPTION_VOLUME_FILE = "nifty_options_volume.csv"
 REQUIRED_INPUT_FILES = (
     "nifty50_history.csv",
     "india_vix.csv",
@@ -100,6 +101,27 @@ def first_value(row: dict[str, str], keys: tuple[str, ...]) -> str | None:
     for key in keys:
         if key in row and row[key] not in (None, ""):
             return row[key]
+    return None
+
+
+def normalize_csv_key(value: Any) -> str:
+    return " ".join(str(value or "").replace("\ufeff", "").split()).strip().lower()
+
+
+def option_field(row: dict[str, str], aliases: tuple[str, ...]) -> str | None:
+    normalized = {normalize_csv_key(key): value for key, value in row.items()}
+    for alias in aliases:
+        value = normalized.get(normalize_csv_key(alias))
+        if value not in (None, ""):
+            return value
+
+    alias_tokens = [normalize_csv_key(alias).split() for alias in aliases]
+    for key, value in normalized.items():
+        if value in (None, ""):
+            continue
+        for tokens in alias_tokens:
+            if tokens and all(token in key for token in tokens):
+                return value
     return None
 
 
@@ -555,6 +577,149 @@ def load_component_dashboard(path: Path) -> tuple[dict[str, Any] | None, FileSta
     )
 
 
+def weighted_average(rows: list[dict[str, Any]], value_key: str, weight_key: str) -> float | None:
+    total_weight = 0.0
+    total = 0.0
+    for row in rows:
+        value = parse_float(row.get(value_key))
+        weight = parse_float(row.get(weight_key))
+        if value is None or weight is None or weight <= 0:
+            continue
+        total += value * weight
+        total_weight += weight
+    if total_weight <= 0:
+        return None
+    return total / total_weight
+
+
+def option_level(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "strike": row.get("strike"),
+        "ltp": row.get("ltp"),
+        "change_pct": row.get("change_pct"),
+        "volume": row.get("volume"),
+        "open_interest": row.get("open_interest"),
+        "expiry": row.get("expiry"),
+    }
+
+
+def load_option_volume(path: Path) -> tuple[dict[str, Any] | None, FileStatus]:
+    if not path.exists():
+        return None, FileStatus(path.name, False, note="Missing optional NSE option-volume CSV")
+
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    normalized_rows: list[dict[str, Any]] = []
+    for row in rows:
+        symbol = str(option_field(row, ("symbol",)) or "").strip().upper()
+        option_type = str(option_field(row, ("option type",)) or "").strip().lower()
+        strike = parse_float(option_field(row, ("strike price",)))
+        volume = parse_float(option_field(row, ("volume (contracts)", "volume")))
+        if symbol != "NIFTY" or strike is None or volume is None:
+            continue
+
+        if option_type.startswith("c"):
+            side = "call"
+        elif option_type.startswith("p"):
+            side = "put"
+        else:
+            continue
+
+        normalized_rows.append(
+            {
+                "instrument_type": str(option_field(row, ("instrument type",)) or "").strip(),
+                "symbol": symbol,
+                "expiry": str(option_field(row, ("expiry date",)) or "").strip(),
+                "option_type": side,
+                "strike": round_or_none(strike),
+                "ltp": round_or_none(parse_float(option_field(row, ("ltp",)))),
+                "change_pct": round_or_none(parse_float(option_field(row, ("%chng", "% chng", "change pct")))),
+                "volume": int(volume),
+                "value_lakhs": round_or_none(parse_float(option_field(row, ("value* (₹ lakhs)", "value lakhs", "value")))),
+                "open_interest": int(parse_float(option_field(row, ("open interest (contracts)", "open interest"))) or 0),
+                "underlying": round_or_none(parse_float(option_field(row, ("value of underlying", "underlying")))),
+            }
+        )
+
+    if not normalized_rows:
+        return None, FileStatus(path.name, True, rows=0, note="No valid NIFTY option-volume rows")
+
+    puts = [row for row in normalized_rows if row["option_type"] == "put"]
+    calls = [row for row in normalized_rows if row["option_type"] == "call"]
+    underlying_values = [row["underlying"] for row in normalized_rows if row.get("underlying") is not None]
+    underlying = round_or_none(mean(underlying_values)) if underlying_values else None
+
+    top_puts = sorted(puts, key=lambda row: row.get("volume") or 0, reverse=True)[:10]
+    top_calls = sorted(calls, key=lambda row: row.get("volume") or 0, reverse=True)[:10]
+    total_put_volume = sum(row.get("volume") or 0 for row in puts)
+    total_call_volume = sum(row.get("volume") or 0 for row in calls)
+    total_put_oi = sum(row.get("open_interest") or 0 for row in puts)
+    total_call_oi = sum(row.get("open_interest") or 0 for row in calls)
+
+    put_support_rows = [row for row in puts if underlying is None or (row.get("strike") or 0) <= underlying]
+    call_resistance_rows = [row for row in calls if underlying is None or (row.get("strike") or 0) >= underlying]
+    put_support = sorted(put_support_rows, key=lambda row: row.get("volume") or 0, reverse=True)[:5]
+    call_resistance = sorted(call_resistance_rows, key=lambda row: row.get("volume") or 0, reverse=True)[:5]
+    nearest_put = max(put_support_rows, key=lambda row: row.get("strike") or 0, default=None)
+    nearest_call = min(call_resistance_rows, key=lambda row: row.get("strike") or 0, default=None)
+    strongest_put = top_puts[0] if top_puts else None
+    strongest_call = top_calls[0] if top_calls else None
+
+    put_change = weighted_average(puts, "change_pct", "volume")
+    call_change = weighted_average(calls, "change_pct", "volume")
+    pcr_volume = (total_put_volume / total_call_volume) if total_call_volume else None
+    pcr_oi = (total_put_oi / total_call_oi) if total_call_oi else None
+
+    hints: list[str] = []
+    if strongest_put and underlying is not None:
+        strike = strongest_put.get("strike")
+        if strike is not None and underlying >= strike and (put_change is None or put_change < 0):
+            hints.append(f"Heavy put activity at {strike:g} is below/near spot and put premium is falling, so it is treated as support unless broken.")
+        elif strike is not None and underlying < strike:
+            hints.append(f"Spot is below the strongest put strike {strike:g}; that put wall has already been crossed.")
+    if strongest_call and underlying is not None:
+        strike = strongest_call.get("strike")
+        if strike is not None and underlying <= strike and (call_change is None or call_change < 0):
+            hints.append(f"Heavy call activity at {strike:g} is above/near spot and call premium is falling, so it is treated as resistance unless broken.")
+
+    return (
+        {
+            "provider": "NSE Most Active index options by volume CSV",
+            "symbol": "NIFTY",
+            "rows": len(normalized_rows),
+            "underlying": underlying,
+            "data_scope": "calls_and_puts" if calls and puts else "puts_only" if puts else "calls_only",
+            "totals": {
+                "put_volume": total_put_volume,
+                "call_volume": total_call_volume,
+                "put_open_interest": total_put_oi,
+                "call_open_interest": total_call_oi,
+                "pcr_volume": round_or_none(pcr_volume, 3),
+                "pcr_open_interest": round_or_none(pcr_oi, 3),
+                "put_volume_weighted_change_pct": round_or_none(put_change),
+                "call_volume_weighted_change_pct": round_or_none(call_change),
+            },
+            "breakpoints": {
+                "put_support": [option_level(row) for row in put_support],
+                "call_resistance": [option_level(row) for row in call_resistance],
+                "nearest_put_support": option_level(nearest_put) if nearest_put else None,
+                "nearest_call_resistance": option_level(nearest_call) if nearest_call else None,
+                "strongest_put": option_level(strongest_put) if strongest_put else None,
+                "strongest_call": option_level(strongest_call) if strongest_call else None,
+            },
+            "top_puts": [option_level(row) for row in top_puts],
+            "top_calls": [option_level(row) for row in top_calls],
+            "hints": hints,
+            "notes": [
+                "High put/call volume is treated as an activity breakpoint, not as guaranteed buying or writing.",
+                "Put-heavy levels below spot can act as support; call-heavy levels above spot can act as resistance.",
+            ],
+        },
+        FileStatus(path.name, True, rows=len(normalized_rows), note="Loaded optional NSE option-volume breakpoints"),
+    )
+
+
 def source_lookup() -> dict[str, dict[str, Any]]:
     return {item["id"]: item for item in load_sources() if "id" in item}
 
@@ -572,6 +737,7 @@ def build_sources_used(
         "world_signals.json": "world_signals_bundle",
         "nifty50_intraday.json": "yahoo_nsei_intraday",
         "nifty50_components_live.json": "nifty50_component_dashboard",
+        OPTION_VOLUME_FILE: "nse_option_volume_breakpoints",
     }
 
     sources_used: list[dict[str, Any]] = []
@@ -623,6 +789,7 @@ def build_snapshot_from_inputs(input_dir: Path) -> dict[str, Any]:
     world_signals, world_status = load_world_signals(input_dir / "world_signals.json")
     intraday, intraday_status = load_intraday_data(input_dir / "nifty50_intraday.json")
     stock_dashboard, stock_dashboard_status = load_component_dashboard(input_dir / "nifty50_components_live.json")
+    options_volume, options_volume_status = load_option_volume(input_dir / OPTION_VOLUME_FILE)
 
     file_statuses = {
         price_status.filename: price_status,
@@ -636,6 +803,8 @@ def build_snapshot_from_inputs(input_dir: Path) -> dict[str, Any]:
         file_statuses[intraday_status.filename] = intraday_status
     if stock_dashboard_status.exists and stock_dashboard is not None:
         file_statuses[stock_dashboard_status.filename] = stock_dashboard_status
+    if options_volume_status.exists and options_volume is not None:
+        file_statuses[options_volume_status.filename] = options_volume_status
 
     lookup = source_lookup()
     datasets = {
@@ -739,6 +908,7 @@ def build_snapshot_from_inputs(input_dir: Path) -> dict[str, Any]:
         },
         "intraday": intraday,
         "stock_dashboard": stock_dashboard,
+        "options_volume": options_volume,
         "missing_inputs": [],
         "sources_used": build_sources_used(file_statuses, lookup),
     }

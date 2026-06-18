@@ -2,7 +2,7 @@
   "provider": "Yahoo Finance intraday chart API",
   "symbol": "^NSEI",
   "market_timezone": "Asia/Kolkata",
-  "generated_at": "2026-06-18T14:54:38.123531+00:00",
+  "generated_at": "2026-06-18T16:35:37.021778+00:00",
   "as_of_utc": "2026-06-18T10:00:00+00:00",
   "last_price": 24168.0,
   "previous_close": 24085.7,

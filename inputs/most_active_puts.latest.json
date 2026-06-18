@@ -1,0 +1,144 @@
+{
+  "rows": [
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 24100.0,
+      "ltp": 77.8,
+      "volume": 2703286,
+      "oi": 104080,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 24000.0,
+      "ltp": 47.0,
+      "volume": 2190561,
+      "oi": 149357,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 24050.0,
+      "ltp": 60.3,
+      "volume": 1445359,
+      "oi": 65017,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23900.0,
+      "ltp": 28.2,
+      "volume": 1220617,
+      "oi": 88721,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23800.0,
+      "ltp": 16.6,
+      "volume": 968598,
+      "oi": 86194,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 24150.0,
+      "ltp": 98.05,
+      "volume": 926786,
+      "oi": 38654,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 24200.0,
+      "ltp": 122.75,
+      "volume": 836278,
+      "oi": 49556,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23000.0,
+      "ltp": 2.25,
+      "volume": 833929,
+      "oi": 122934,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23700.0,
+      "ltp": 10.45,
+      "volume": 798108,
+      "oi": 73813,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23500.0,
+      "ltp": 5.1,
+      "volume": 746115,
+      "oi": 118488,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23950.0,
+      "ltp": 36.3,
+      "volume": 728121,
+      "oi": 42330,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23600.0,
+      "ltp": 7.05,
+      "volume": 617827,
+      "oi": 74714,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23850.0,
+      "ltp": 21.45,
+      "volume": 570332,
+      "oi": 31851,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23300.0,
+      "ltp": 3.3,
+      "volume": 545941,
+      "oi": 81638,
+      "underlying": 24168.0
+    },
+    {
+      "symbol": "NIFTY",
+      "type": "PUT",
+      "strikeOrExpiry": 23400.0,
+      "ltp": 4.3,
+      "volume": 475868,
+      "oi": 101039,
+      "underlying": 24168.0
+    }
+  ],
+  "total_contracts": 15,
+  "generated_at": "2026-06-18T22:05:35.042824",
+  "data_scope": "puts",
+  "source": "NSE (API or CSV fallback)",
+  "symbol": "NIFTY"
+}

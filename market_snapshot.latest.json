@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-06-18T14:55:05.707562+00:00",
+    "generated_at": "2026-06-18T16:35:58.615661+00:00",
     "as_of_date": "2026-06-18",
     "data_mode": "real",
     "completeness": 1.0,
@@ -18,15 +18,15 @@
     "volatility_20d_pct": 0.77
   },
   "numeric_signals": {
-    "gift_nifty_change_pct": -0.4,
+    "gift_nifty_change_pct": -0.62,
     "india_vix_change_pct": -3.94,
     "fii_net_crore": -1025.2,
     "dii_net_crore": 3516.81,
     "usd_inr_change_pct": -0.1,
-    "us_markets_change_pct": 1.036,
-    "brent_change_pct": -2.9038,
-    "news_sentiment_india": 0.052,
-    "news_sentiment_global": -0.048
+    "us_markets_change_pct": 1.0075,
+    "brent_change_pct": -2.3382,
+    "news_sentiment_india": 0.055,
+    "news_sentiment_global": -0.057
   },
   "global_signals": [
     {
@@ -64,24 +64,24 @@
     {
       "factor": "Global risk coverage",
       "impact": "neutral",
-      "detail": "Derived from live global-risk headline coverage. Article count: 100. Sentiment score: -0.048."
+      "detail": "Derived from live global-risk headline coverage. Article count: 100. Sentiment score: -0.057."
     },
     {
       "factor": "Oil and commodity pressure",
       "impact": "positive",
-      "detail": "Derived from Brent crude change and overlapping global commodity coverage. Article count: 100. Sentiment score: +0.968."
+      "detail": "Derived from Brent crude change and overlapping global commodity coverage. Article count: 100. Sentiment score: +0.779."
     }
   ],
   "domestic_factors": [
     {
       "factor": "India macro and market coverage",
       "impact": "neutral",
-      "detail": "Derived from live India-focused headline coverage. Article count: 150. Sentiment score: +0.052."
+      "detail": "Derived from live India-focused headline coverage. Article count: 100. Sentiment score: +0.055."
     },
     {
       "factor": "US equity spillover",
       "impact": "positive",
-      "detail": "Derived from the latest US equity move. Article count: 100. Sentiment score: +0.518."
+      "detail": "Derived from the latest US equity move. Article count: 100. Sentiment score: +0.504."
     }
   ],
   "news": {
@@ -120,40 +120,39 @@
       ],
       "india_market": [
         {
-          "title": "Bank of England freezes rates as US - Iran truce eases oil shock fears",
-          "url": "https://aa.com.tr/en/economy/bank-of-england-freezes-rates-as-us-iran-truce-eases-oil-shock-fears/3970797",
-          "published_at": "",
-          "source": "GDELT DOC 2.0 API"
+          "title": "Indian stock markets remain closed on account of Good Friday | Akashvani News - Newsonair",
+          "url": "https://news.google.com/rss/articles/CBMijwFBVV95cUxNaHFzTXo5azNDUkNSNG1zbTJiQTFFMnZjUk5tbi05a0ROUzB0NnNMVEpIXzkyTVFPT1B5NWFTMHh6VDRYaTJxcmdTcS1LUlhaSWJWQkxCaDlnWV9abU5ibEZaS2ZBSnZhRktUOTc2aXhXTTJxVURaRElHWDhScUFkZjdDSlQzMWxsdExLaDlXbw?oc=5",
+          "published_at": "Thu, 18 Jun 2026 12:16:37 GMT",
+          "source": "Google News RSS"
         },
         {
-          "title": "SueWallSt Reminds SES AI Corporation Investors of the Pending Class Action Lawsuit With a Lead Plaintiff Deadline of June 26 , 2026",
-          "url": "http://www.prnewswire.com/news-releases/suewallst-reminds-ses-ai-corporation-investors-of-the-pending-class-action-lawsuit-with-a-lead-plaintiff-deadline-of-june-26-2026---ses-302803858.html",
-          "published_at": "",
-          "source": "GDELT DOC 2.0 API"
+          "title": "India\u2019s largest stock exchange files for IPO as mega-listings gather pace - CNBC",
+          "url": "https://news.google.com/rss/articles/CBMicEFVX3lxTE5qLWh2ZF91aVkyQzdHS0llUkNTTlFNdmQyVVFDRlRLWGlIeHQ5QnRwcFYyX3dOSjAtUnJyNEM2V29xaUZHV0lHc09WRzJ1WGM4MEtfRndNcHF2VFVBbUluTzIyYmhVNUVyZmJ3RUlaU2bSAXZBVV95cUxQVTAwUDY1YWp1ZnJ4RXFZeEpBNWktbzBLbUtNWlBnMVBoY3c2aFk2Z1Y5eS0yNjQ2cWdsdFpyR0ZISlpNcVBFSjk0VlBwZ0NiQ2RTZzBCbkRncDh5YUVmczhVMUpmTkFuOHpRMGVFdkZYSkJVQVBB?oc=5",
+          "published_at": "Thu, 18 Jun 2026 02:50:00 GMT",
+          "source": "Google News RSS"
         },
         {
-          "title": "What prediction market trading is and why it gaining popularity",
-          "url": "https://www.stcatharinesstandard.ca/business/what-prediction-market-trading-is-and-why-its-gaining-popularity/article_a361c283-13ed-5656-b1ce-13fd1bc487fe.html",
-          "published_at": "",
-          "source": "GDELT DOC 2.0 API"
+          "title": "India stocks higher at close of trade; Nifty 50 up 0.34% - Investing.com",
+          "url": "https://news.google.com/rss/articles/CBMirwFBVV95cUxOdlpWbDVyaWUxN29CWEp0b1Q5U1dITlRzelU1dnhLUTE5czlwc3VLWnBVYTktTlptWE9DelltYXM2akVFM1FMTngzVjJ0a3Y3cGVTcVQ0SUw0R0VMUzdmN01KYUlrV2lHWnE0YmJ1SE5ZM05nNVlkXzB3SnBHalpfcEZBM2NoaVV5d2lxWjh1TGZNMWZaVmhYQ0FWOG51Zi1hRUJIcEZ3MTZxX3FRZ3hj?oc=5",
+          "published_at": "Thu, 18 Jun 2026 10:31:58 GMT",
+          "source": "Google News RSS"
         },
         {
-          "title": "Emirados pro\u00edbem o uso de redes sociais por menores de 15 anos ; \u00e9 o 1\u00ba pa\u00eds \u00e1rabe a adotar restrio",
-          "url": "https://www.estadao.com.br/educacao/emirados-proibem-o-uso-de-redes-sociais-por-menores-de-15-anos-e-o-1-pais-arabe-a-tomar-tal-medida-npr/",
-          "published_at": "",
-          "source": "GDELT DOC 2.0 API"
+          "title": "Share Market Today: Nifty 50, Bank Nifty Prediction | June 18, 2026 - Liquide Blog",
+          "url": "https://news.google.com/rss/articles/CBMigAFBVV95cUxPUzBrZUg1NVl2Q2paa2pPUUp6QmRwSi03clB2S05tNDNMY1Y1Z0Q3YXIzZXFob2VuVHR3a0Z2U3ZodFVCN29uUmxMZDVqU2ljQmlKbktnLXlMbmZWNHg0R1c5cFdpQlJFYUVjc2N5M3RUaGE3bTdSUFRlRXVGQ2h6aQ?oc=5",
+          "published_at": "Thu, 18 Jun 2026 11:55:19 GMT",
+          "source": "Google News RSS"
         },
         {
-          "title": "Broad - Based Growth Drivers Lifted nLIGHT ( LASR ) in Q1",
-          "url": "https://finance.yahoo.com/markets/stocks/articles/broad-based-growth-drivers-lifted-140005067.html",
-          "published_at": "",
-          "source": "GDELT DOC 2.0 API"
+          "title": "Nifty 50, Sensex prediction today: Check how Indian stock market is expected to trade on 18 June after US Fed policy - Mint",
+          "url": "https://news.google.com/rss/articles/CBMikgJBVV95cUxPUks5T2pJSmtBdFZiY0pnUjE4QmRRVk93R21seF8yOWwyZGN1RnJSLVEtaXN4WDl2OHV0ODNwVURPaWUzRGpyMGp3dXNiQ0ZaV2VpQ2hJTXYzNHZ5cGJMU1hnTnJyN2Yzc1BFaF82dWVpbFducmd4U3ZWMTZSeGtuYXprelozblB5SWQyaFRFcHRjZ3d0MkxvbmNIU1Y2YTdWMnM0R0l0QlhpN3N1UzMtcU5Cb1JYZVRZT1NhMlBuTXZHS1N1bG94ek90RzZ1eTlubjhxbHFzSjN4UU1VRGNtTVM2Q0F2b21nNDJJRkhWUGE4RU5YdDFzcVRKNEFNVl9vdVREcExWYmFtN2dpa2VRV3lR0gGXAkFVX3lxTE8tVWlRUjY0d2V3WnkzemxfbkowSWkxR096dnhqOGc1ZUtna0l1NDY3SEhweDhqXzNRN1hNLWotV05fRElmTC03T2pfWl82TlJHWEJxUGJhY2U3enBYUF9Vbnp4RG9xeDVtMlhsY0hhaDc4ejMwZm9lcUk0Tk9WcDA1NEsySERITm94cEYtM2M2S0FyWW4zNm9STlJxdGFCVmFLTXVmdGlpcmNmZWlscVBXSzBvZWRpRlplYjlTbFpGWENYcUJJY2JWZ2daWGwxcVNuM3RtSU9Ka05yaVR2eTlkeVpRck9aMXVUci10OHFsSnZxb2I5SXJwcV8wX2JwWEtKT1h3bFhQVGpERWNRVHcwU1kwV0NnYw?oc=5",
+          "published_at": "Thu, 18 Jun 2026 02:01:46 GMT",
+          "source": "Google News RSS"
         }
       ]
     },
     "sources": {
       "india_market": [
-        "GDELT DOC 2.0 API",
         "Google News RSS"
       ],
       "global_risk": [
@@ -161,9 +160,11 @@
       ]
     },
     "provider_failures": {
-      "india_market": [],
+      "india_market": [
+        "GDELT failed for india_market: <urlopen error _ssl.c:1063: The handshake operation timed out>"
+      ],
       "global_risk": [
-        "GDELT failed for global_risk: HTTP Error 429: Too Many Requests"
+        "GDELT failed for global_risk: <urlopen error _ssl.c:1063: The handshake operation timed out>"
       ]
     }
   },
@@ -171,7 +172,7 @@
     "provider": "Yahoo Finance intraday chart API",
     "symbol": "^NSEI",
     "market_timezone": "Asia/Kolkata",
-    "generated_at": "2026-06-18T14:54:38.123531+00:00",
+    "generated_at": "2026-06-18T16:35:37.021778+00:00",
     "as_of_utc": "2026-06-18T10:00:00+00:00",
     "last_price": 24168.0,
     "previous_close": 24085.7,
@@ -7738,7 +7739,7 @@
   "stock_dashboard": {
     "provider": "Nifty Indices constituent CSV + Yahoo Finance public chart API",
     "universe": "NIFTY 50",
-    "generated_at": "2026-06-18T14:54:45.025590+00:00",
+    "generated_at": "2026-06-18T16:35:43.018927+00:00",
     "coverage": {
       "requested": 50,
       "loaded": 50,
@@ -13557,6 +13558,176 @@
       "Live component signals are derived from Yahoo Finance 5 minute chart data for each NIFTY 50 stock."
     ]
   },
+  "options_volume": {
+    "provider": "NSE Most Active index options by volume CSV",
+    "symbol": "NIFTY",
+    "rows": 20,
+    "underlying": 24168.0,
+    "data_scope": "puts_only",
+    "totals": {
+      "put_volume": 17567459,
+      "call_volume": 0,
+      "put_open_interest": 1431635,
+      "call_open_interest": 0,
+      "pcr_volume": null,
+      "pcr_open_interest": null,
+      "put_volume_weighted_change_pct": -58.8,
+      "call_volume_weighted_change_pct": null
+    },
+    "breakpoints": {
+      "put_support": [
+        {
+          "strike": 24100.0,
+          "ltp": 77.8,
+          "change_pct": -51.77,
+          "volume": 2703286,
+          "open_interest": 104080,
+          "expiry": "23-Jun-2026"
+        },
+        {
+          "strike": 24000.0,
+          "ltp": 47.0,
+          "change_pct": -58.97,
+          "volume": 2190561,
+          "open_interest": 149357,
+          "expiry": "23-Jun-2026"
+        },
+        {
+          "strike": 24050.0,
+          "ltp": 60.3,
+          "change_pct": -55.78,
+          "volume": 1445359,
+          "open_interest": 65017,
+          "expiry": "23-Jun-2026"
+        },
+        {
+          "strike": 23900.0,
+          "ltp": 28.2,
+          "change_pct": -63.98,
+          "volume": 1220617,
+          "open_interest": 88721,
+          "expiry": "23-Jun-2026"
+        },
+        {
+          "strike": 23800.0,
+          "ltp": 16.6,
+          "change_pct": -68.41,
+          "volume": 968598,
+          "open_interest": 86194,
+          "expiry": "23-Jun-2026"
+        }
+      ],
+      "call_resistance": [],
+      "nearest_put_support": {
+        "strike": 24150.0,
+        "ltp": 98.05,
+        "change_pct": -48.04,
+        "volume": 926786,
+        "open_interest": 38654,
+        "expiry": "23-Jun-2026"
+      },
+      "nearest_call_resistance": null,
+      "strongest_put": {
+        "strike": 24100.0,
+        "ltp": 77.8,
+        "change_pct": -51.77,
+        "volume": 2703286,
+        "open_interest": 104080,
+        "expiry": "23-Jun-2026"
+      },
+      "strongest_call": null
+    },
+    "top_puts": [
+      {
+        "strike": 24100.0,
+        "ltp": 77.8,
+        "change_pct": -51.77,
+        "volume": 2703286,
+        "open_interest": 104080,
+        "expiry": "23-Jun-2026"
+      },
+      {
+        "strike": 24000.0,
+        "ltp": 47.0,
+        "change_pct": -58.97,
+        "volume": 2190561,
+        "open_interest": 149357,
+        "expiry": "23-Jun-2026"
+      },
+      {
+        "strike": 24050.0,
+        "ltp": 60.3,
+        "change_pct": -55.78,
+        "volume": 1445359,
+        "open_interest": 65017,
+        "expiry": "23-Jun-2026"
+      },
+      {
+        "strike": 23900.0,
+        "ltp": 28.2,
+        "change_pct": -63.98,
+        "volume": 1220617,
+        "open_interest": 88721,
+        "expiry": "23-Jun-2026"
+      },
+      {
+        "strike": 23800.0,
+        "ltp": 16.6,
+        "change_pct": -68.41,
+        "volume": 968598,
+        "open_interest": 86194,
+        "expiry": "23-Jun-2026"
+      },
+      {
+        "strike": 24150.0,
+        "ltp": 98.05,
+        "change_pct": -48.04,
+        "volume": 926786,
+        "open_interest": 38654,
+        "expiry": "23-Jun-2026"
+      },
+      {
+        "strike": 24200.0,
+        "ltp": 122.75,
+        "change_pct": -43.91,
+        "volume": 836278,
+        "open_interest": 49556,
+        "expiry": "23-Jun-2026"
+      },
+      {
+        "strike": 23000.0,
+        "ltp": 2.25,
+        "change_pct": -53.61,
+        "volume": 833929,
+        "open_interest": 122934,
+        "expiry": "23-Jun-2026"
+      },
+      {
+        "strike": 23700.0,
+        "ltp": 10.45,
+        "change_pct": -69.93,
+        "volume": 798108,
+        "open_interest": 73813,
+        "expiry": "23-Jun-2026"
+      },
+      {
+        "strike": 23500.0,
+        "ltp": 5.1,
+        "change_pct": -67.41,
+        "volume": 746115,
+        "open_interest": 118488,
+        "expiry": "23-Jun-2026"
+      }
+    ],
+    "top_calls": [],
+    "hints": [
+      "Heavy put activity at 24100 is below/near spot and put premium is falling, so it is treated as support unless broken."
+    ],
+    "notes": [
+      "High put/call volume is treated as an activity breakpoint, not as guaranteed buying or writing.",
+      "Put-heavy levels below spot can act as support; call-heavy levels above spot can act as resistance."
+    ]
+  },
   "missing_inputs": [],
   "sources_used": [
     {
@@ -13622,6 +13793,14 @@
       "rows": 50,
       "note": "Loaded optional component-stock dashboard",
       "url": "https://niftyindices.com/indices/equity/broad-based-indices/nifty--50"
+    },
+    {
+      "id": "nse_option_volume_breakpoints",
+      "name": "NSE India",
+      "status": "loaded",
+      "rows": 20,
+      "note": "Loaded optional NSE option-volume breakpoints",
+      "url": "https://www.nseindia.com/market-data/most-active-contracts"
     }
   ]
 }

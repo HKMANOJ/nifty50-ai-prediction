@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-06-18T14:55:05.593058+00:00",
+    "generated_at": "2026-06-18T16:35:58.506014+00:00",
     "data_mode": "real",
     "notes": [
       "All values in this file are derived from live source responses fetched during this run.",
@@ -11,81 +11,81 @@
     "provider": "Yahoo Finance",
     "symbol": "^GSPC",
     "date": "2026-06-18",
-    "value": 7496.9702,
+    "value": 7494.8599,
     "previous_value": 7420.1001,
-    "change_pct": 1.036
+    "change_pct": 1.0075
   },
   "brent": {
     "provider": "Yahoo Finance",
     "symbol": "BZ=F",
     "date": "2026-06-18",
-    "value": 77.24,
+    "value": 77.69,
     "previous_value": 79.55,
-    "change_pct": -2.9038
+    "change_pct": -2.3382
   },
   "news_sentiment": {
-    "india": 0.052,
-    "global": -0.048
+    "india": 0.055,
+    "global": -0.057
   },
   "geopolitical_factors": [
     {
       "factor": "Global risk coverage",
       "impact": "neutral",
-      "detail": "Derived from live global-risk headline coverage. Article count: 100. Sentiment score: -0.048."
+      "detail": "Derived from live global-risk headline coverage. Article count: 100. Sentiment score: -0.057."
     },
     {
       "factor": "Oil and commodity pressure",
       "impact": "positive",
-      "detail": "Derived from Brent crude change and overlapping global commodity coverage. Article count: 100. Sentiment score: +0.968."
+      "detail": "Derived from Brent crude change and overlapping global commodity coverage. Article count: 100. Sentiment score: +0.779."
     }
   ],
   "domestic_factors": [
     {
       "factor": "India macro and market coverage",
       "impact": "neutral",
-      "detail": "Derived from live India-focused headline coverage. Article count: 150. Sentiment score: +0.052."
+      "detail": "Derived from live India-focused headline coverage. Article count: 100. Sentiment score: +0.055."
     },
     {
       "factor": "US equity spillover",
       "impact": "positive",
-      "detail": "Derived from the latest US equity move. Article count: 100. Sentiment score: +0.518."
+      "detail": "Derived from the latest US equity move. Article count: 100. Sentiment score: +0.504."
     }
   ],
   "article_counts": {
-    "india_market": 150,
+    "india_market": 100,
     "global_risk": 100
   },
   "headlines": {
     "india_market": [
       {
-        "title": "Bank of England freezes rates as US - Iran truce eases oil shock fears",
-        "url": "https://aa.com.tr/en/economy/bank-of-england-freezes-rates-as-us-iran-truce-eases-oil-shock-fears/3970797",
-        "published_at": "",
-        "source": "GDELT DOC 2.0 API"
+        "title": "Indian stock markets remain closed on account of Good Friday | Akashvani News - Newsonair",
+        "url": "https://news.google.com/rss/articles/CBMijwFBVV95cUxNaHFzTXo5azNDUkNSNG1zbTJiQTFFMnZjUk5tbi05a0ROUzB0NnNMVEpIXzkyTVFPT1B5NWFTMHh6VDRYaTJxcmdTcS1LUlhaSWJWQkxCaDlnWV9abU5ibEZaS2ZBSnZhRktUOTc2aXhXTTJxVURaRElHWDhScUFkZjdDSlQzMWxsdExLaDlXbw?oc=5",
+        "published_at": "Thu, 18 Jun 2026 12:16:37 GMT",
+        "source": "Google News RSS"
       },
       {
-        "title": "SueWallSt Reminds SES AI Corporation Investors of the Pending Class Action Lawsuit With a Lead Plaintiff Deadline of June 26 , 2026",
-        "url": "http://www.prnewswire.com/news-releases/suewallst-reminds-ses-ai-corporation-investors-of-the-pending-class-action-lawsuit-with-a-lead-plaintiff-deadline-of-june-26-2026---ses-302803858.html",
-        "published_at": "",
-        "source": "GDELT DOC 2.0 API"
+        "title": "India\u2019s largest stock exchange files for IPO as mega-listings gather pace - CNBC",
+        "url": "https://news.google.com/rss/articles/CBMicEFVX3lxTE5qLWh2ZF91aVkyQzdHS0llUkNTTlFNdmQyVVFDRlRLWGlIeHQ5QnRwcFYyX3dOSjAtUnJyNEM2V29xaUZHV0lHc09WRzJ1WGM4MEtfRndNcHF2VFVBbUluTzIyYmhVNUVyZmJ3RUlaU2bSAXZBVV95cUxQVTAwUDY1YWp1ZnJ4RXFZeEpBNWktbzBLbUtNWlBnMVBoY3c2aFk2Z1Y5eS0yNjQ2cWdsdFpyR0ZISlpNcVBFSjk0VlBwZ0NiQ2RTZzBCbkRncDh5YUVmczhVMUpmTkFuOHpRMGVFdkZYSkJVQVBB?oc=5",
+        "published_at": "Thu, 18 Jun 2026 02:50:00 GMT",
+        "source": "Google News RSS"
       },
       {
-        "title": "What prediction market trading is and why it gaining popularity",
-        "url": "https://www.stcatharinesstandard.ca/business/what-prediction-market-trading-is-and-why-its-gaining-popularity/article_a361c283-13ed-5656-b1ce-13fd1bc487fe.html",
-        "published_at": "",
-        "source": "GDELT DOC 2.0 API"
+        "title": "India stocks higher at close of trade; Nifty 50 up 0.34% - Investing.com",
+        "url": "https://news.google.com/rss/articles/CBMirwFBVV95cUxOdlpWbDVyaWUxN29CWEp0b1Q5U1dITlRzelU1dnhLUTE5czlwc3VLWnBVYTktTlptWE9DelltYXM2akVFM1FMTngzVjJ0a3Y3cGVTcVQ0SUw0R0VMUzdmN01KYUlrV2lHWnE0YmJ1SE5ZM05nNVlkXzB3SnBHalpfcEZBM2NoaVV5d2lxWjh1TGZNMWZaVmhYQ0FWOG51Zi1hRUJIcEZ3MTZxX3FRZ3hj?oc=5",
+        "published_at": "Thu, 18 Jun 2026 10:31:58 GMT",
+        "source": "Google News RSS"
       },
       {
-        "title": "Emirados pro\u00edbem o uso de redes sociais por menores de 15 anos ; \u00e9 o 1\u00ba pa\u00eds \u00e1rabe a adotar restrio",
-        "url": "https://www.estadao.com.br/educacao/emirados-proibem-o-uso-de-redes-sociais-por-menores-de-15-anos-e-o-1-pais-arabe-a-tomar-tal-medida-npr/",
-        "published_at": "",
-        "source": "GDELT DOC 2.0 API"
+        "title": "Share Market Today: Nifty 50, Bank Nifty Prediction | June 18, 2026 - Liquide Blog",
+        "url": "https://news.google.com/rss/articles/CBMigAFBVV95cUxPUzBrZUg1NVl2Q2paa2pPUUp6QmRwSi03clB2S05tNDNMY1Y1Z0Q3YXIzZXFob2VuVHR3a0Z2U3ZodFVCN29uUmxMZDVqU2ljQmlKbktnLXlMbmZWNHg0R1c5cFdpQlJFYUVjc2N5M3RUaGE3bTdSUFRlRXVGQ2h6aQ?oc=5",
+        "published_at": "Thu, 18 Jun 2026 11:55:19 GMT",
+        "source": "Google News RSS"
       },
       {
-        "title": "Broad - Based Growth Drivers Lifted nLIGHT ( LASR ) in Q1",
-        "url": "https://finance.yahoo.com/markets/stocks/articles/broad-based-growth-drivers-lifted-140005067.html",
-        "published_at": "",
-        "source": "GDELT DOC 2.0 API"
+        "title": "Nifty 50, Sensex prediction today: Check how Indian stock market is expected to trade on 18 June after US Fed policy - Mint",
+        "url": "https://news.google.com/rss/articles/CBMikgJBVV95cUxPUks5T2pJSmtBdFZiY0pnUjE4QmRRVk93R21seF8yOWwyZGN1RnJSLVEtaXN4WDl2OHV0ODNwVURPaWUzRGpyMGp3dXNiQ0ZaV2VpQ2hJTXYzNHZ5cGJMU1hnTnJyN2Yzc1BFaF82dWVpbFducmd4U3ZWMTZSeGtuYXprelozblB5SWQyaFRFcHRjZ3d0MkxvbmNIU1Y2YTdWMnM0R0l0QlhpN3N1UzMtcU5Cb1JYZVRZT1NhMlBuTXZHS1N1bG94ek90RzZ1eTlubjhxbHFzSjN4UU1VRGNtTVM2Q0F2b21nNDJJRkhWUGE4RU5YdDFzcVRKNEFNVl9vdVREcExWYmFtN2dpa2VRV3lR0gGXAkFVX3lxTE8tVWlRUjY0d2V3WnkzemxfbkowSWkxR096dnhqOGc1ZUtna0l1NDY3SEhweDhqXzNRN1hNLWotV05fRElmTC03T2pfWl82TlJHWEJxUGJhY2U3enBYUF9Vbnp4RG9xeDVtMlhsY0hhaDc4ejMwZm9lcUk0Tk9WcDA1NEsySERITm94cEYtM2M2S0FyWW4zNm9STlJxdGFCVmFLTXVmdGlpcmNmZWlscVBXSzBvZWRpRlplYjlTbFpGWENYcUJJY2JWZ2daWGwxcVNuM3RtSU9Ka05yaVR2eTlkeVpRck9aMXVUci10OHFsSnZxb2I5SXJwcV8wX2JwWEtKT1h3bFhQVGpERWNRVHcwU1kwV0NnYw?oc=5",
+        "published_at": "Thu, 18 Jun 2026 02:01:46 GMT",
+        "source": "Google News RSS"
       }
     ],
     "global_risk": [
@@ -123,7 +123,6 @@
   },
   "news_sources": {
     "india_market": [
-      "GDELT DOC 2.0 API",
       "Google News RSS"
     ],
     "global_risk": [
@@ -131,19 +130,14 @@
     ]
   },
   "provider_failures": {
-    "india_market": [],
+    "india_market": [
+      "GDELT failed for india_market: <urlopen error _ssl.c:1063: The handshake operation timed out>"
+    ],
     "global_risk": [
-      "GDELT failed for global_risk: HTTP Error 429: Too Many Requests"
+      "GDELT failed for global_risk: <urlopen error _ssl.c:1063: The handshake operation timed out>"
     ]
   },
   "provenance": [
-    {
-      "provider": "GDELT DOC 2.0 API",
-      "query": "(\"india\" OR \"nifty\" OR \"sensex\" OR \"reserve bank of india\" OR \"rupee\" OR \"inflation\")",
-      "timespan": "3days",
-      "records": 50,
-      "url": "https://api.gdeltproject.org/api/v2/doc/doc?query=%28%22india%22+OR+%22nifty%22+OR+%22sensex%22+OR+%22reserve+bank+of+india%22+OR+%22rupee%22+OR+%22inflation%22%29&mode=artlist&maxrecords=50&timespan=3days&sort=datedesc&format=jsonfeed"
-    },
     {
       "provider": "Google News RSS",
       "query": "India stock market OR Nifty OR RBI OR rupee OR inflation",

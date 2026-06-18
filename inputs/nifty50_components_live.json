@@ -1,7 +1,7 @@
 {
   "provider": "Nifty Indices constituent CSV + Yahoo Finance public chart API",
   "universe": "NIFTY 50",
-  "generated_at": "2026-06-18T14:54:45.025590+00:00",
+  "generated_at": "2026-06-18T16:35:43.018927+00:00",
   "tracked_symbols": [
     "RELIANCE",
     "HDFCBANK",

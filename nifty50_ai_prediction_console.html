@@ -889,6 +889,35 @@
           <div class="news-empty">Run a live refresh to paint the NIFTY 50 heatmap.</div>
         </div>
       </div>
+
+      <div class="market-panel feature-section" data-feature-section="most-active">
+        <div class="market-panel-head">
+          <div>
+            <div class="market-panel-title">Most Active Contracts</div>
+            <div class="market-panel-subtitle">Top volume options / futures contracts (from NSE most-active list).</div>
+          </div>
+          <div class="market-panel-meta" id="most-active-updated">Waiting for data...</div>
+        </div>
+        <div class="scanner-table-stage" style="padding:14px" id="most-active-stage">
+          <div class="movers-table-shell">
+            <table class="movers-table" id="most-active-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Type</th>
+                  <th>Strike / Expiry</th>
+                  <th>LTP</th>
+                  <th>Volume</th>
+                  <th>OI</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="news-empty"><td colspan="6">Load live data to populate most active contracts.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1594,6 +1623,92 @@ function renderScannerBoards(board){
   renderScannerTable(board);
 }
 
+// New helper: populate the Most Active Contracts table
+function populateMostActiveContracts(data, updatedAt){
+  try{
+    const table = document.getElementById('most-active-table');
+    const meta = document.getElementById('most-active-updated');
+    if(!table) return;
+    const tbody = table.querySelector('tbody');
+    tbody.innerHTML = '';
+    if(!Array.isArray(data) || data.length === 0){
+      tbody.innerHTML = '<tr class="news-empty"><td colspan="6">No active contracts found.</td></tr>';
+      if(meta) meta.textContent = 'No data';
+      return;
+    }
+
+    data.forEach(item => {
+      const tr = document.createElement('tr');
+      const tdSym = document.createElement('td');
+      tdSym.innerHTML = `<div class="movers-symbol">${escapeHtml(item.symbol || '')}</div>`;
+      const tdType = document.createElement('td');
+      tdType.innerHTML = `<div class="movers-company">${escapeHtml(item.type || '')}</div>`;
+      const tdStrike = document.createElement('td');
+      tdStrike.textContent = item.strikeOrExpiry || '';
+      const tdLtp = document.createElement('td');
+      tdLtp.textContent = (item.ltp != null && !Number.isNaN(Number(item.ltp))) ? Number(item.ltp).toFixed(2) : '';
+      const tdVol = document.createElement('td');
+      tdVol.textContent = item.volume != null ? formatInteger(item.volume) : '';
+      const tdOi = document.createElement('td');
+      tdOi.textContent = item.oi != null ? formatInteger(item.oi) : '';
+      tr.appendChild(tdSym);
+      tr.appendChild(tdType);
+      tr.appendChild(tdStrike);
+      tr.appendChild(tdLtp);
+      tr.appendChild(tdVol);
+      tr.appendChild(tdOi);
+      tbody.appendChild(tr);
+    });
+
+    if(meta){
+      meta.textContent = updatedAt ? ('Updated: ' + formatDateTimeInIndia(updatedAt)) : 'Updated just now';
+    }
+  }catch(err){
+    console.error('populateMostActiveContracts error', err);
+  }
+}
+// expose globally
+window.populateMostActiveContracts = populateMostActiveContracts;
+
+function populateMostActiveContracts(data, updatedAt){
+  try{
+    const table = document.getElementById('most-active-table');
+    const meta = document.getElementById('most-active-updated');
+    if(!table) return;
+    const tbody = table.querySelector('tbody');
+    tbody.innerHTML = '';
+    if(!Array.isArray(data) || data.length === 0){
+      tbody.innerHTML = '<tr class="news-empty"><td colspan="6">No active contracts found.</td></tr>';
+      if(meta) meta.textContent = 'No data';
+      return;
+    }
+    data.forEach(item => {
+      const tr = document.createElement('tr');
+      const tdSym = document.createElement('td');
+      tdSym.innerHTML = `<div class="movers-symbol">${escapeHtml(item.symbol || '')}</div>`;
+      const tdType = document.createElement('td');
+      tdType.innerHTML = `<div class="movers-company">${escapeHtml(item.type || '')}</div>`;
+      const tdStrike = document.createElement('td');
+      tdStrike.textContent = item.strikeOrExpiry || '';
+      const tdLtp = document.createElement('td');
+      tdLtp.textContent = (item.ltp != null && !Number.isNaN(Number(item.ltp))) ? Number(item.ltp).toFixed(2) : '';
+      const tdVol = document.createElement('td');
+      tdVol.textContent = item.volume != null ? formatInteger(item.volume) : '';
+      const tdOi = document.createElement('td');
+      tdOi.textContent = item.oi != null ? formatInteger(item.oi) : '';
+      tr.appendChild(tdSym);
+      tr.appendChild(tdType);
+      tr.appendChild(tdStrike);
+      tr.appendChild(tdLtp);
+      tr.appendChild(tdVol);
+      tr.appendChild(tdOi);
+      tbody.appendChild(tr);
+    });
+    if(meta) meta.textContent = updatedAt ? ('Updated: ' + formatDateTimeInIndia(updatedAt)) : 'Updated just now';
+  }catch(err){ console.error('populateMostActiveContracts error', err); }
+}
+window.populateMostActiveContracts = populateMostActiveContracts;
+
 function heatmapTileStyle(changePct){
   const pct = clamp(Number(changePct || 0), -4, 4);
   if(pct >= 0){
@@ -2090,7 +2205,7 @@ function resetTradeBoard(){
 function buildSignalTimeline(snapshot, prediction, timeframe){
   const bars = getDisplayedBars(snapshot, timeframe);
   if(bars.length < 8) return [];
-  const startIndex = Math.max(7, bars.length - 6);
+  const startIndex = Math.max(5, bars.length - 4);
   const timeline = [];
   for(let index = startIndex; index < bars.length; index += 1){
     const windowBars = bars.slice(0, index + 1);
@@ -2653,17 +2768,43 @@ function isIndiaMarketLiveNow(){
   return !isWeekend && minutes >= ((9 * 60) + 15) && minutes <= ((15 * 60) + 30);
 }
 
-function buildNext50MinuteForecast(snapshot, prediction){
+function recommendOptionStrike(currentPrice, targetPrice, bias){
+  const lastClose = Math.round(currentPrice / 100) * 100;
+  const nextStrike = lastClose + 100;
+  const prevStrike = lastClose - 100;
+
+  if(bias === 'BUY CALL'){
+    return {
+      atm: lastClose,
+      itm: prevStrike,
+      otm: nextStrike,
+      recommended: nextStrike,
+      recommendedLabel: `${nextStrike} CALL (OTM - Better ROI)`
+    };
+  }
+  if(bias === 'BUY PUT'){
+    return {
+      atm: lastClose,
+      itm: nextStrike,
+      otm: prevStrike,
+      recommended: prevStrike,
+      recommendedLabel: `${prevStrike} PUT (OTM - Better ROI)`
+    };
+  }
+  return null;
+}
+
+function buildNext30MinuteForecast(snapshot, prediction){
   const fiveMinuteBars = getDisplayedBars(snapshot, '5m');
   const bars = fiveMinuteBars.length ? fiveMinuteBars : getDisplayedBars(snapshot, activeTimeframe);
   if(bars.length < 6) return null;
 
   const last = bars[bars.length - 1];
   const lastClose = Number(last.close);
-  const recent = bars.slice(-10);
-  const prior = bars.slice(Math.max(0, bars.length - 20), Math.max(0, bars.length - 10));
+  const recent = bars.slice(-6);
+  const prior = bars.slice(Math.max(0, bars.length - 12), Math.max(0, bars.length - 6));
   const firstRecentClose = Number((recent[0] || bars[0]).close);
-  const momentum50Pct = firstRecentClose ? ((lastClose - firstRecentClose) / firstRecentClose) * 100 : 0;
+  const momentum30Pct = firstRecentClose ? ((lastClose - firstRecentClose) / firstRecentClose) * 100 : 0;
   const ema9Series = computeEmaSeries(bars, 9);
   const ema21Series = computeEmaSeries(bars, 21);
   const ema9 = ema9Series[ema9Series.length - 1];
@@ -2680,43 +2821,67 @@ function buildNext50MinuteForecast(snapshot, prediction){
   const breadthSignal = breadthTotal ? clamp((Number(breadth.bullish || 0) - Number(breadth.bearish || 0)) / breadthTotal, -1, 1) : 0;
 
   const pieces = [
-    {label: '50m momentum', signal: clamp(momentum50Pct / 0.45, -1, 1), weight: 1.25},
-    {label: 'EMA stack', signal: ema9 >= ema21 ? 1 : -1, weight: 1.0},
-    {label: 'Price vs EMA 9', signal: lastClose >= ema9 ? 1 : -1, weight: 0.85},
-    {label: 'Range position', signal: clamp((rangePosition - 0.5) * 2, -1, 1), weight: 0.8},
+    {label: '30m momentum', signal: clamp(momentum30Pct / 0.35, -1, 1), weight: 1.35},
+    {label: 'EMA stack', signal: ema9 >= ema21 ? 1 : -1, weight: 1.1},
+    {label: 'Price vs EMA 9', signal: lastClose >= ema9 ? 1 : -1, weight: 0.95},
+    {label: 'Range position', signal: clamp((rangePosition - 0.5) * 2, -1, 1), weight: 0.85},
     {label: 'Market breadth', signal: breadthSignal, weight: 0.75},
-    {label: 'Volume pressure', signal: volumeSignal, weight: 0.45},
-    {label: 'Daily anchor', signal: prediction ? clamp(prediction.score, -1, 1) : 0, weight: 0.45}
+    {label: 'Volume pressure', signal: volumeSignal, weight: 0.55},
+    {label: 'Daily anchor', signal: prediction ? clamp(prediction.score, -1, 1) : 0, weight: 0.5}
   ];
+
   const totalWeight = pieces.reduce((sum, item) => sum + item.weight, 0) || 1;
   const score = pieces.reduce((sum, item) => sum + (item.signal * item.weight), 0) / totalWeight;
   const marketLive = isIndiaMarketLiveNow();
   const lastBarDate = String(last.market_date || '');
   const today = getIndiaNowParts().isoDate;
   const isFreshSession = marketLive && lastBarDate === today;
-  const confidenceCap = isFreshSession ? 82 : 62;
-  const confidence = Math.round(clamp(50 + (Math.abs(score) * 32) + Math.min(recent.length, 10), 50, confidenceCap));
-  const movePoints = clamp(score * Math.max(avgRange * 3.2, lastClose * 0.0018), -avgRange * 7, avgRange * 7);
-  const expectedMovePct = (movePoints / Math.max(lastClose, 1)) * 100;
-  const target = lastClose + movePoints;
-  const band = Math.max(avgRange * 1.8, lastClose * 0.0015);
+  const confidenceCap = isFreshSession ? 84 : 64;
+  const confidence = Math.round(clamp(52 + (Math.abs(score) * 35) + Math.min(recent.length, 8), 55, confidenceCap));
+  const movePoints = clamp(score * Math.max(avgRange * 2.8, lastClose * 0.0016), -avgRange * 5, avgRange * 5);
+  let target = lastClose + movePoints;
+
+  // FORCE CLEAR BIAS - Minimize WAIT, prefer CALL/PUT
+  let bias = 'WAIT';
+  let confidenceBoost = 0;
+  if(score > 0.12){
+    bias = 'BUY CALL';
+    confidenceBoost = Math.abs(score) * 8;
+  }else if(score < -0.12){
+    bias = 'BUY PUT';
+    confidenceBoost = Math.abs(score) * 8;
+  }else if(Math.abs(score) > 0.05){
+    // NEAR ZERO - Pick based on momentum and daily
+    if(momentum30Pct > 0 || (prediction && prediction.score > 0)){
+      bias = 'BUY CALL';
+      confidenceBoost = 4;
+    }else{
+      bias = 'BUY PUT';
+      confidenceBoost = 4;
+    }
+  }
+
+  const finalConfidence = Math.round(clamp(confidence + confidenceBoost, 55, confidenceCap));
+
+  const chipClass = bias === 'BUY CALL' ? 'call' : bias === 'BUY PUT' ? 'put' : 'wait';
+  const triggerUp = Math.max(...recent.map(candle => Number(candle.high)));
+  const triggerDown = Math.min(...recent.map(candle => Number(candle.low)));
+  const entry = bias === 'BUY CALL' ? triggerUp : bias === 'BUY PUT' ? triggerDown : null;
+  let stopLoss = bias === 'BUY CALL'
+    ? Math.min(triggerDown, lastClose - (avgRange * 1.3))
+    : bias === 'BUY PUT'
+      ? Math.max(triggerUp, lastClose + (avgRange * 1.3))
+      : null;
+
+  const expectedMovePct = ((target - lastClose) / Math.max(lastClose, 1)) * 100;
+  const band = Math.max(avgRange * 1.5, lastClose * 0.0014);
   const upperBand = target + band;
   const lowerBand = target - band;
-  const bias = score > 0.18 ? 'BUY CALL' : score < -0.18 ? 'BUY PUT' : 'WAIT';
-  const chipClass = bias === 'BUY CALL' ? 'call' : bias === 'BUY PUT' ? 'put' : 'wait';
-  const triggerUp = Math.max(...recent.slice(-6).map(candle => Number(candle.high)));
-  const triggerDown = Math.min(...recent.slice(-6).map(candle => Number(candle.low)));
-  const entry = bias === 'BUY CALL' ? triggerUp : bias === 'BUY PUT' ? triggerDown : null;
-  const stopLoss = bias === 'BUY CALL'
-    ? Math.min(triggerDown, lastClose - (avgRange * 1.4))
-    : bias === 'BUY PUT'
-      ? Math.max(triggerUp, lastClose + (avgRange * 1.4))
-      : null;
   const invalidation = bias === 'BUY CALL' ? triggerDown : bias === 'BUY PUT' ? triggerUp : null;
   const latestTime = new Date(last.market_time || last.time_utc);
-  const steps = [10, 20, 30, 40, 50].map(minutes => {
+  const steps = [5, 10, 15, 20, 25, 30].map(minutes => {
     const dt = new Date(latestTime.getTime() + (minutes * 60 * 1000));
-    const progress = minutes / 50;
+    const progress = minutes / 30;
     const pathPrice = lastClose + (movePoints * progress);
     return {
       minutes,
@@ -2729,10 +2894,12 @@ function buildNext50MinuteForecast(snapshot, prediction){
     .slice(0, 4)
     .map(item => `${item.label}: ${item.signal >= 0 ? 'bullish' : 'bearish'}`);
 
+  const optionStrike = recommendOptionStrike(lastClose, target, bias);
+
   return {
     bias,
     chipClass,
-    confidence,
+    confidence: finalConfidence,
     score,
     lastClose,
     expectedMovePct,
@@ -2747,7 +2914,8 @@ function buildNext50MinuteForecast(snapshot, prediction){
     lastBarDate,
     lastBarTime: formatClockLabel(last.market_time || last.time_utc),
     steps,
-    topDrivers
+    topDrivers,
+    optionStrike
   };
 }
 
@@ -2757,32 +2925,45 @@ function renderLiveActionCard(snapshot, bars, timeframe, prediction, requestedTa
     return;
   }
 
-  const next50 = buildNext50MinuteForecast(snapshot, prediction);
-  if(!next50){
-    liveActionCard.innerHTML = '<div class="chart-empty">Need at least 6 live candles to build the Next 50 Minutes read.</div>';
+  const next30 = buildNext30MinuteForecast(snapshot, prediction);
+  if(!next30){
+    liveActionCard.innerHTML = '<div class="chart-empty">Need at least 6 live candles to build the Next 30 Minutes read.</div>';
     return;
   }
 
-  const next50FreshNote = next50?.isFreshSession
+  const next30FreshNote = next30?.isFreshSession
     ? 'Live session candles'
-    : `Market closed or stale session (${next50?.lastBarDate || 'n/a'}). Refresh during NSE hours for live use.`;
+    : `Market closed or stale session (${next30?.lastBarDate || 'n/a'}). Refresh during NSE hours for live use.`;
+
+  const optionHtml = next30.optionStrike
+    ? `<div style="background:#F0FAF5;border:1px solid #99E0B3;border-radius:12px;padding:12px;margin-top:10px">
+         <div style="font-size:10px;color:#0F6E56;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Recommended Option to Buy</div>
+         <div style="font-size:16px;font-weight:700;color:#0F6E56">${escapeHtml(next30.optionStrike.recommendedLabel)}</div>
+         <div style="font-size:11px;color:#0F6E56;margin-top:8px">
+           <span style="display:inline-block;margin-right:12px">ATM: ${next30.optionStrike.atm}</span>
+           <span style="display:inline-block;margin-right:12px">ITM: ${next30.optionStrike.itm}</span>
+           <span>OTM: ${next30.optionStrike.otm}</span>
+         </div>
+       </div>`
+    : '';
 
   liveActionCard.innerHTML = `
     <div class="next50-card">
       <div class="next50-head">
         <div>
-          <div class="next50-title">Live Option Signal</div>
-          <div class="next50-sub">Next 50 minutes | ${escapeHtml(next50FreshNote)} | Last bar ${escapeHtml(next50.lastBarTime)}</div>
+          <div class="next50-title">Live 30-Min Option Signal ⚡</div>
+          <div class="next50-sub">${escapeHtml(next30FreshNote)} | Last bar ${escapeHtml(next30.lastBarTime)}</div>
         </div>
-        <div class="next50-bias ${next50.chipClass}">${escapeHtml(next50.bias)}</div>
+        <div class="next50-bias ${next30.chipClass}">${escapeHtml(next30.bias)}</div>
       </div>
       <div class="next50-grid compact">
-        <div class="next50-kpi primary"><div class="next50-label">Which Option To Take</div><div class="next50-value">${escapeHtml(next50.bias)}</div></div>
-        <div class="next50-kpi"><div class="next50-label">Confidence</div><div class="next50-value">${next50.confidence}%</div></div>
-        <div class="next50-kpi"><div class="next50-label">Current Price</div><div class="next50-value">${formatNum(next50.lastClose)}</div></div>
-        <div class="next50-kpi"><div class="next50-label">Target Price</div><div class="next50-value">${formatNum(next50.target)}</div></div>
-        <div class="next50-kpi"><div class="next50-label">Stop Loss</div><div class="next50-value">${formatNum(next50.stopLoss)}</div></div>
+        <div class="next50-kpi primary"><div class="next50-label">Clear Prediction (Next 30 Min)</div><div class="next50-value">${escapeHtml(next30.bias)}</div></div>
+        <div class="next50-kpi"><div class="next50-label">Confidence</div><div class="next50-value">${next30.confidence}%</div></div>
+        <div class="next50-kpi"><div class="next50-label">Current Price</div><div class="next50-value">${formatNum(next30.lastClose)}</div></div>
+        <div class="next50-kpi"><div class="next50-label">Target Price</div><div class="next50-value">${formatNum(next30.target)}</div></div>
+        <div class="next50-kpi"><div class="next50-label">Stop Loss</div><div class="next50-value">${formatNum(next30.stopLoss)}</div></div>
       </div>
+      ${optionHtml}
     </div>
   `;
 }
@@ -3129,6 +3310,21 @@ async function bootstrapLatestSnapshot(){
     renderStockDashboard(snapshot, prediction, sessionContext, requestedTarget);
     setLoadButtonLabel('Latest Snapshot Loaded');
     updateAutoRefreshStatus(`Snapshot loaded from ${formatDateTimeInIndia(snapshot.meta?.generated_at)}. Live refresh starts automatically.`);
+
+    // Auto-load Most Active data
+    (async function tryLoadMostActive(){
+      try{
+        const url = buildServerUrl('/api/most_active');
+        const resp = await fetch(url+'?ts='+Date.now(), {cache: 'no-store'});
+        if(!resp.ok) return;
+        const payload = await resp.json();
+        if(Array.isArray(payload?.rows)){
+          populateMostActiveContracts(payload.rows, payload.generated_at || snapshot.meta?.generated_at || new Date().toISOString());
+        }
+      }catch(err){
+        // fail silently - optional feature
+      }
+    })();
   }catch(err){
     setLoadButtonLabel(location.protocol === 'file:' ? 'Load Snapshot Or Use Live Server' : 'Load Snapshot JSON');
     updateAutoRefreshStatus('Waiting for live API. Auto refresh will retry every 1 minute.', 'error');

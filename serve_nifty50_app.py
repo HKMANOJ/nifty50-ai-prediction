@@ -20,7 +20,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 DOWNLOADER = ROOT / "download_real_market_inputs.py"
 COLLECTOR = ROOT / "collect_nifty50_market_data.py"
+MOST_ACTIVE_FETCHER = ROOT / "fetch_most_active_nse.py"
 SNAPSHOT = ROOT / "market_snapshot.latest.json"
+MOST_ACTIVE = ROOT / "inputs" / "most_active.latest.json"
 REFRESH_LOCK = threading.Lock()
 
 
@@ -101,6 +103,11 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/health":
             self._send_json(HTTPStatus.OK, {"ok": True, "service": "nifty50-live-server"})
             return
+
+        if self.path == "/api/most_active":
+            self._serve_most_active()
+            return
+
         super().do_GET()
 
     def do_POST(self) -> None:
@@ -129,6 +136,15 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def _refresh_snapshot(self) -> dict[str, Any]:
         started = time.time()
+
+        # Auto-fetch Most Active data (PUTS & CALLS)
+        print("[REFRESH] Fetching Most Active data from NSE...")
+        fetcher_result = run_command([sys.executable, str(MOST_ACTIVE_FETCHER)], timeout=30)
+        if fetcher_result["ok"]:
+            print("[REFRESH] ✓ Most Active data fetched successfully")
+        else:
+            print("[REFRESH] ⚠ Most Active fetch had issues, continuing anyway...")
+
         downloader_result = run_command(
             [
                 sys.executable,
@@ -165,9 +181,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
         return {
             "ok": True,
-            "message": "Live market data, live news, and the normalized snapshot were refreshed successfully.",
+            "message": "Live market data, live news, and Most Active contracts were refreshed successfully.",
             "download": downloader_result,
             "collect": collector_result,
+            "most_active": fetcher_result,
             "snapshot": {
                 "path": str(SNAPSHOT),
                 "meta": snapshot_payload.get("meta"),
@@ -184,6 +201,29 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(encoded)
+
+    def _serve_most_active(self) -> None:
+        """Serve the Most Active Puts/Index/Volume data."""
+        if MOST_ACTIVE.exists():
+            try:
+                payload = json.loads(MOST_ACTIVE.read_text(encoding="utf-8"))
+                self._send_json(HTTPStatus.OK, payload)
+                return
+            except Exception as e:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {
+                    "ok": False,
+                    "error": "load_failed",
+                    "message": f"Failed to load most active data: {str(e)}"
+                })
+                return
+
+        # File not found - try to generate it
+        self._send_json(HTTPStatus.NOT_FOUND, {
+            "ok": False,
+            "error": "no_data",
+            "message": "Most Active data not found. Run: python3 load_most_active.py from the project root.",
+            "path": str(MOST_ACTIVE)
+        })
 
 
 def main() -> None:

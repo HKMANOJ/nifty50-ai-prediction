@@ -51,6 +51,21 @@
       "url": "https://www.nseindia.com/option-chain/"
     },
     {
+      "id": "nse_option_volume_breakpoints",
+      "category": "derivatives",
+      "priority": "high",
+      "provider": "NSE India",
+      "use_for": [
+        "high-volume call and put strikes",
+        "intraday support and resistance breakpoints",
+        "CALL/PUT target and stop-loss anchoring"
+      ],
+      "access": "Public NSE derivatives market most-active CSV export; use licensed exchange data for production auto-trading.",
+      "cadence": "Intraday during market hours",
+      "reliability": "official_public_export",
+      "url": "https://www.nseindia.com/market-data/most-active-contracts"
+    },
+    {
       "id": "nse_derivatives_archives",
       "category": "derivatives",
       "priority": "high",
