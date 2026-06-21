@@ -174,7 +174,7 @@ Data Flow:
 ├─ NSE → Fetcher → JSON Cache
 ├─ Market Data + News → Snapshot
 ├─ All Combined → UI Display
-└─ Every 60 seconds (auto)
+└─ Every 30 seconds (auto)
 ```
 
 ---
@@ -307,4 +307,3 @@ Everything is:
 
 Start now and begin making consistent profits! 💰🎯
 ```
-
