@@ -134,6 +134,10 @@
   .trade-list{display:flex;flex-direction:column;gap:8px}
   .trade-item{padding:9px 10px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);font-size:12px;line-height:1.6;color:var(--color-text-primary)}
   .trade-item strong{font-family:var(--f-head);font-size:12px}
+  .trade-history-card{grid-column:1 / -1}
+  .trade-history-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .trade-history-item{padding:9px 10px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);font-size:12px;line-height:1.55;color:var(--color-text-primary)}
+  .trade-history-meta{margin-top:4px;font-size:10px;color:var(--color-text-secondary)}
   .sources-row{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
   .src-tag{font-size:10px;padding:2px 7px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:3px;color:var(--color-text-secondary)}
   .chart-board{margin:0 16px 16px;padding:16px;border:0.5px solid var(--color-border-tertiary);border-radius:22px;background:linear-gradient(180deg,#FFFFFF,var(--color-background-primary));box-shadow:0 16px 36px rgba(26,39,74,.05);order:3}
@@ -571,6 +575,9 @@
       <div class="trade-card" id="trade-drivers-card">
         <div class="news-empty">The main drivers and risks will appear here after the next run.</div>
       </div>
+      <div class="trade-card trade-history-card" id="trade-history-card">
+        <div class="news-empty">Today&apos;s predicted calls will appear here after the first qualified signal.</div>
+      </div>
     </div>
   </div>
 
@@ -625,7 +632,7 @@
   <section class="live-hero">
     <div>
       <div class="live-hero-title">NIFTY 50 Live Prediction</div>
-      <div class="live-hero-sub">Live chart plus a rules-based Next 50 Minutes probability read. The app refreshes market data, candles, and last-24h news every 1 minute when the Python live API is available.</div>
+      <div class="live-hero-sub">Live chart plus a rules-based Next 50 Minutes probability read. The app refreshes market data, candles, and last-24h news every 30 seconds when the Python live API is available.</div>
       <div class="live-hero-meta">
         <span class="live-pill"><span class="live-pulse"></span>Live-only mode</span>
         <span class="live-pill warn">Deployment view: live forecast only</span>
@@ -982,6 +989,7 @@ const liveActionCard = document.getElementById('live-action-card');
 const tradeUpdated = document.getElementById('trade-updated');
 const tradePlanCard = document.getElementById('trade-plan-card');
 const tradeDriversCard = document.getElementById('trade-drivers-card');
+const tradeHistoryCard = document.getElementById('trade-history-card');
 const stockUpdated = document.getElementById('stock-updated');
 const stockCoverage = document.getElementById('stock-coverage');
 const marketLastPrice = document.getElementById('market-last-price');
@@ -1036,7 +1044,7 @@ let selectedOptionMode = 'auto';
 let scannerDisplayMode = 'table';
 let autoRefreshTimer = null;
 let autoRefreshInFlight = false;
-const AUTO_REFRESH_MS = 60000;
+const AUTO_REFRESH_MS = 30000;
 let intradayRenderContext = {
   snapshot: null,
   prediction: null,
@@ -1050,6 +1058,8 @@ let marketBoardContext = {
   sessionContext: null
 };
 const DEFAULT_SERVER_ORIGIN = 'http://127.0.0.1:8000';
+const MIN_QUALIFIED_MOVE_POINTS = 40;
+const DAILY_SIGNAL_HISTORY_KEY = 'nifty50_daily_signal_history_v1';
 
 function sanitizeServerOrigin(value){
   const raw = String(value || '').trim();
@@ -2200,6 +2210,94 @@ function resetTradeBoard(){
   tradeUpdated.textContent = 'Waiting for the first prediction run...';
   tradePlanCard.innerHTML = '<div class="news-empty">Run a prediction to build the call / put setup.</div>';
   tradeDriversCard.innerHTML = '<div class="news-empty">The main drivers and risks will appear here after the next run.</div>';
+  renderDailySignalHistory();
+}
+
+function readDailySignalHistory(){
+  try{
+    const parsed = JSON.parse(localStorage.getItem(DAILY_SIGNAL_HISTORY_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  }catch(err){
+    return {};
+  }
+}
+
+function writeDailySignalHistory(history){
+  localStorage.setItem(DAILY_SIGNAL_HISTORY_KEY, JSON.stringify(history));
+}
+
+function todaysHistoryKey(snapshot){
+  return String(snapshot?.intraday?.series_meta?.['5m']?.session_date || snapshot?.meta?.as_of_date || getIndiaNowParts().isoDate);
+}
+
+function recordQualifiedSignal(snapshot, plan, signalTimeLabel, sourceLabel){
+  if(!plan || !['BUY CALL', 'BUY PUT'].includes(plan.optionsBias)) return;
+  const entry = Number(plan.entryTrigger);
+  const target = Number(plan.target1 || plan.target2);
+  if(!Number.isFinite(entry) || !Number.isFinite(target)) return;
+  if(Math.abs(target - entry) < MIN_QUALIFIED_MOVE_POINTS) return;
+  const history = readDailySignalHistory();
+  const key = todaysHistoryKey(snapshot);
+  const dayItems = Array.isArray(history[key]) ? history[key] : [];
+  const signature = [
+    plan.optionsBias,
+    Math.round(entry),
+    Math.round(Number(plan.target1 || 0)),
+    Math.round(Number(plan.stopLoss || 0)),
+    signalTimeLabel
+  ].join('|');
+  if(dayItems.some(item => item.signature === signature)) return;
+  history[key] = [{
+    signature,
+    time: signalTimeLabel,
+    source: sourceLabel,
+    bias: plan.optionsBias,
+    entry,
+    target1: Number(plan.target1),
+    target2: Number(plan.target2),
+    stopLoss: Number(plan.stopLoss),
+    pattern: plan.pattern?.name || '',
+    reason: plan.executionNote || ''
+  }, ...dayItems].slice(0, 12);
+  writeDailySignalHistory(history);
+}
+
+function renderDailySignalHistory(snapshot=null){
+  if(!tradeHistoryCard) return;
+  const history = readDailySignalHistory();
+  const key = todaysHistoryKey(snapshot);
+  const items = Array.isArray(history[key]) ? history[key] : [];
+  const titleDate = key || getIndiaNowParts().isoDate;
+  if(!items.length){
+    tradeHistoryCard.innerHTML = `
+      <div class="trade-card-head">
+        <div>
+          <div class="trade-card-title">Today Signal History</div>
+          <div class="trade-subtitle">${escapeHtml(titleDate)} qualified calls/puts after pattern + NSE + news checks.</div>
+        </div>
+        <div class="trade-chip wait">0</div>
+      </div>
+      <div class="news-empty">No qualified ${MIN_QUALIFIED_MOVE_POINTS}+ point signal has been recorded for this day yet.</div>
+    `;
+    return;
+  }
+  tradeHistoryCard.innerHTML = `
+    <div class="trade-card-head">
+      <div>
+        <div class="trade-card-title">Today Signal History</div>
+        <div class="trade-subtitle">${escapeHtml(titleDate)} qualified calls/puts after pattern + NSE + news checks.</div>
+      </div>
+      <div class="trade-chip ${items[0].bias === 'BUY CALL' ? 'call' : 'put'}">${items.length}</div>
+    </div>
+    <div class="trade-history-list">
+      ${items.map(item => `
+        <div class="trade-history-item">
+          <strong>${escapeHtml(item.bias)}</strong> @ ${formatNum(item.entry)} | T1 ${formatNum(item.target1)} | SL ${formatNum(item.stopLoss)}
+          <div class="trade-history-meta">${escapeHtml(item.time)} | ${escapeHtml(item.pattern || item.source || 'qualified signal')}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 function buildSignalTimeline(snapshot, prediction, timeframe){
@@ -2244,6 +2342,10 @@ function resolveTradePlan(snapshot, prediction, sessionContext, requestedTarget)
         invalidation: intradayAction.invalidation,
         executionNote: intradayAction.playbook,
         alternateNote: intradayAction.narrative,
+        pattern: intradayAction.pattern,
+        nseReport: intradayAction.nseReport,
+        qualifiedMovePoints: intradayAction.qualifiedMovePoints,
+        notes: intradayAction.notes,
       };
       planModeLabel = `Live ${activeTimeframe} Setup`;
       signalTimeLabel = formatClockLabel((bars[bars.length - 1] || {}).market_time || (bars[bars.length - 1] || {}).time_utc);
@@ -2268,6 +2370,8 @@ function renderTradeBoard(snapshot, prediction, sessionContext, requestedTarget)
   }
 
   const {plan, planClass, planModeLabel, headline, signalTimeLabel, livePrice, signalTimeline} = resolveTradePlan(snapshot, prediction, sessionContext, requestedTarget);
+  recordQualifiedSignal(snapshot, plan, signalTimeLabel, planModeLabel);
+  renderDailySignalHistory(snapshot);
 
   tradeUpdated.textContent = `Updated: ${formatDateTimeInIndia(snapshot?.meta?.generated_at)} | ${planModeLabel}`;
   tradePlanCard.innerHTML = `
@@ -2327,8 +2431,8 @@ function renderTradeBoard(snapshot, prediction, sessionContext, requestedTarget)
         <div class="trade-mini-value">${escapeHtml(prediction.direction)} (${escapeHtml(prediction.magnitude)})</div>
       </div>
       <div class="trade-mini">
-        <div class="trade-mini-label">Session Context</div>
-        <div class="trade-mini-value">${escapeHtml(sessionContext.effectiveLabel)}</div>
+        <div class="trade-mini-label">Pattern</div>
+        <div class="trade-mini-value">${escapeHtml(plan.pattern?.name || sessionContext.effectiveLabel)}</div>
       </div>
     </div>
   `;
@@ -2344,6 +2448,7 @@ function renderTradeBoard(snapshot, prediction, sessionContext, requestedTarget)
     <div class="trade-list">
       <div class="trade-item"><strong>Primary Plan:</strong> ${escapeHtml(plan.executionNote || 'No primary plan available.')}</div>
       <div class="trade-item"><strong>What Cancels It:</strong> ${escapeHtml(plan.alternateNote || 'No invalidation text available.')}</div>
+      <div class="trade-item"><strong>Pattern + NSE + News:</strong> ${escapeHtml((plan.notes || []).join(' | ') || 'No combined signal note available.')}</div>
       <div class="trade-item"><strong>Top Drivers:</strong> ${escapeHtml((prediction.topDrivers || []).map(driver => `${driver.name} (${formatDriverValue(driver)})`).join(', ') || 'No top drivers available.')}</div>
       <div class="trade-item"><strong>Positive Catalysts:</strong> ${escapeHtml((prediction.key_catalysts || []).join(', ') || 'No positive catalyst was derived from the latest dataset.')}</div>
       <div class="trade-item"><strong>Main Risks:</strong> ${escapeHtml((prediction.key_risks || []).join(', ') || 'No negative risk factor was derived from the latest dataset.')}</div>
@@ -2449,6 +2554,187 @@ function average(values){
   const usable = (values || []).map(Number).filter(value => Number.isFinite(value));
   if(!usable.length) return null;
   return usable.reduce((sum, value) => sum + value, 0) / usable.length;
+}
+
+function weightedScore(items){
+  const usable = (items || []).filter(item => Number.isFinite(Number(item.signal)) && Number.isFinite(Number(item.weight)) && Number(item.weight) > 0);
+  const totalWeight = usable.reduce((sum, item) => sum + Number(item.weight), 0) || 1;
+  return usable.reduce((sum, item) => sum + (Number(item.signal) * Number(item.weight)), 0) / totalWeight;
+}
+
+function getOptionVolumeRows(snapshot){
+  const options = snapshot?.options_volume || {};
+  const rows = [
+    ...(Array.isArray(options.top_puts) ? options.top_puts : []),
+    ...(Array.isArray(options.top_calls) ? options.top_calls : []),
+    ...(Array.isArray(options.rows) ? options.rows : [])
+  ];
+  return rows.filter(row => row && Number.isFinite(Number(row.strikeOrExpiry ?? row.strike ?? row.strike_price)));
+}
+
+function strikeValue(row){
+  return Number(row?.strikeOrExpiry ?? row?.strike ?? row?.strike_price);
+}
+
+function analyzeNseOptionReport(snapshot, price){
+  const options = snapshot?.options_volume || {};
+  const rows = getOptionVolumeRows(snapshot);
+  const putRows = rows.filter(row => String(row.type || row.option_type || '').toUpperCase().includes('PUT'));
+  const callRows = rows.filter(row => String(row.type || row.option_type || '').toUpperCase().includes('CALL'));
+  const summary = options.summary || {};
+  const putVolume = Number(summary.put_volume || putRows.reduce((sum, row) => sum + Number(row.volume || 0), 0));
+  const callVolume = Number(summary.call_volume || callRows.reduce((sum, row) => sum + Number(row.volume || 0), 0));
+  const supportRows = putRows.filter(row => strikeValue(row) <= price).sort((a, b) => Math.abs(strikeValue(a) - price) - Math.abs(strikeValue(b) - price));
+  const resistanceRows = callRows.filter(row => strikeValue(row) >= price).sort((a, b) => Math.abs(strikeValue(a) - price) - Math.abs(strikeValue(b) - price));
+  const nearestSupport = options.levels?.nearest_put_support?.strike || strikeValue(supportRows[0]);
+  const nearestResistance = options.levels?.nearest_call_resistance?.strike || strikeValue(resistanceRows[0]);
+  const totalVolume = putVolume + callVolume;
+  let signal = 0;
+  let detail = 'NSE option-volume report is unavailable or one-sided, so it is used as a level map only.';
+  if(totalVolume > 0 && putVolume && callVolume){
+    const pcrVolume = putVolume / Math.max(callVolume, 1);
+    signal = clamp((pcrVolume - 1) / 1.6, -1, 1);
+    detail = `NSE option volume PCR is ${pcrVolume.toFixed(2)} with support near ${formatNum(nearestSupport)} and resistance near ${formatNum(nearestResistance)}.`;
+  }else if(putVolume && !callVolume){
+    signal = price >= Number(nearestSupport || price) ? 0.22 : -0.22;
+    detail = `NSE report has put-heavy activity near ${formatNum(nearestSupport)}, treated as support unless broken.`;
+  }else if(callVolume && !putVolume){
+    signal = price <= Number(nearestResistance || price) ? -0.22 : 0.22;
+    detail = `NSE report has call-heavy activity near ${formatNum(nearestResistance)}, treated as resistance unless cleared.`;
+  }
+  return {
+    signal,
+    nearestSupport: Number.isFinite(Number(nearestSupport)) ? Number(nearestSupport) : null,
+    nearestResistance: Number.isFinite(Number(nearestResistance)) ? Number(nearestResistance) : null,
+    putVolume,
+    callVolume,
+    detail
+  };
+}
+
+function detectIntradayPattern(bars){
+  if(!bars || bars.length < 6){
+    return {name: 'Insufficient pattern data', signal: 0, confidence: 0, detail: 'Not enough candles to confirm a price pattern.'};
+  }
+  const recent = bars.slice(-6);
+  const last = recent[recent.length - 1];
+  const previous = recent[recent.length - 2];
+  const lastClose = Number(last.close);
+  const lastOpen = Number(last.open);
+  const prevOpen = Number(previous.open);
+  const prevClose = Number(previous.close);
+  const rangeHigh = Math.max(...recent.slice(0, -1).map(candle => Number(candle.high)));
+  const rangeLow = Math.min(...recent.slice(0, -1).map(candle => Number(candle.low)));
+  const body = Math.abs(lastClose - lastOpen);
+  const candleRange = Math.max(Number(last.high) - Number(last.low), 1);
+  const bodyStrength = clamp(body / candleRange, 0, 1);
+  const closes = recent.map(candle => Number(candle.close));
+  const risingCloses = closes.slice(1).filter((value, index) => value > closes[index]).length;
+  const fallingCloses = closes.slice(1).filter((value, index) => value < closes[index]).length;
+  const engulfingBull = lastClose > lastOpen && prevClose < prevOpen && lastClose >= prevOpen && lastOpen <= prevClose;
+  const engulfingBear = lastClose < lastOpen && prevClose > prevOpen && lastOpen >= prevClose && lastClose <= prevOpen;
+
+  if(lastClose > rangeHigh && bodyStrength >= 0.45){
+    return {name: 'Bullish breakout', signal: clamp(0.55 + bodyStrength * 0.45, 0, 1), confidence: Math.round(60 + bodyStrength * 25), detail: `Price closed above the recent swing high ${formatNum(rangeHigh)}.`};
+  }
+  if(lastClose < rangeLow && bodyStrength >= 0.45){
+    return {name: 'Bearish breakdown', signal: -clamp(0.55 + bodyStrength * 0.45, 0, 1), confidence: Math.round(60 + bodyStrength * 25), detail: `Price closed below the recent swing low ${formatNum(rangeLow)}.`};
+  }
+  if(engulfingBull){
+    return {name: 'Bullish engulfing reversal', signal: 0.62, confidence: 68, detail: 'The latest candle engulfed the prior red candle.'};
+  }
+  if(engulfingBear){
+    return {name: 'Bearish engulfing reversal', signal: -0.62, confidence: 68, detail: 'The latest candle engulfed the prior green candle.'};
+  }
+  if(risingCloses >= 4){
+    return {name: 'Higher-close continuation', signal: 0.42, confidence: 62, detail: 'Most recent closes are stepping upward.'};
+  }
+  if(fallingCloses >= 4){
+    return {name: 'Lower-close continuation', signal: -0.42, confidence: 62, detail: 'Most recent closes are stepping downward.'};
+  }
+  return {name: 'Range compression', signal: 0, confidence: 54, detail: `Price is still inside ${formatNum(rangeLow)}-${formatNum(rangeHigh)}.`};
+}
+
+function getNewsMacroSignal(snapshot, prediction){
+  const signals = snapshot?.numeric_signals || {};
+  const pieces = [
+    {signal: Number(signals.news_sentiment_india || 0), weight: 0.7},
+    {signal: Number(signals.news_sentiment_global || 0), weight: 0.45},
+    {signal: prediction ? clamp(prediction.score, -1, 1) : 0, weight: 0.85},
+    {signal: Number(signals.gift_nifty_change_pct || 0) / 0.8, weight: 0.65},
+    {signal: Number(signals.us_markets_change_pct || 0) / 1.2, weight: 0.45}
+  ].map(item => ({...item, signal: clamp(item.signal, -1, 1)}));
+  return weightedScore(pieces);
+}
+
+function buildQualifiedSignal({snapshot, prediction, bars, timeframe, basePieces, avgRange, triggerUp, triggerDown, lastClose, currentBias}){
+  const pattern = detectIntradayPattern(bars);
+  const nseReport = analyzeNseOptionReport(snapshot, lastClose);
+  const newsSignal = getNewsMacroSignal(snapshot, prediction);
+  const pieces = [
+    ...(basePieces || []),
+    {label: `Pattern: ${pattern.name}`, signal: pattern.signal, weight: 1.45},
+    {label: 'NSE option report', signal: nseReport.signal, weight: 0.95},
+    {label: 'News + macro report', signal: newsSignal, weight: 0.95}
+  ];
+  const score = weightedScore(pieces);
+  const projectedRange = Math.max(avgRange * 3.4, MIN_QUALIFIED_MOVE_POINTS, lastClose * 0.0017);
+  const projectedMove = Math.abs(score) * projectedRange;
+  const alignedCount = [
+    pattern.signal,
+    nseReport.signal,
+    newsSignal
+  ].filter(value => Math.abs(value) >= 0.12 && Math.sign(value) === Math.sign(score)).length;
+  const hasPattern = Math.abs(pattern.signal) >= 0.28;
+  const hasMinimumMove = projectedMove >= MIN_QUALIFIED_MOVE_POINTS;
+  const hasAgreement = alignedCount >= 2;
+  let bias = 'WAIT';
+  if(score >= 0.2 && hasPattern && hasAgreement && hasMinimumMove) bias = 'BUY CALL';
+  if(score <= -0.2 && hasPattern && hasAgreement && hasMinimumMove) bias = 'BUY PUT';
+  if(currentBias === 'WAIT') bias = 'WAIT';
+
+  const sign = bias === 'BUY CALL' ? 1 : bias === 'BUY PUT' ? -1 : 0;
+  const entry = bias === 'BUY CALL' ? triggerUp : bias === 'BUY PUT' ? triggerDown : null;
+  const target1 = entry !== null ? entry + (sign * Math.max(MIN_QUALIFIED_MOVE_POINTS, projectedMove * 0.8)) : null;
+  const target2 = entry !== null ? entry + (sign * Math.max(MIN_QUALIFIED_MOVE_POINTS * 1.45, projectedMove * 1.25)) : null;
+  const stopLoss = bias === 'BUY CALL'
+    ? Math.min(triggerDown, entry - Math.max(avgRange * 1.25, 18))
+    : bias === 'BUY PUT'
+      ? Math.max(triggerUp, entry + Math.max(avgRange * 1.25, 18))
+      : null;
+  const whyWait = !hasPattern
+    ? 'No clean candle pattern is confirmed yet.'
+    : !hasAgreement
+      ? 'Pattern, NSE option report, and news/macro are not aligned enough.'
+      : !hasMinimumMove
+        ? `Projected move is below the ${MIN_QUALIFIED_MOVE_POINTS}-point minimum.`
+        : 'No qualified directional edge is present.';
+
+  return {
+    bias,
+    chipClass: bias === 'BUY CALL' ? 'call' : bias === 'BUY PUT' ? 'put' : 'wait',
+    score,
+    pattern,
+    nseReport,
+    newsSignal,
+    projectedMove,
+    entry,
+    target1,
+    target2,
+    stopLoss,
+    invalidation: bias === 'BUY CALL' ? triggerDown : bias === 'BUY PUT' ? triggerUp : null,
+    confidence: Math.round(clamp(50 + Math.abs(score) * 36 + alignedCount * 4 + (hasPattern ? 5 : 0), 50, 86)),
+    notes: [
+      `${pattern.name}: ${pattern.detail}`,
+      nseReport.detail,
+      `News/macro score: ${newsSignal >= 0 ? '+' : ''}${newsSignal.toFixed(2)}`,
+      bias === 'WAIT' ? whyWait : `Qualified because pattern, NSE report, and news/macro support a ${Math.round(projectedMove)} point move.`
+    ],
+    topDrivers: pieces
+      .sort((left, right) => Math.abs(right.signal * right.weight) - Math.abs(left.signal * left.weight))
+      .slice(0, 4)
+      .map(item => `${item.label}: ${item.signal >= 0 ? 'bullish' : 'bearish'}`)
+  };
 }
 
 function computeEmaSeries(candles, period){
@@ -2640,9 +2926,24 @@ function buildIntradayAction(snapshot, timeframe, bars, prediction){
   const totalWeight = reasons.reduce((sum, item) => sum + item.weight, 0) || 1;
   const score = reasons.reduce((sum, item) => sum + (item.signal * item.weight), 0) / totalWeight;
   const absScore = Math.abs(score);
-  const bias = score > 0.18 ? 'BUY BIAS' : score < -0.18 ? 'SELL BIAS' : 'WAIT';
+  const preliminaryBias = score > 0.18 ? 'BUY BIAS' : score < -0.18 ? 'SELL BIAS' : 'WAIT';
+  const composite = buildQualifiedSignal({
+    snapshot,
+    prediction,
+    bars,
+    timeframe,
+    basePieces: reasons.map(item => ({label: item.label, signal: item.signal, weight: item.weight})),
+    avgRange,
+    triggerUp,
+    triggerDown,
+    lastClose,
+    currentBias: preliminaryBias === 'BUY BIAS' ? 'BUY CALL' : preliminaryBias === 'SELL BIAS' ? 'BUY PUT' : 'WAIT'
+  });
+  const bias = composite.bias === 'BUY CALL' ? 'BUY BIAS' : composite.bias === 'BUY PUT' ? 'SELL BIAS' : 'WAIT';
   const biasClass = bias === 'BUY BIAS' ? 'buy' : bias === 'SELL BIAS' ? 'sell' : 'wait';
-  const confidence = Math.round(clamp(52 + (absScore * 26) + Math.min(bars.length, 40) * 0.35, 52, 84));
+  const confidence = composite.bias === 'WAIT'
+    ? Math.min(composite.confidence, 62)
+    : Math.round(clamp(composite.confidence + Math.min(bars.length, 40) * 0.12, 56, 86));
   const expectedMovePct = clamp(score * Math.max((avgRange / Math.max(lastClose, 1)) * 100 * 0.95, 0.08), -1.25, 1.25);
   const target = lastClose * (1 + (expectedMovePct / 100));
   const projectedRange = Math.max(avgRange, Math.max(lastClose * 0.0016, 12));
@@ -2659,26 +2960,14 @@ function buildIntradayAction(snapshot, timeframe, bars, prediction){
 
   const optionsBias = bias === 'BUY BIAS' ? 'BUY CALL' : bias === 'SELL BIAS' ? 'BUY PUT' : 'WAIT';
   const entryTrigger = bias === 'BUY BIAS' ? triggerUp : bias === 'SELL BIAS' ? triggerDown : null;
-  const stopLoss = bias === 'BUY BIAS'
-    ? Math.min(invalidation, triggerUp - (projectedRange * 0.45))
-    : bias === 'SELL BIAS'
-      ? Math.max(invalidation, triggerDown + (projectedRange * 0.45))
-      : invalidation;
-  const target1 = bias === 'BUY BIAS'
-    ? triggerUp + (projectedRange * 0.55)
-    : bias === 'SELL BIAS'
-      ? triggerDown - (projectedRange * 0.55)
-      : null;
-  const target2 = bias === 'BUY BIAS'
-    ? Math.max(target, triggerUp + (projectedRange * 1.05))
-    : bias === 'SELL BIAS'
-      ? Math.min(target, triggerDown - (projectedRange * 1.05))
-      : null;
+  const stopLoss = composite.stopLoss ?? invalidation;
+  const target1 = composite.target1;
+  const target2 = composite.target2;
   const playbook = bias === 'BUY BIAS'
-    ? `Consider a call-side setup only if price sustains above ${formatNum(triggerUp)} on the ${timeframe} chart.`
+    ? `Consider a call-side setup only if price sustains above ${formatNum(triggerUp)} and the target window is at least ${MIN_QUALIFIED_MOVE_POINTS} points.`
     : bias === 'SELL BIAS'
-      ? `Consider a put-side setup only if price slips below ${formatNum(triggerDown)} on the ${timeframe} chart.`
-      : `Wait for price to break above ${formatNum(triggerUp)} or below ${formatNum(triggerDown)} before taking fresh option-side exposure.`;
+      ? `Consider a put-side setup only if price slips below ${formatNum(triggerDown)} and the target window is at least ${MIN_QUALIFIED_MOVE_POINTS} points.`
+      : composite.notes[3] || `Wait for price to break above ${formatNum(triggerUp)} or below ${formatNum(triggerDown)} before taking fresh option-side exposure.`;
 
   const probabilities = deriveDirectionalProbabilities(score, confidence, {baseImpact: 26, confidenceImpact: 0.12, floor: 24, ceiling: 76});
   const callConfidence = probabilities.bullish;
@@ -2689,9 +2978,9 @@ function buildIntradayAction(snapshot, timeframe, bars, prediction){
     chipClass: 'call',
     confidence: callConfidence,
     entryTrigger: triggerUp,
-    target1: triggerUp + (projectedRange * 0.55),
-    target2: Math.max(lastClose * (1 + Math.max(expectedMovePct, 0.12) / 100), triggerUp + (projectedRange * 1.05)),
-    stopLoss: Math.min(triggerDown, triggerUp - (projectedRange * 0.45)),
+    target1: triggerUp + Math.max(MIN_QUALIFIED_MOVE_POINTS, projectedRange * 0.9),
+    target2: triggerUp + Math.max(MIN_QUALIFIED_MOVE_POINTS * 1.45, projectedRange * 1.3),
+    stopLoss: Math.min(triggerDown, triggerUp - Math.max(projectedRange * 0.45, 18)),
     invalidation: Math.min(triggerDown, ema21 || triggerDown),
     narrative: `Take the call view only if price sustains above ${formatNum(triggerUp)} on the ${timeframe} chart.`,
     why: 'This side works when buyers reclaim the recent swing high and keep the tape above the breakout trigger.',
@@ -2703,9 +2992,9 @@ function buildIntradayAction(snapshot, timeframe, bars, prediction){
     chipClass: 'put',
     confidence: putConfidence,
     entryTrigger: triggerDown,
-    target1: triggerDown - (projectedRange * 0.55),
-    target2: Math.min(lastClose * (1 + Math.min(expectedMovePct, -0.12) / 100), triggerDown - (projectedRange * 1.05)),
-    stopLoss: Math.max(triggerUp, triggerDown + (projectedRange * 0.45)),
+    target1: triggerDown - Math.max(MIN_QUALIFIED_MOVE_POINTS, projectedRange * 0.9),
+    target2: triggerDown - Math.max(MIN_QUALIFIED_MOVE_POINTS * 1.45, projectedRange * 1.3),
+    stopLoss: Math.max(triggerUp, triggerDown + Math.max(projectedRange * 0.45, 18)),
     invalidation: Math.max(triggerUp, ema21 || triggerUp),
     narrative: `Take the put view only if price slips below ${formatNum(triggerDown)} on the ${timeframe} chart.`,
     why: 'This side works when sellers break the recent swing low and keep price below the breakdown trigger.',
@@ -2746,13 +3035,16 @@ function buildIntradayAction(snapshot, timeframe, bars, prediction){
     triggerDown,
     invalidation,
     lastClose,
-    notes: reasons
+    notes: [...composite.notes, ...reasons
       .sort((left, right) => Math.abs(right.signal * right.weight) - Math.abs(left.signal * left.weight))
       .slice(0, 4)
-      .map(item => item.signal >= 0 ? item.positiveText : item.negativeText),
+      .map(item => item.signal >= 0 ? item.positiveText : item.negativeText)].slice(0, 5),
     narrative,
     playbook,
     projectedRange,
+    pattern: composite.pattern,
+    nseReport: composite.nseReport,
+    qualifiedMovePoints: composite.projectedMove,
     scenarios: {
       auto: autoScenario,
       call: callScenario,
@@ -2840,59 +3132,54 @@ function buildNext30MinuteForecast(snapshot, prediction){
   const confidence = Math.round(clamp(52 + (Math.abs(score) * 35) + Math.min(recent.length, 8), 55, confidenceCap));
   const movePoints = clamp(score * Math.max(avgRange * 2.8, lastClose * 0.0016), -avgRange * 5, avgRange * 5);
   let target = lastClose + movePoints;
-
-  // FORCE CLEAR BIAS - Minimize WAIT, prefer CALL/PUT
-  let bias = 'WAIT';
-  let confidenceBoost = 0;
-  if(score > 0.12){
-    bias = 'BUY CALL';
-    confidenceBoost = Math.abs(score) * 8;
-  }else if(score < -0.12){
-    bias = 'BUY PUT';
-    confidenceBoost = Math.abs(score) * 8;
-  }else if(Math.abs(score) > 0.05){
-    // NEAR ZERO - Pick based on momentum and daily
-    if(momentum30Pct > 0 || (prediction && prediction.score > 0)){
-      bias = 'BUY CALL';
-      confidenceBoost = 4;
-    }else{
-      bias = 'BUY PUT';
-      confidenceBoost = 4;
-    }
-  }
-
-  const finalConfidence = Math.round(clamp(confidence + confidenceBoost, 55, confidenceCap));
-
-  const chipClass = bias === 'BUY CALL' ? 'call' : bias === 'BUY PUT' ? 'put' : 'wait';
   const triggerUp = Math.max(...recent.map(candle => Number(candle.high)));
   const triggerDown = Math.min(...recent.map(candle => Number(candle.low)));
-  const entry = bias === 'BUY CALL' ? triggerUp : bias === 'BUY PUT' ? triggerDown : null;
-  let stopLoss = bias === 'BUY CALL'
-    ? Math.min(triggerDown, lastClose - (avgRange * 1.3))
+  const preliminaryBias = score > 0.16 ? 'BUY CALL' : score < -0.16 ? 'BUY PUT' : 'WAIT';
+  const composite = buildQualifiedSignal({
+    snapshot,
+    prediction,
+    bars,
+    timeframe: '5m',
+    basePieces: pieces,
+    avgRange,
+    triggerUp,
+    triggerDown,
+    lastClose,
+    currentBias: preliminaryBias
+  });
+  let bias = composite.bias;
+  const finalConfidence = Math.round(clamp(
+    bias === 'WAIT' ? Math.min(composite.confidence, confidence, 62) : Math.max(confidence, composite.confidence),
+    50,
+    confidenceCap
+  ));
+  const signedMovePoints = bias === 'BUY CALL'
+    ? Math.max(MIN_QUALIFIED_MOVE_POINTS, composite.projectedMove)
     : bias === 'BUY PUT'
-      ? Math.max(triggerUp, lastClose + (avgRange * 1.3))
-      : null;
+      ? -Math.max(MIN_QUALIFIED_MOVE_POINTS, composite.projectedMove)
+      : movePoints;
+  target = lastClose + signedMovePoints;
+  const chipClass = composite.chipClass;
+  const entry = bias === 'BUY CALL' ? triggerUp : bias === 'BUY PUT' ? triggerDown : null;
+  let stopLoss = composite.stopLoss;
 
   const expectedMovePct = ((target - lastClose) / Math.max(lastClose, 1)) * 100;
   const band = Math.max(avgRange * 1.5, lastClose * 0.0014);
   const upperBand = target + band;
   const lowerBand = target - band;
-  const invalidation = bias === 'BUY CALL' ? triggerDown : bias === 'BUY PUT' ? triggerUp : null;
+  const invalidation = composite.invalidation;
   const latestTime = new Date(last.market_time || last.time_utc);
   const steps = [5, 10, 15, 20, 25, 30].map(minutes => {
     const dt = new Date(latestTime.getTime() + (minutes * 60 * 1000));
     const progress = minutes / 30;
-    const pathPrice = lastClose + (movePoints * progress);
+    const pathPrice = lastClose + (signedMovePoints * progress);
     return {
       minutes,
       time: dt.toLocaleTimeString('en-IN', {timeZone: INDIA_TZ, hour: 'numeric', minute: '2-digit', hour12: false}),
       price: pathPrice
     };
   });
-  const topDrivers = pieces
-    .sort((left, right) => Math.abs(right.signal * right.weight) - Math.abs(left.signal * left.weight))
-    .slice(0, 4)
-    .map(item => `${item.label}: ${item.signal >= 0 ? 'bullish' : 'bearish'}`);
+  const topDrivers = composite.topDrivers;
 
   const optionStrike = recommendOptionStrike(lastClose, target, bias);
 
@@ -2909,6 +3196,12 @@ function buildNext30MinuteForecast(snapshot, prediction){
     entry,
     stopLoss,
     invalidation,
+    target1: composite.target1,
+    target2: composite.target2,
+    pattern: composite.pattern,
+    nseReport: composite.nseReport,
+    qualifiedMovePoints: composite.projectedMove,
+    notes: composite.notes,
     marketLive,
     isFreshSession,
     lastBarDate,
@@ -2962,8 +3255,11 @@ function renderLiveActionCard(snapshot, bars, timeframe, prediction, requestedTa
         <div class="next50-kpi"><div class="next50-label">Current Price</div><div class="next50-value">${formatNum(next30.lastClose)}</div></div>
         <div class="next50-kpi"><div class="next50-label">Target Price</div><div class="next50-value">${formatNum(next30.target)}</div></div>
         <div class="next50-kpi"><div class="next50-label">Stop Loss</div><div class="next50-value">${formatNum(next30.stopLoss)}</div></div>
+        <div class="next50-kpi"><div class="next50-label">Pattern</div><div class="next50-value">${escapeHtml(next30.pattern?.name || 'n/a')}</div></div>
+        <div class="next50-kpi"><div class="next50-label">Min Move Check</div><div class="next50-value">${Math.round(next30.qualifiedMovePoints || 0)} pts</div></div>
       </div>
       ${optionHtml}
+      <div class="next50-note">${escapeHtml((next30.notes || []).join(' | '))}</div>
     </div>
   `;
 }
@@ -3327,7 +3623,7 @@ async function bootstrapLatestSnapshot(){
     })();
   }catch(err){
     setLoadButtonLabel(location.protocol === 'file:' ? 'Load Snapshot Or Use Live Server' : 'Load Snapshot JSON');
-    updateAutoRefreshStatus('Waiting for live API. Auto refresh will retry every 1 minute.', 'error');
+    updateAutoRefreshStatus('Waiting for live API. Auto refresh will retry every 30 seconds.', 'error');
   }
 }
 
@@ -3602,7 +3898,7 @@ async function runPrediction(requestedTarget='live'){
     await logSep();
     await log('<span class="t-muted">For one-click live refresh, start `python3 serve_nifty50_app.py` and open the localhost URL it prints.</span>');
     await log('<span class="t-muted">If you opened this HTML directly, use `Load Snapshot JSON` to choose a previously generated real snapshot.</span>');
-    updateAutoRefreshStatus(`${err.message}. Auto refresh will retry in 1 minute.`, 'error');
+    updateAutoRefreshStatus(`${err.message}. Auto refresh will retry in 30 seconds.`, 'error');
     autoRefreshInFlight = false;
     setRunButtonsState(null, false);
     return;
@@ -3711,7 +4007,7 @@ async function runPrediction(requestedTarget='live'){
   }
   await log('<br><span class="t-muted">NOTE: This is a rules-based research console. Use official data and backtests before trusting it in production.</span>');
 
-  updateAutoRefreshStatus(`Last refreshed ${formatDateTimeInIndia(snapshot.meta?.generated_at || new Date().toISOString())}. Next refresh in 1 minute.`);
+  updateAutoRefreshStatus(`Last refreshed ${formatDateTimeInIndia(snapshot.meta?.generated_at || new Date().toISOString())}. Next refresh in 30 seconds.`);
   autoRefreshInFlight = false;
   setRunButtonsState(null, false);
 }
