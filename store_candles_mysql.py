@@ -97,27 +97,8 @@ def normalized_rows(payload: dict[str, Any], *, symbol: str, timeframes: list[st
 
 
 def connect_mysql():
-    try:
-        import mysql.connector  # type: ignore
-        from mysql.connector import errorcode  # type: ignore
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("Missing dependency: install mysql-connector-python") from exc
-    settings = mysql_settings()
-    try:
-        return mysql.connector.connect(**settings)
-    except mysql.connector.Error as exc:
-        if exc.errno != errorcode.ER_BAD_DB_ERROR:
-            raise
-        database = settings.pop("database")
-        bootstrap = mysql.connector.connect(**settings)
-        try:
-            cursor = bootstrap.cursor()
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{database}`")
-            bootstrap.commit()
-        finally:
-            bootstrap.close()
-        settings["database"] = database
-        return mysql.connector.connect(**settings)
+    import db_adapter
+    return db_adapter.get_db_connection()
 
 
 def main() -> None:
