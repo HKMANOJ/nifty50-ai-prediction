@@ -54,6 +54,28 @@ YAHOO_HEADERS = {
     "Referer": "https://finance.yahoo.com/",
 }
 
+MARKET_WATCH_ITEMS = [
+    {"id": "dow_jones", "rank": 2, "label": "Dow Jones", "region": "US", "category": "US Market", "symbol": "^DJI", "impact": "direct"},
+    {"id": "nasdaq", "rank": 3, "label": "Nasdaq", "region": "US", "category": "US Market", "symbol": "^IXIC", "impact": "direct"},
+    {"id": "sp500", "rank": 4, "label": "S&P 500", "region": "US", "category": "US Market", "symbol": "^GSPC", "impact": "direct"},
+    {"id": "dow_futures", "rank": 5, "label": "Dow Futures", "region": "US", "category": "US Futures", "symbol": "YM=F", "impact": "direct"},
+    {"id": "nasdaq_futures", "rank": 6, "label": "Nasdaq Futures", "region": "US", "category": "US Futures", "symbol": "NQ=F", "impact": "direct"},
+    {"id": "sp500_futures", "rank": 7, "label": "S&P 500 Futures", "region": "US", "category": "US Futures", "symbol": "ES=F", "impact": "direct"},
+    {"id": "nikkei", "rank": 8, "label": "Nikkei 225", "region": "Japan", "category": "Asia", "symbol": "^N225", "impact": "direct"},
+    {"id": "kospi", "rank": 9, "label": "KOSPI", "region": "South Korea", "category": "Asia", "symbol": "^KS11", "impact": "direct"},
+    {"id": "hang_seng", "rank": 10, "label": "Hang Seng", "region": "Hong Kong", "category": "Asia", "symbol": "^HSI", "impact": "direct"},
+    {"id": "shanghai", "rank": 11, "label": "Shanghai Composite", "region": "China", "category": "Asia", "symbol": "000001.SS", "impact": "direct"},
+    {"id": "csi_300", "rank": 12, "label": "CSI 300", "region": "China", "category": "Asia", "symbol": "000300.SS", "impact": "direct"},
+    {"id": "dax", "rank": 13, "label": "DAX", "region": "Europe", "category": "Europe", "symbol": "^GDAXI", "impact": "direct"},
+    {"id": "ftse", "rank": 14, "label": "FTSE 100", "region": "Europe", "category": "Europe", "symbol": "^FTSE", "impact": "direct"},
+    {"id": "cac", "rank": 15, "label": "CAC 40", "region": "Europe", "category": "Europe", "symbol": "^FCHI", "impact": "direct"},
+    {"id": "dxy", "rank": 18, "label": "Dollar Index", "region": "US", "category": "Macro", "symbol": "DX-Y.NYB", "impact": "inverse"},
+    {"id": "us10y", "rank": 19, "label": "US 10Y Yield", "region": "US", "category": "Macro", "symbol": "^TNX", "impact": "inverse"},
+    {"id": "gold", "rank": 20, "label": "Gold", "region": "Global", "category": "Risk", "symbol": "GC=F", "impact": "mixed"},
+    {"id": "bitcoin", "rank": 21, "label": "Bitcoin", "region": "Global", "category": "Risk", "symbol": "BTC-USD", "impact": "direct"},
+    {"id": "cboe_vix", "rank": 22, "label": "CBOE VIX", "region": "US", "category": "Risk", "symbol": "^VIX", "impact": "inverse"},
+]
+
 POSITIVE_WORDS = {
     "gain", "gains", "growth", "strong", "surge", "surges", "beat", "beats",
     "eases", "easing", "cooling", "optimism", "optimistic", "rally", "rises",
@@ -320,6 +342,7 @@ def yahoo_latest_change(symbol: str) -> tuple[dict[str, Any], dict[str, Any]]:
             "value": round(latest.value, 4),
             "previous_value": round(previous.value, 4),
             "change_pct": round(change_pct, 4),
+            "history": [{"date": point.date, "value": round(point.value, 4)} for point in points[-20:]],
         },
         {
             "provider": "Yahoo Finance",
@@ -390,6 +413,31 @@ def resolve_market_series(yahoo_symbol: str, fred_series_id: str | None = None) 
             errors.append(f"FRED failed for {fred_series_id}: {exc}")
 
     raise LiveDataError("; ".join(errors) or f"No live market source succeeded for {yahoo_symbol}")
+
+
+def build_market_watch() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    rows: list[dict[str, Any]] = []
+    provenance: list[dict[str, Any]] = []
+    for item in MARKET_WATCH_ITEMS:
+        try:
+            series, meta = yahoo_latest_change(item["symbol"])
+            rows.append(
+                {
+                    **item,
+                    **series,
+                    "status": "live",
+                }
+            )
+            provenance.append(meta)
+        except Exception as exc:
+            rows.append(
+                {
+                    **item,
+                    "status": "unavailable",
+                    "error": str(exc),
+                }
+            )
+    return rows, provenance
 
 
 def collect_topic_articles(
@@ -490,6 +538,7 @@ def main() -> None:
 
     us_markets, us_markets_meta = resolve_market_series("^GSPC", fred_series_id="SP500")
     brent, brent_meta = resolve_market_series("BZ=F", fred_series_id="DCOILBRENTEU")
+    market_watch, market_watch_provenance = build_market_watch()
 
     output = {
         "meta": {
@@ -502,6 +551,7 @@ def main() -> None:
         },
         "us_markets": us_markets,
         "brent": brent,
+        "market_watch": market_watch,
         "news_sentiment": {
             "india": india_score,
             "global": global_score,
@@ -550,7 +600,7 @@ def main() -> None:
             "india_market": india_bundle["failures"],
             "global_risk": global_bundle["failures"],
         },
-        "provenance": india_bundle["provenance"] + global_bundle["provenance"] + [us_markets_meta, brent_meta],
+        "provenance": india_bundle["provenance"] + global_bundle["provenance"] + [us_markets_meta, brent_meta] + market_watch_provenance,
     }
 
     output_path = Path(args.output)

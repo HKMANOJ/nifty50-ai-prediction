@@ -67,6 +67,11 @@ def fetch_from_csv_fallback():
                             normalized['oi'] = int(value.replace(',', ''))
                         except:
                             normalized['oi'] = 0
+                    elif ('change' in key and 'open interest' in key) or ('oi change' in key):
+                        try:
+                            normalized['oiChange'] = int(value.replace(',', ''))
+                        except:
+                            normalized['oiChange'] = 0
                     elif 'underlying' in key:
                         try:
                             normalized['underlying'] = float(value.replace(',', ''))
@@ -126,6 +131,7 @@ def fetch_nse_most_active_puts():
                     'ltp': pe.get('lastPrice', 0),
                     'volume': pe.get('totalTradedVolume', 0),
                     'oi': pe.get('openInterest', 0),
+                    'oiChange': pe.get('changeinOpenInterest', 0),
                     'underlying': data.get('records', {}).get('underlyingValue', 0),
                 })
 
@@ -174,6 +180,7 @@ def fetch_nse_most_active_calls():
                     'ltp': ce.get('lastPrice', 0),
                     'volume': ce.get('totalTradedVolume', 0),
                     'oi': ce.get('openInterest', 0),
+                    'oiChange': ce.get('changeinOpenInterest', 0),
                     'underlying': data.get('records', {}).get('underlyingValue', 0),
                 })
 
@@ -236,6 +243,16 @@ def fetch_all_most_active():
         }
         save_json(calls_data, OUTPUTS['calls'])
 
+    if puts and calls:
+        combined_scope = 'puts_and_calls'
+        fetch_ok = True
+    elif puts or calls:
+        combined_scope = 'puts_only' if puts else 'calls_only'
+        fetch_ok = False
+    else:
+        combined_scope = 'unavailable'
+        fetch_ok = False
+
     # Combined data (for UI)
     if puts or calls:
         combined = {
@@ -246,7 +263,9 @@ def fetch_all_most_active():
             'total_calls': len(calls),
             'total_contracts': len(puts) + len(calls),
             'generated_at': datetime.now().isoformat(),
-            'data_scope': 'puts_and_calls',
+            'data_scope': combined_scope,
+            'is_complete': fetch_ok,
+            'warning': '' if fetch_ok else 'One side of NSE option-chain data is missing. PCR confirmation is disabled.',
             'source': 'NSE (API or CSV fallback)',
             'symbol': 'NIFTY'
         }
@@ -266,11 +285,14 @@ def fetch_all_most_active():
             for i, call in enumerate(calls[:5], 1):
                 print(f"  {i}. Strike {call['strikeOrExpiry']:8.0f} | LTP: {call['ltp']:8.2f} | Vol: {call['volume']:>10}")
 
-        print(f"\n✅ Successfully fetched and saved!")
+        if fetch_ok:
+            print(f"\n✅ Successfully fetched and saved!")
+        else:
+            print(f"\n⚠ Saved partial option data only. PCR confirmation is disabled until both PUT and CALL data are available.")
         print(f"   PUTS: {len(puts)} contracts")
         print(f"   CALLS: {len(calls)} contracts")
         print(f"   TOTAL: {len(puts) + len(calls)} contracts")
-        return True
+        return fetch_ok
 
     print("\n✗ Failed to fetch data from both NSE API and CSV fallback")
     return False
@@ -279,4 +301,3 @@ def fetch_all_most_active():
 if __name__ == '__main__':
     success = fetch_all_most_active()
     exit(0 if success else 1)
-

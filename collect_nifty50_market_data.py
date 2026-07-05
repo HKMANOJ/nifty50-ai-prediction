@@ -23,6 +23,10 @@ from pathlib import Path
 from statistics import mean, pstdev
 from typing import Any
 
+from indicator_engine import IndicatorEngine
+from market_structure_engine import MarketStructureEngine
+from patterns.pattern_manager import PatternManager
+
 
 ROOT = Path(__file__).resolve().parent
 INPUT_DIR = ROOT / "inputs"
@@ -720,6 +724,164 @@ def load_option_volume(path: Path) -> tuple[dict[str, Any] | None, FileStatus]:
     )
 
 
+def make_market_watch_row(
+    *,
+    row_id: str,
+    rank: int,
+    label: str,
+    region: str,
+    category: str,
+    impact: str,
+    provider: str,
+    value: float | None = None,
+    change_pct: float | None = None,
+    date_value: str | None = None,
+    status: str = "live",
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "rank": rank,
+        "label": label,
+        "region": region,
+        "category": category,
+        "impact": impact,
+        "provider": provider,
+        "date": date_value,
+        "value": round_or_none(value),
+        "change_pct": round_or_none(change_pct, 4),
+        "status": status,
+        **(extra or {}),
+    }
+
+
+def build_global_market_watch(
+    *,
+    world_signals: dict[str, Any],
+    gift_nifty: dict[str, Any],
+    usdinr: dict[str, Any],
+    vix: dict[str, Any],
+    flows: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rank_overrides = {
+        "dow_jones": 2,
+        "nasdaq": 3,
+        "sp500": 4,
+        "dow_futures": 5,
+        "nasdaq_futures": 6,
+        "sp500_futures": 7,
+        "nikkei": 8,
+        "kospi": 9,
+        "hang_seng": 10,
+        "shanghai": 11,
+        "csi_300": 12,
+        "dax": 13,
+        "ftse": 14,
+        "cac": 15,
+        "dxy": 18,
+        "us10y": 19,
+        "gold": 20,
+        "bitcoin": 21,
+        "cboe_vix": 22,
+    }
+    rows = []
+    for row in (world_signals.get("market_watch") or []):
+        normalized_row = dict(row)
+        if normalized_row.get("id") in rank_overrides:
+            normalized_row["rank"] = rank_overrides[normalized_row["id"]]
+        rows.append(normalized_row)
+    rows.append(
+        make_market_watch_row(
+            row_id="gift_nifty",
+            rank=1,
+            label="GIFT NIFTY",
+            region="GIFT City",
+            category="Opening Signal",
+            impact="direct",
+            provider="NSE International Exchange",
+            value=parse_float(gift_nifty.get("last")),
+            change_pct=parse_float(gift_nifty.get("change_pct")),
+            date_value=gift_nifty.get("latest_date"),
+            extra={"note": "Direct early signal for NIFTY opening"},
+        )
+    )
+    brent = world_signals.get("brent") or {}
+    rows.append(
+        make_market_watch_row(
+            row_id="brent_crude",
+            rank=16,
+            label="Brent Crude Oil",
+            region="Global",
+            category="Commodity",
+            impact="inverse",
+            provider=brent.get("provider") or "Yahoo Finance",
+            value=parse_float(brent.get("value")),
+            change_pct=parse_float(brent.get("change_pct")),
+            date_value=brent.get("date"),
+            extra={"symbol": brent.get("symbol"), "history": brent.get("history") or [], "note": "High crude is negative for India"},
+        )
+    )
+    rows.append(
+        make_market_watch_row(
+            row_id="usdinr",
+            rank=17,
+            label="USD/INR",
+            region="India",
+            category="Currency",
+            impact="inverse",
+            provider="RBI / FBIL / NSE reference statistics",
+            value=parse_float(usdinr.get("value")),
+            change_pct=parse_float(usdinr.get("change_pct")),
+            date_value=usdinr.get("latest_date"),
+            extra={"note": "Rupee weakness can pressure Indian equities"},
+        )
+    )
+    rows.append(
+        make_market_watch_row(
+            row_id="india_vix",
+            rank=23,
+            label="India VIX",
+            region="India",
+            category="Volatility",
+            impact="inverse",
+            provider="NSE India",
+            value=parse_float(vix.get("value")),
+            change_pct=parse_float(vix.get("change_pct")),
+            date_value=vix.get("latest_date"),
+            extra={"note": "Domestic fear index"},
+        )
+    )
+    rows.append(
+        make_market_watch_row(
+            row_id="fii_flow",
+            rank=24,
+            label="FII Flow",
+            region="India",
+            category="Institutional Flow",
+            impact="direct",
+            provider="NSE India",
+            value=parse_float(flows.get("fii_net_crore")),
+            date_value=flows.get("latest_date"),
+            extra={"unit": "crore", "note": "Direct institutional flow impact"},
+        )
+    )
+    rows.append(
+        make_market_watch_row(
+            row_id="dii_flow",
+            rank=25,
+            label="DII Flow",
+            region="India",
+            category="Institutional Flow",
+            impact="direct",
+            provider="NSE India",
+            value=parse_float(flows.get("dii_net_crore")),
+            date_value=flows.get("latest_date"),
+            extra={"unit": "crore", "note": "Domestic institutional support"},
+        )
+    )
+    return sorted(rows, key=lambda row: (int(parse_float(row.get("rank")) or 999), str(row.get("label") or "")))
+
+
 def source_lookup() -> dict[str, dict[str, Any]]:
     return {item["id"]: item for item in load_sources() if "id" in item}
 
@@ -831,6 +993,43 @@ def build_snapshot_from_inputs(input_dir: Path) -> dict[str, Any]:
     headline_groups = world_signals.get("headlines") or {}
     news_sources = world_signals.get("news_sources") or {}
     provider_failures = world_signals.get("provider_failures") or {}
+    global_market_watch = build_global_market_watch(
+        world_signals=world_signals,
+        gift_nifty=gift_nifty,
+        usdinr=usdinr,
+        vix=vix,
+        flows=flows,
+    )
+
+    # Initialize IndicatorEngine
+    indicator_engine = IndicatorEngine()
+    nifty_candles_1m = intraday["series"]["1m"] if intraday and "1m" in intraday["series"] else []
+    nifty_candles_5m = intraday["series"]["5m"] if intraday and "5m" in intraday["series"] else []
+    nifty_indicators_1m = indicator_engine.calculate_all_indicators(nifty_candles_1m)
+    nifty_indicators_5m = indicator_engine.calculate_all_indicators(nifty_candles_5m)
+
+    pattern_manager = PatternManager()
+    nifty_pattern_analysis_1m = pattern_manager.analyze(nifty_candles_1m, "1m")
+    nifty_pattern_analysis_5m = pattern_manager.analyze(nifty_candles_5m, "5m")
+    latest_patterns_1m = sorted(
+        set((nifty_candles_1m[-1].get("patterns", []) if nifty_candles_1m else []) + [
+            item.get("name")
+            for item in nifty_pattern_analysis_1m.get("detected_patterns", [])
+            if item.get("name")
+        ])
+    )
+    latest_patterns_5m = sorted(
+        set((nifty_candles_5m[-1].get("patterns", []) if nifty_candles_5m else []) + [
+            item.get("name")
+            for item in nifty_pattern_analysis_5m.get("detected_patterns", [])
+            if item.get("name")
+        ])
+    )
+
+    # Initialize MarketStructureEngine
+    market_structure_engine = MarketStructureEngine()
+    nifty_market_structure_1m = market_structure_engine.analyze_market_structure(nifty_candles_1m)
+    nifty_market_structure_5m = market_structure_engine.analyze_market_structure(nifty_candles_5m)
 
     global_signals = [
         {
@@ -896,6 +1095,7 @@ def build_snapshot_from_inputs(input_dir: Path) -> dict[str, Any]:
             "news_sentiment_global": global_news_score,
         },
         "global_signals": global_signals,
+        "global_market_watch": global_market_watch,
         "geopolitical_factors": geopolitical_factors,
         "domestic_factors": domestic_factors,
         "news": {
@@ -909,6 +1109,22 @@ def build_snapshot_from_inputs(input_dir: Path) -> dict[str, Any]:
         "intraday": intraday,
         "stock_dashboard": stock_dashboard,
         "options_volume": options_volume,
+        "indicators": {
+            "1m": nifty_indicators_1m,
+            "5m": nifty_indicators_5m,
+        },
+        "candlestick_patterns": {
+            "1m": latest_patterns_1m,
+            "5m": latest_patterns_5m,
+        },
+        "pattern_analysis": {
+            "1m": nifty_pattern_analysis_1m,
+            "5m": nifty_pattern_analysis_5m,
+        },
+        "market_structure": {
+            "1m": nifty_market_structure_1m,
+            "5m": nifty_market_structure_5m,
+        },
         "missing_inputs": [],
         "sources_used": build_sources_used(file_statuses, lookup),
     }
