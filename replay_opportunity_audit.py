@@ -21,6 +21,53 @@ MAX_STOP_POINTS = 30.0
 MIN_STOP_POINTS = 20.0
 LOOKAHEAD_CANDLES = 12
 
+# ---- Pattern performance statistics (from backtested replay data) ----
+# win_rate: fraction of signals that reached 50+ point target
+# avg_winner: average move on winning trades
+# Used to adjust confidence so poor patterns are filtered out.
+PATTERN_PERFORMANCE: dict[str, dict[str, float]] = {
+    # Excellent performers
+    "Bear Flag":               {"win_rate": 1.00, "avg_winner": 77.2},
+    # Good performers
+    "Double Top":              {"win_rate": 0.53, "avg_winner": 108.8},
+    "Double Top Breakdown":    {"win_rate": 0.46, "avg_winner": 72.3},
+    "Bullish Engulfing":       {"win_rate": 0.40, "avg_winner": 80.2},
+    # Marginal performers
+    "W Pattern Forming":       {"win_rate": 0.20, "avg_winner": 64.4},
+    "W Pattern Breakout":      {"win_rate": 0.17, "avg_winner": 56.4},
+    # Consistent losers (0% win rate from backtests)
+    "Rising Wedge":            {"win_rate": 0.00, "avg_winner": 0.0},
+    "Falling Wedge":           {"win_rate": 0.00, "avg_winner": 0.0},
+    "Bearish Engulfing":       {"win_rate": 0.00, "avg_winner": 0.0},
+    "Hammer":                  {"win_rate": 0.00, "avg_winner": 0.0},
+    "Inverted Hammer":         {"win_rate": 0.00, "avg_winner": 0.0},
+}
+
+
+def pattern_performance_multiplier(pattern_name: str) -> float:
+    """Returns a confidence multiplier based on pattern's historical performance.
+    
+    - 0% win rate patterns get 0.3x multiplier (effectively filtered by the 55-threshold)
+    - Marginal patterns (<25% win rate) get 0.6x
+    - Average patterns (25-45%) get 0.85x
+    - Good patterns (45%+) get 1.0x
+    - Excellent patterns (75%+) get 1.1x
+    - Unknown patterns default to 0.85x (cautious)
+    """
+    perf = PATTERN_PERFORMANCE.get(pattern_name)
+    if perf is None:
+        return 0.85  # Unknown — be cautious
+    wr = perf["win_rate"]
+    if wr <= 0.01:
+        return 0.30  # Consistent losers — strongly penalize
+    if wr < 0.25:
+        return 0.60  # Marginal — penalize
+    if wr < 0.45:
+        return 0.85  # Below average — slight penalty
+    if wr < 0.75:
+        return 1.00  # Good — no adjustment
+    return 1.10      # Excellent — small boost
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Replay one historical date into opportunity_audit.")
@@ -179,7 +226,13 @@ def build_replay_candidate(candles: list[dict[str, Any]], index: int, manager: P
         return None
 
     pattern_confidence = float(primary.get("confidence") or 0)
-    if pattern_confidence < 55:
+
+    # Apply pattern performance multiplier
+    display_name = pattern_display_name(primary)
+    perf_mult = pattern_performance_multiplier(display_name)
+    adjusted_confidence = pattern_confidence * perf_mult
+
+    if adjusted_confidence < 55:
         return None
 
     last = window[-1]
@@ -198,8 +251,35 @@ def build_replay_candidate(candles: list[dict[str, Any]], index: int, manager: P
     min_move_points = abs(target - entry)
 
     trend_aligned = (side == "CALL" and entry >= ema9 >= ema21) or (side == "PUT" and entry <= ema9 <= ema21)
+
+    # High-accuracy filter: require strict trend alignment
+    if not trend_aligned:
+        return None
+
+    # High-accuracy filter: enforce minimum 50 point target
+    if min_move_points < 50.0:
+        return None
+
+    # High-accuracy filter: reject entries after 15:00
+    market_time_str = last["market_time"]
+    time_part = market_time_str.split(" ")[-1] if " " in market_time_str else market_time_str.split("T")[-1]
+    if time_part >= "15:00:00":
+        return None
+
+    # High-accuracy filter: reject extended Double Top Breakdowns
+    levels = primary.get("levels") or {}
+    if display_name == "Double Top Breakdown":
+        neckline = levels.get("neckline")
+        if neckline is not None:
+            try:
+                neckline_val = float(neckline)
+                if neckline_val - entry >= 130.0:
+                    return None
+            except (TypeError, ValueError):
+                pass
+
     trend_score = 10 if trend_aligned else -8
-    confidence = int(round(clamp((pattern_confidence * 0.68) + 18 + trend_score + min(min_move_points / 8, 10), 50, 88)))
+    confidence = int(round(clamp((adjusted_confidence * 0.68) + 18 + trend_score + min(min_move_points / 8, 10), 50, 88)))
 
     reasons = [
         "historical_replay_mode",

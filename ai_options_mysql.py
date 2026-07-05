@@ -11,6 +11,10 @@ from typing import Any
 from store_candles_mysql import connect_mysql
 
 
+MINIMUM_TARGET_POINTS = 50.0
+VALID_OPTION_SIDES = {"BUY CALL", "BUY PUT"}
+
+
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS ai_options (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -26,9 +30,11 @@ CREATE TABLE IF NOT EXISTS ai_options (
   target_price DECIMAL(12,2) NOT NULL,
   stop_loss DECIMAL(12,2) NOT NULL,
   current_price DECIMAL(12,2),
+  exit_price DECIMAL(12,2),
   confidence INT,
   pattern_name VARCHAR(128),
   reason TEXT,
+  execution_quality VARCHAR(32),
   premium_entry DECIMAL(12,2),
   premium_target DECIMAL(12,2),
   premium_stop_loss DECIMAL(12,2),
@@ -77,12 +83,14 @@ def init_table(connection) -> None:
     cursor = connection.cursor()
     cursor.execute(CREATE_TABLE_SQL)
     for statement in (
+        "ALTER TABLE ai_options ADD COLUMN execution_quality VARCHAR(32) NULL",
         "ALTER TABLE ai_options ADD COLUMN premium_entry DECIMAL(12,2) NULL",
         "ALTER TABLE ai_options ADD COLUMN premium_target DECIMAL(12,2) NULL",
         "ALTER TABLE ai_options ADD COLUMN premium_stop_loss DECIMAL(12,2) NULL",
         "ALTER TABLE ai_options ADD COLUMN premium_current DECIMAL(12,2) NULL",
         "ALTER TABLE ai_options ADD COLUMN premium_exit DECIMAL(12,2) NULL",
         "ALTER TABLE ai_options ADD COLUMN pnl_premium DECIMAL(12,2) NULL",
+        "ALTER TABLE ai_options ADD COLUMN exit_price DECIMAL(12,2) NULL",
     ):
         try:
             cursor.execute(statement)
@@ -116,6 +124,39 @@ def nullable_number(value: float | None) -> float | None:
     return value
 
 
+def parse_required_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(number) or math.isinf(number):
+        return None
+    return number
+
+
+def validate_trade_payload(payload: dict[str, Any]) -> tuple[bool, str]:
+    side = str(payload.get("option_side", "")).upper().strip()
+    if side not in VALID_OPTION_SIDES:
+        return False, "invalid_option_side"
+
+    entry = parse_required_number(payload.get("entry_price"))
+    target = parse_required_number(payload.get("target_price"))
+    stop_loss = parse_required_number(payload.get("stop_loss"))
+    if entry is None or target is None or stop_loss is None:
+        return False, "missing_trade_levels"
+
+    target_distance = abs(target - entry)
+    if target_distance < MINIMUM_TARGET_POINTS:
+        return False, "target_below_50_points"
+
+    if side == "BUY CALL" and not (target > entry and stop_loss < entry):
+        return False, "invalid_call_target_or_stop"
+    if side == "BUY PUT" and not (target < entry and stop_loss > entry):
+        return False, "invalid_put_target_or_stop"
+
+    return True, ""
+
+
 def latest_open(connection, status: str = "OPEN") -> dict[str, Any] | None:
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
@@ -128,7 +169,15 @@ def latest_open(connection, status: str = "OPEN") -> dict[str, Any] | None:
         """,
         (status,),
     )
-    return serialize_row(cursor.fetchone())
+    record = serialize_row(cursor.fetchone())
+    if (status or "").upper() == "OPEN" and record:
+        execution_quality = str(record.get("execution_quality") or "").lower()
+        if execution_quality not in {"premium_live", "premium_missing"}:
+            return None
+        is_valid, _ = validate_trade_payload(record)
+        if not is_valid:
+            return None
+    return record
 
 
 def read_history(
@@ -169,6 +218,15 @@ def read_history(
 
 def record_prediction(connection, payload: dict[str, Any]) -> dict[str, Any]:
     init_table(connection)
+    is_valid, validation_error = validate_trade_payload(payload)
+    if not is_valid:
+        return {
+            "ok": False,
+            "created": False,
+            "error": validation_error,
+            "record": None,
+        }
+
     active = latest_open(connection, "OPEN")
     if active:
         return {"ok": True, "created": False, "record": active}
@@ -178,15 +236,16 @@ def record_prediction(connection, payload: dict[str, Any]) -> dict[str, Any]:
         """
         INSERT INTO ai_options
           (signal_key, symbol, timeframe, option_side, option_name, status, entry_price,
-           target_price, stop_loss, current_price, confidence, pattern_name, reason,
+           target_price, stop_loss, current_price, confidence, pattern_name, reason, execution_quality,
            premium_entry, premium_target, premium_stop_loss, premium_current, opened_market_time)
         VALUES
-          (%s, %s, %s, %s, %s, 'OPEN', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+          (%s, %s, %s, %s, %s, 'OPEN', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
           current_price = VALUES(current_price),
           premium_current = VALUES(premium_current),
           confidence = VALUES(confidence),
-          reason = VALUES(reason)
+          reason = VALUES(reason),
+          execution_quality = VALUES(execution_quality)
         """,
         (
             payload["signal_key"],
@@ -201,6 +260,7 @@ def record_prediction(connection, payload: dict[str, Any]) -> dict[str, Any]:
             payload.get("confidence"),
             payload.get("pattern_name"),
             payload.get("reason"),
+            payload.get("execution_quality"),
             payload.get("premium_entry"),
             payload.get("premium_target"),
             payload.get("premium_stop_loss"),
@@ -220,6 +280,7 @@ def update_status(connection, args: argparse.Namespace) -> dict[str, Any]:
         UPDATE ai_options
         SET status = %s,
             current_price = %s,
+            exit_price = %s,
             result_points = %s,
             premium_current = %s,
             premium_exit = %s,
@@ -229,6 +290,7 @@ def update_status(connection, args: argparse.Namespace) -> dict[str, Any]:
         """,
         (
             args.status,
+            args.current_price,
             args.current_price,
             args.result_points,
             nullable_number(args.premium_current),

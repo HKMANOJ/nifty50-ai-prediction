@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from nifty_pattern_detector import detect_patterns
+
 
 ROOT = Path(__file__).resolve().parent
 INPUT_DIR = ROOT / "inputs"
@@ -110,6 +112,37 @@ def run_curl(url: str, *, referer: str | None = None, accept: str = "application
     if result.returncode != 0:
         stderr = result.stderr.strip() or result.stdout.strip()
         raise DownloadError(f"curl failed for {url}: {stderr}")
+    return result.stdout
+
+
+def run_curl_with_cookies(url: str, cookie_file: str, *, save_cookies: bool = False, referer: str | None = None, accept: str = "application/json, text/plain, */*") -> str:
+    cmd = [
+        "curl",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--compressed",
+        "-A",
+        USER_AGENT,
+        "-H",
+        f"Accept: {accept}",
+        "-H",
+        "Accept-Language: en-US,en;q=0.9",
+    ]
+    if save_cookies:
+        cmd.extend(["-c", cookie_file])
+    else:
+        cmd.extend(["-b", cookie_file])
+        
+    if referer:
+        cmd.extend(["-e", referer, "-H", f"Referer: {referer}"])
+    cmd.append(url)
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or result.stdout.strip()
+        raise DownloadError(f"curl with cookies failed for {url}: {stderr}")
     return result.stdout
 
 
@@ -456,7 +489,7 @@ def fetch_nifty_live_summary() -> dict[str, Any]:
             "open": round_or_none(parse_float(row.get("open"))),
             "high": round_or_none(parse_float(row.get("high"))),
             "low": round_or_none(parse_float(row.get("low"))),
-            "previous_close": round_or_none(parse_float(row.get("previousClose"))),
+            "previous_close": round_or_none(parse_float(row.get("variation"))),
             "change": round_or_none(parse_float(row.get("variation"))),
             "change_pct": round_or_none(parse_float(row.get("percentChange"))),
             "updated_at": row.get("lastUpdateTime"),
@@ -519,7 +552,33 @@ def normalize_yahoo_candles(payload: dict[str, Any], *, label: str) -> dict[str,
     }
 
 
+def scale_and_clean_bees_candles(bees_points: list[dict[str, Any]], scaling_factor: float) -> list[dict[str, Any]]:
+    scaled_points = []
+    for pt in bees_points:
+        scaled_points.append({
+            "time_utc": pt["time_utc"],
+            "market_time": pt["market_time"],
+            "market_date": pt["market_date"],
+            "open": round(pt["open"] * scaling_factor, 2),
+            "high": round(pt["high"] * scaling_factor, 2),
+            "low": round(pt["low"] * scaling_factor, 2),
+            "close": round(pt["close"] * scaling_factor, 2),
+            "volume": pt.get("volume", 0)
+        })
+    return scaled_points
+
+
+def merge_candles(yahoo_points: list[dict[str, Any]], nse_points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not nse_points:
+        return yahoo_points
+    today_str = datetime.now(INDIA_TZ).date().isoformat()
+    # Keep Yahoo Finance index candles that are BEFORE today
+    filtered_yahoo = [pt for pt in yahoo_points if pt.get("market_date", "") < today_str]
+    return filtered_yahoo + nse_points
+
+
 def download_nifty_intraday(input_dir: Path) -> int:
+    # 1. Fetch official index candles (15m delayed)
     one_minute = normalize_yahoo_candles(
         fetch_json(
             f"{YAHOO_CHART_BASE}/{YAHOO_NSEI_SYMBOL}?range=1d&interval=1m",
@@ -535,6 +594,73 @@ def download_nifty_intraday(input_dir: Path) -> int:
         label="5m",
     )
 
+    # 2. Fetch real-time proxy candles from NIFTYBEES.NS (zero delay)
+    print("[REAL-TIME PROXY] Fetching real-time proxy candles from NIFTYBEES.NS...")
+    bees_1m = None
+    bees_5m = None
+    try:
+        bees_1m_payload = fetch_json(
+            f"{YAHOO_CHART_BASE}/NIFTYBEES.NS?range=1d&interval=1m",
+            referer="https://finance.yahoo.com/quote/NIFTYBEES.NS/chart",
+        )
+        bees_1m = normalize_yahoo_candles(bees_1m_payload, label="1m")
+    except Exception as e:
+        print(f"[REAL-TIME PROXY] ⚠ Failed to fetch NIFTYBEES 1m chart: {e}")
+
+    try:
+        bees_5m_payload = fetch_json(
+            f"{YAHOO_CHART_BASE}/NIFTYBEES.NS?range=5d&interval=5m",
+            referer="https://finance.yahoo.com/quote/NIFTYBEES.NS/chart",
+        )
+        bees_5m = normalize_yahoo_candles(bees_5m_payload, label="5m")
+    except Exception as e:
+        print(f"[REAL-TIME PROXY] ⚠ Failed to fetch NIFTYBEES 5m chart: {e}")
+
+    # 3. Fetch real-time live index summary to compute exact scaling factor dynamically
+    live_summary = None
+    try:
+        live_summary = fetch_nifty_live_summary()
+    except Exception as e:
+        print(f"[REAL-TIME PROXY] ⚠ Failed to fetch NSE live summary for scaling calibration: {e}")
+
+    # Compute dynamic scaling factor
+    live_index_price = None
+    if live_summary and live_summary.get("last") is not None:
+        live_index_price = float(live_summary["last"])
+    if not live_index_price and one_minute.get("regular_market_price") is not None:
+        live_index_price = float(one_minute["regular_market_price"])
+
+    bees_last_price = None
+    if bees_1m and bees_1m.get("points"):
+        bees_last_price = float(bees_1m["points"][-1]["close"])
+    elif bees_1m and bees_1m.get("regular_market_price") is not None:
+        bees_last_price = float(bees_1m["regular_market_price"])
+
+    if live_index_price and bees_last_price and bees_last_price > 0:
+        scaling_factor = live_index_price / bees_last_price
+        print(f"[REAL-TIME PROXY] Calibrated scaling factor dynamically: {scaling_factor:.6f} ({live_index_price} / {bees_last_price})")
+    else:
+        # Fallback to standard ratio (~88.15 in mid-2026)
+        scaling_factor = 88.15
+        print(f"[REAL-TIME PROXY] ⚠ Using fallback scaling factor: {scaling_factor:.6f}")
+
+    # 4. Merge real-time candles for today
+    if bees_1m and bees_1m.get("points"):
+        print(f"[REAL-TIME PROXY] ✓ Merging NIFTYBEES 1m real-time candles scaled by {scaling_factor:.6f}")
+        scaled_1m = scale_and_clean_bees_candles(bees_1m["points"], scaling_factor)
+        one_minute_points = merge_candles(one_minute["points"], scaled_1m)
+    else:
+        one_minute_points = one_minute["points"]
+
+    if bees_5m and bees_5m.get("points"):
+        print(f"[REAL-TIME PROXY] ✓ Merging NIFTYBEES 5m real-time candles scaled by {scaling_factor:.6f}")
+        scaled_5m = scale_and_clean_bees_candles(bees_5m["points"], scaling_factor)
+        five_minute_points = merge_candles(five_minute["points"], scaled_5m)
+    else:
+        five_minute_points = five_minute["points"]
+
+    provider_name = "Yahoo Finance NIFTYBEES.NS Proxy + ^NSEI Historical" if (bees_1m or bees_5m) else "Yahoo Finance intraday chart API"
+
     live_summary: dict[str, Any] | None = None
     live_summary_error: str | None = None
     try:
@@ -543,12 +669,12 @@ def download_nifty_intraday(input_dir: Path) -> int:
         live_summary_error = str(exc)
 
     payload = {
-        "provider": "Yahoo Finance intraday chart API",
+        "provider": provider_name,
         "symbol": "^NSEI",
         "market_timezone": one_minute.get("exchange_timezone") or "Asia/Kolkata",
         "generated_at": datetime.now(ZoneInfo("UTC")).isoformat(),
-        "as_of_utc": one_minute["points"][-1]["time_utc"],
-        "last_price": one_minute.get("regular_market_price"),
+        "as_of_utc": one_minute_points[-1]["time_utc"] if one_minute_points else one_minute["points"][-1]["time_utc"],
+        "last_price": live_summary.get("last") if live_summary else (one_minute_points[-1]["close"] if one_minute_points else one_minute.get("regular_market_price")),
         "previous_close": one_minute.get("previous_close"),
         "official_summary_source": "NSE allIndices",
         "official_summary_error": live_summary_error,
@@ -558,27 +684,28 @@ def download_nifty_intraday(input_dir: Path) -> int:
             "1m": {
                 "range": "1d",
                 "interval": "1m",
-                "points": len(one_minute["points"]),
-                "session_date": one_minute.get("session_date"),
+                "points": len(one_minute_points),
+                "session_date": one_minute_points[-1]["market_date"] if one_minute_points else one_minute.get("session_date"),
             },
             "5m": {
                 "range": "5d",
                 "interval": "5m",
-                "points": len(five_minute["points"]),
-                "session_date": five_minute.get("session_date"),
+                "points": len(five_minute_points),
+                "session_date": five_minute_points[-1]["market_date"] if five_minute_points else five_minute.get("session_date"),
             },
         },
         "series": {
-            "1m": one_minute["points"],
-            "5m": five_minute["points"],
+            "1m": detect_patterns(one_minute_points),
+            "5m": detect_patterns(five_minute_points),
         },
         "notes": [
-            "Intraday candles are sourced from Yahoo Finance's public chart API for ^NSEI.",
+            "Intraday candles are sourced from a combination of Yahoo Finance NIFTYBEES.NS real-time proxy and ^NSEI historical data.",
             "Daily closes, flows, RBI rates, and world/news signals continue to come from the existing real-data pipeline.",
+            "Candlestick patterns are detected using the nifty_pattern_detector.py module.",
         ],
     }
     write_json(input_dir / "nifty50_intraday.json", payload)
-    return len(one_minute["points"]) + len(five_minute["points"])
+    return len(one_minute_points) + len(five_minute_points)
 
 
 def fetch_nifty50_constituents() -> list[dict[str, str]]:

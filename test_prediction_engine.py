@@ -108,12 +108,15 @@ def test_prediction_engine():
     # Validate key components
     assert "direction" in prediction
     assert "confidence" in prediction
+    assert "confidence_score" in prediction
     assert "reasoning" in prediction
+    assert isinstance(prediction["confidence"], int)
     assert 0 <= prediction["confidence"] <= 100
+    assert -100 <= prediction["confidence_score"] <= 100
     
     print(f"\n✓ Prediction generated successfully")
     print(f"✓ Direction: {prediction['direction']}")
-    print(f"✓ Confidence: {prediction['confidence']}%")
+    print(f"✓ Confidence: {prediction['confidence']} ({prediction['confidence_score']})")
     print(f"✓ Number of reasons: {len(prediction['reasoning'])}")
     
     return prediction

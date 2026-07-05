@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-import numpy as np
+# Removed numpy dependency for simplicity
 
 class MarketStructureEngine:
     """

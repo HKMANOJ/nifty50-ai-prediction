@@ -48,11 +48,6 @@ class PatternManager:
             bear_flag.detect,
             cup_handle.detect,
             trendline_break.detect,
-            bullish_engulfing.detect,
-            bearish_engulfing.detect,
-            hammer.detect,
-            inverted_hammer.detect,
-            doji.detect,
         ]
 
     def analyze(self, candles: list[dict[str, Any]], timeframe: str = "5m") -> dict[str, Any]:

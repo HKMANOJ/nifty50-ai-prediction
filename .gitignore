@@ -3,5 +3,6 @@ __pycache__/
 *.pyc
 *.log
 .env
+.venv/
 .vercel/
 node_modules/

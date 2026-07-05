@@ -235,31 +235,6 @@ def detect_patterns(candles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for i in range(len(candles)):
         candle = candles[i]
         candle["patterns"] = []
-
-        # Single candle patterns
-        if is_hammer(candle):
-            candle["patterns"].append("Hammer")
-        if is_inverted_hammer(candle):
-            candle["patterns"].append("Inverted Hammer")
-        if is_doji(candle):
-            candle["patterns"].append("Doji")
-        if is_spinning_top(candle):
-            candle["patterns"].append("Spinning Top")
-
-        # Two-candle patterns
-        if i > 0:
-            previous_candle = candles[i-1]
-            if is_bullish_engulfing(candle, previous_candle):
-                candle["patterns"].append("Bullish Engulfing")
-            if is_bearish_engulfing(candle, previous_candle):
-                candle["patterns"].append("Bearish Engulfing")
-            if is_tweezer_top(candle, previous_candle):
-                candle["patterns"].append("Tweezer Top")
-            if is_tweezer_bottom(candle, previous_candle):
-                candle["patterns"].append("Tweezer Bottom")
-            if is_bullish_harami(candle, previous_candle):
-                candle["patterns"].append("Bullish Harami")
-            if is_bearish_harami(candle, previous_candle):
-                candle["patterns"].append("Bearish Harami")
+        # Candlestick patterns (Hammer, Doji, Engulfing, Spinning Top, Harami, Tweezer) are removed per requirements.
     return candles
 

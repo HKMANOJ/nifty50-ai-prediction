@@ -16,7 +16,7 @@ def detect(candles: list[dict[str, Any]], timeframe: str = "5m") -> dict[str, An
         return empty_result("Trendline Break", "breakout", timeframe, len(clean))
     last_index = clean[-1]["_index"]
     close = clean[-1]["close"]
-    tolerance = price_tolerance(clean, 0.0015)
+    tolerance = price_tolerance(clean, 0.00015)
     high_line = fit_line(highs) if len(highs) >= 2 else None
     low_line = fit_line(lows) if len(lows) >= 2 else None
     broke_above = bool(high_line and close > line_value(high_line, last_index) + tolerance)
