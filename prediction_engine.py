@@ -323,6 +323,27 @@ class PredictionEngine:
                 target2 = current_price
                 stop_loss = current_price
                 
+        # Enforce strict Project Philosophy Risk Management rules:
+        if signal != "WAIT":
+            raw_sl_size = abs(stop_loss - current_price)
+            # Clamp SL to stay between 10 and 15 points (default to 12 if undefined/zero)
+            sl_size = max(10.0, min(15.0, raw_sl_size if raw_sl_size > 0 else 12.0))
+            
+            raw_target_size = abs(target1 - current_price)
+            # Target must be at least 35 points, and at least 2x the SL size to guarantee >= 1:2 RR
+            target_size = max(35.0, sl_size * 2.0, raw_target_size)
+            
+            if signal == "CALL":
+                stop_loss = current_price - sl_size
+                target1 = current_price + target_size
+                target2 = current_price + (target_size * 1.5)
+            elif signal == "PUT":
+                stop_loss = current_price + sl_size
+                target1 = current_price - target_size
+                target2 = current_price - (target_size * 1.5)
+                
+            reasons.append(f"Risk Matrix aligned: Target {target_size:.1f} pts, Stop Loss {sl_size:.1f} pts (R:R 1:{target_size/sl_size:.2f})")
+            
         # Backend Stop Loss Invalidation (V3 UI Spec)
         if signal == "CALL" and current_price < stop_loss:
             signal = "WAIT"

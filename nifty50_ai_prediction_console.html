@@ -904,6 +904,28 @@
   #ai-diagnostics-board, #ai-signal-strip, #trade-drivers-card {
     display: none !important;
   }
+  
+  /* Live prediction tab alert red dot badge */
+  .app-tab {
+    position: relative;
+  }
+  .app-tab-alert::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 8px;
+    height: 8px;
+    background-color: #f23645;
+    border-radius: 50%;
+    box-shadow: 0 0 6px #f23645;
+    animation: alert-pulse 1.6s infinite;
+  }
+  @keyframes alert-pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.4; }
+    100% { transform: scale(1); opacity: 1; }
+  }
 </style>
 
 <div class="app">
@@ -1933,10 +1955,10 @@ let marketBoardContext = {
   sessionContext: null
 };
 const DEFAULT_SERVER_ORIGIN = 'http://127.0.0.1:8000';
-const MIN_QUALIFIED_MOVE_POINTS = 50;
+const MIN_QUALIFIED_MOVE_POINTS = 35;
 const OPPORTUNITY_AUDIT_LOOKAHEAD_CANDLES = 12;
 const OPPORTUNITY_AUDIT_MIN_EVALUATION_CANDLES = 6;
-const MAX_INTRADAY_STOPLOSS_POINTS = 30;
+const MAX_INTRADAY_STOPLOSS_POINTS = 15;
 const MIN_LEARNING_SAMPLE_SIZE = 30;
 const LIVE_LEARNING_WEIGHT_MIN = 0.85;
 const LIVE_LEARNING_WEIGHT_MAX = 1.15;
@@ -2113,10 +2135,16 @@ function escapeHtml(text){
     .replace(/'/g,'&#39;');
 }
 
+let activeAppPage = 'dashboard';
+
 function setActiveAppPage(page){
   const nextPage = page || 'dashboard';
+  activeAppPage = nextPage;
   appPageButtons.forEach(button => {
     button.classList.toggle('is-active', button.dataset.appPage === nextPage);
+    if(nextPage === 'ai' && button.dataset.appPage === 'ai') {
+      button.classList.remove('app-tab-alert');
+    }
   });
   document.querySelectorAll('[data-page-panel]').forEach(panel => {
     panel.classList.toggle('is-active-page', panel.dataset.pagePanel === nextPage);
@@ -2452,7 +2480,7 @@ function renderOpportunityAuditSummary(report){
     {label:'Correct WAIT %', value: correctWait, note:'GOOD_WAIT + BAD_SIGNAL_BLOCKED', cls:'up'},
     {label:'Missed CALL / PUT', value:`${missedCall} / ${missedPut}`, note:`Best missed pattern: ${summary.best_missed_pattern || 'Collecting'}`, cls:(missedCall + missedPut) ? 'down' : 'up'},
     {label:'Worst Gate', value: summary.worst_rejection_gate || 'Collecting', note:`Top missed reason: ${summary.top_rejection_reason_causing_missed_moves || 'None yet'}`, cls:'warn'},
-    {label:'Adaptive Min Move', value:`${adaptiveMove} pts`, note: adaptiveMove < MIN_QUALIFIED_MOVE_POINTS ? 'Audit lowered the trigger threshold.' : 'Using standard 50-point trigger.'},
+    {label:'Adaptive Min Move', value:`${adaptiveMove} pts`, note: adaptiveMove < MIN_QUALIFIED_MOVE_POINTS ? 'Audit lowered the trigger threshold.' : 'Using standard 35-point trigger.'},
     {label:'OI Blocking', value: recommendations.reduce_oi_blocking ? 'Relaxed' : 'Strict', note: recommendations.reason || 'Collecting evidence.', cls: recommendations.reduce_oi_blocking ? 'warn' : ''},
     {label:'Premium Gate', value:'Record Only', note:'Missing premium blocks trade record, not signal display.'},
     {label:'Audit Verdicts', value: Object.entries(summary.verdict_counts || {}).map(([key, value]) => `${key}:${value}`).join(' ') || '--', note:'Latest classified WAIT outcomes.'},
@@ -4549,6 +4577,17 @@ function renderTradeBoard(snapshot, prediction, sessionContext, requestedTarget)
       }
     } else {
       onelineExit.textContent = '--';
+    }
+  }
+
+  // Update Live Paper Trade button tab alert red dot badge
+  const activeSide = plan.optionsBias || 'WAIT';
+  const aiTabButton = appPageButtons.find(b => b.dataset.appPage === 'ai');
+  if (aiTabButton) {
+    if ((activeSide === 'BUY CALL' || activeSide === 'BUY PUT') && activeAppPage !== 'ai') {
+      aiTabButton.classList.add('app-tab-alert');
+    } else {
+      aiTabButton.classList.remove('app-tab-alert');
     }
   }
 }

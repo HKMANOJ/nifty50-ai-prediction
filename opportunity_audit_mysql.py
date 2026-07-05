@@ -13,7 +13,7 @@ from typing import Any
 from store_candles_mysql import connect_mysql
 
 
-MIN_MISSED_MOVE_POINTS = 50.0
+MIN_MISSED_MOVE_POINTS = 35.0
 MIN_EVALUATION_CANDLES = 6
 MAX_EVALUATION_CANDLES = 12
 INTERNAL_REPLAY_REJECTION_REASONS = {

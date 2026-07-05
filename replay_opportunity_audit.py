@@ -16,9 +16,9 @@ from store_candles_mysql import connect_mysql
 
 
 MIN_REPLAY_HISTORY_BARS = 18
-MIN_REPLAY_MOVE_POINTS = 50.0
-MAX_STOP_POINTS = 30.0
-MIN_STOP_POINTS = 20.0
+MIN_REPLAY_MOVE_POINTS = 35.0
+MAX_STOP_POINTS = 15.0
+MIN_STOP_POINTS = 10.0
 LOOKAHEAD_CANDLES = 12
 
 # ---- Pattern performance statistics (from backtested replay data) ----
