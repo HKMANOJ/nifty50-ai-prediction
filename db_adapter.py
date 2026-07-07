@@ -239,6 +239,20 @@ class ConnectionWrapper:
         if self.conn:
             self.conn.close()
 
+_GLOBAL_CONN: ConnectionWrapper | None = None
+
 def get_db_connection() -> ConnectionWrapper:
-    wrapper = ConnectionWrapper()
-    return wrapper.connect()
+    global _GLOBAL_CONN
+    if _GLOBAL_CONN is not None:
+        try:
+            if _GLOBAL_CONN.engine == "postgres":
+                if _GLOBAL_CONN.conn is not None and not _GLOBAL_CONN.conn.closed:
+                    return _GLOBAL_CONN
+            else:
+                if _GLOBAL_CONN.conn is not None and _GLOBAL_CONN.conn.is_connected():
+                    return _GLOBAL_CONN
+        except Exception:
+            pass
+            
+    _GLOBAL_CONN = ConnectionWrapper().connect()
+    return _GLOBAL_CONN

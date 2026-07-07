@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     history = sub.add_parser("history", help="Read prediction history")
     history.add_argument("--status", default="ALL")
     history.add_argument("--option-side", default="ALL")
-    history.add_argument("--limit", type=int, default=120)
+    history.add_argument("--limit", type=int, default=500)
 
     record = sub.add_parser("record", help="Insert or return an active option prediction")
     record.add_argument("--payload", required=True, help="JSON prediction payload")
@@ -207,7 +207,7 @@ def read_history(
         SELECT *
         FROM ai_options
         {where_sql}
-        ORDER BY created_at DESC
+        ORDER BY opened_market_time DESC, created_at DESC
         LIMIT %s
         """,
         tuple(params),

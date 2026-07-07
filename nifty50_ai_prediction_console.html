@@ -6430,7 +6430,7 @@ async function closeAiOptionRecord(record, resolution, currentPrice){
   }
 }
 
-async function fetchAiOptionHistory(limit=120){
+async function fetchAiOptionHistory(limit=500){
   try{
     const resp = await fetch(buildServerUrl(`/api/ai_options/history?limit=${limit}`), {cache:'no-store'});
     if(!resp.ok){

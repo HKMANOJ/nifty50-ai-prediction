@@ -119,6 +119,80 @@ def test_prediction_engine():
     print(f"✓ Confidence: {prediction['confidence']} ({prediction['confidence_score']})")
     print(f"✓ Number of reasons: {len(prediction['reasoning'])}")
     
+    
+    # 2. Test Fibonacci and Consolidation Box detection integration
+    print("\nTesting Fibonacci and Consolidation Box Integration...")
+    mock_candles = []
+    
+    # Day 1: Consolidation between 24310 and 24360
+    for idx in range(30):
+        # alternate high and low closes
+        close_price = 24310 + (idx % 2) * 50
+        mock_candles.append({
+            "market_time": f"2026-07-06T09:{15 + idx * 5}:00",
+            "open": close_price - 10,
+            "high": close_price + 20,
+            "low": close_price - 20,
+            "close": close_price,
+            "volume": 100000,
+            "market_date": "2026-07-06"
+        })
+        
+    # Day 2: Bullish impulse breakout to 24525 and consolidation retest
+    for idx in range(20):
+        # climb from 24360 to 24525
+        close_price = 24360 + idx * 8
+        mock_candles.append({
+            "market_time": f"2026-07-07T09:{15 + idx * 5}:00",
+            "open": close_price - 5,
+            "high": close_price + 10,
+            "low": close_price - 10,
+            "close": close_price,
+            "volume": 250000,
+            "market_date": "2026-07-07"
+        })
+        
+    # Current candle is a pullback near 24495 retesting the Fibonacci 23.6% level (Height = 24525 - 24310 = 215, 23.6% = 24474)
+    # Price is currently 24490, which is near the Fib 23.6% level
+    mock_candles.append({
+        "market_time": "2026-07-07T11:00:00",
+        "open": 24500,
+        "high": 24505,
+        "low": 24485,
+        "close": 24490,
+        "volume": 300000,
+        "market_date": "2026-07-07"
+    })
+    
+    # Update engine with candles
+    engine.update_data("candles", mock_candles)
+    
+    # Update market_data with the current price of Day 2
+    new_market_data = {
+        "price": 24490.0,
+        "vwap": 24480.0,
+        "volume": 300000,
+        "avg_volume_20d": 200000,
+        "volatility": 0.012,
+        "support_levels": [24300, 24260],
+        "resistance_levels": [24550, 24600]
+    }
+    engine.update_data("market_data", new_market_data)
+    # Force a pattern detection setup to trigger a signal
+    engine.update_data("patterns", {"Trendline Break": {"name": "Trendline Break", "direction": "bullish", "levels": {"upper_trendline": 24480, "breakout": True}}})
+    
+    # Generate prediction with Fibonacci alignment active
+    fib_prediction = engine.generate_signal()
+    print("Fibonacci Aligned Prediction:")
+    print(json.dumps(fib_prediction, indent=2))
+    
+    # Assertions
+    assert fib_prediction["support"] > 0
+    assert fib_prediction["resistance"] > 0
+    assert fib_prediction["target1"] > 24490
+    assert fib_prediction["stoploss"] < 24490
+    
+    print("\n✓ Fibonacci & Consolidation Box integration test passed successfully!")
     return prediction
 
 if __name__ == "__main__":

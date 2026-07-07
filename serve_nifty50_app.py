@@ -362,7 +362,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         candle_python = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
         status = (query.get("status") or ["ALL"])[0]
         option_side = (query.get("option_side") or ["ALL"])[0]
-        limit = (query.get("limit") or ["120"])[0]
+        limit = (query.get("limit") or ["500"])[0]
         result = run_command(
             [
                 candle_python,

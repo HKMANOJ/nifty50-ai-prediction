@@ -19,6 +19,9 @@ class PredictionEngine:
         self.option_chain_analysis = {}
         self.news_sentiment = {}
         self.fii_dii_data = {}
+        self.candles = []
+        from patterns.fibonacci_engine import FibonacciEngine
+        self.fib_engine = FibonacciEngine()
         
         # Initialize analysis engines
         self.options_engine = OptionsEngine()
@@ -73,6 +76,8 @@ class PredictionEngine:
             self.news_sentiment = data
         elif data_type == "fii_dii_data":
             self.fii_dii_data = data
+        elif data_type == "candles":
+            self.candles = data
         else:
             print(f"Warning: Unknown data type {data_type}")
 
@@ -166,6 +171,37 @@ class PredictionEngine:
                 
         market_structure_score = ms_score * 0.50 + breakout_score * 0.50
         composite_score = market_structure_score
+        
+        # Consolidation Box & Fibonacci Breakout / Bounce analysis
+        fib_structure = {}
+        if hasattr(self, "fib_engine") and self.candles:
+            fib_structure = self.fib_engine.analyze_structure(self.candles)
+            
+            # Previous day consolidation box breakout score adjustments
+            if fib_structure.get("consolidation_detected"):
+                bk_status = fib_structure["breakout_status"]
+                if bk_status == "breakout_above":
+                    composite_score += 20
+                    reasons.append("Bullish breakout above previous day consolidation box (+20 composite)")
+                elif bk_status == "breakdown_below":
+                    composite_score -= 20
+                    reasons.append("Bearish breakdown below previous day consolidation box (-20 composite)")
+                    
+            # Fibonacci level reaction check (acting as dynamic bounce S/R support)
+            if fib_structure.get("near_fib_level"):
+                near_fib = fib_structure["near_fib_level"]
+                lbl = near_fib["level"]
+                val = near_fib["price"]
+                leg_dir = fib_structure.get("active_leg_direction", "flat")
+                
+                if leg_dir == "up" and direction == "bullish":
+                    # Pullback to a Fib level inside an uptrend that holds is highly bullish
+                    composite_score += 15
+                    reasons.append(f"Pullback holding near key Fibonacci support level {lbl} ({val:.1f}) (+15 composite)")
+                elif leg_dir == "down" and direction == "bearish":
+                    # Pullback to a Fib level inside a downtrend that rejects is highly bearish
+                    composite_score -= 15
+                    reasons.append(f"Pullback rejecting near key Fibonacci resistance level {lbl} ({val:.1f}) (-15 composite)")
         
         # 2. Support / Resistance (25% weight)
         # Price bouncing from support: +15 bullish
@@ -323,6 +359,34 @@ class PredictionEngine:
                 target2 = current_price
                 stop_loss = current_price
                 
+        # Fibonacci alignment of targets and stop losses
+        if signal != "WAIT" and hasattr(self, "fib_engine") and self.candles:
+            fib_struct = self.fib_engine.analyze_structure(self.candles)
+            fib_levels = fib_struct.get("fib_levels", {})
+            if fib_levels:
+                if signal == "CALL":
+                    # Stop loss placed just below the nearest Fibonacci level under the current price
+                    below_levels = [val for val in fib_levels.values() if val < current_price]
+                    if below_levels:
+                        stop_loss = max(below_levels) - 2.0
+                    # Target placed at the next Fibonacci resistance level or active leg high
+                    above_levels = [val for val in fib_levels.values() if val > current_price]
+                    if above_levels:
+                        target1 = min(above_levels)
+                    else:
+                        target1 = fib_struct.get("active_leg_high", current_price + 50.0)
+                elif signal == "PUT":
+                    # Stop loss placed just above the nearest Fibonacci level over the current price
+                    above_levels = [val for val in fib_levels.values() if val > current_price]
+                    if above_levels:
+                        stop_loss = min(above_levels) + 2.0
+                    # Target placed at the next Fibonacci support level or active leg low
+                    below_levels = [val for val in fib_levels.values() if val < current_price]
+                    if below_levels:
+                        target1 = max(below_levels)
+                    else:
+                        target1 = fib_struct.get("active_leg_low", current_price - 50.0)
+
         # Enforce strict Project Philosophy Risk Management rules:
         if signal != "WAIT":
             raw_sl_size = abs(stop_loss - current_price)
@@ -811,8 +875,25 @@ class PredictionEngine:
             return {"support": 0, "resistance": 0}
             
         # Use technical levels from market data
-        support_levels = self.market_data.get("support_levels", [])
-        resistance_levels = self.market_data.get("resistance_levels", [])
+        support_levels = list(self.market_data.get("support_levels", []))
+        resistance_levels = list(self.market_data.get("resistance_levels", []))
+        
+        # Inject Fibonacci and consolidation levels from fib_engine if candles are present
+        if hasattr(self, "fib_engine") and self.candles:
+            fib_struct = self.fib_engine.analyze_structure(self.candles)
+            if fib_struct.get("consolidation_detected"):
+                support_levels.append(fib_struct["consolidation_low"])
+                resistance_levels.append(fib_struct["consolidation_high"])
+                if fib_struct.get("prev_day_high"):
+                    resistance_levels.append(fib_struct["prev_day_high"])
+                if fib_struct.get("prev_day_low"):
+                    support_levels.append(fib_struct["prev_day_low"])
+            if fib_struct.get("fib_levels"):
+                for val in fib_struct["fib_levels"].values():
+                    if val < current_price:
+                        support_levels.append(val)
+                    elif val > current_price:
+                        resistance_levels.append(val)
         
         # Find nearest support below current price
         support = 0
