@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the NIFTY50 app with a one-click live refresh API."""
+"""Serve the live market app with refresh APIs."""
 
 from __future__ import annotations
 
@@ -29,14 +29,16 @@ LEARNING_ENGINE = ROOT / "learning_engine.py"
 OPPORTUNITY_AUDIT = ROOT / "opportunity_audit_mysql.py"
 REPLAY_AUDIT = ROOT / "replay_opportunity_audit.py"
 ACCURACY_API = ROOT / "accuracy_api.py"
+STOCK_SUGGESTION = ROOT / "stock_suggestion_index.py"
 VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 SNAPSHOT = ROOT / "market_snapshot.latest.json"
 MOST_ACTIVE = ROOT / "inputs" / "most_active.latest.json"
+STOCK_SUGGESTION_SNAPSHOT = ROOT / "inputs" / "stock_suggestion_index.latest.json"
 REFRESH_LOCK = threading.Lock()
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Serve the NIFTY50 app with one-click live refresh.")
+    parser = argparse.ArgumentParser(description="Serve the live market app with one-click refresh APIs.")
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"), help="Host to bind. Default: 127.0.0.1")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")), help="Port to bind. Default: 8000")
     parser.add_argument("--world-timespan", default="3days", help="Timespan passed to the downloader's world-signal builder")
@@ -73,7 +75,7 @@ def run_command(command: list[str], *, timeout: int = 180) -> dict[str, Any]:
 
 
 class NiftyHandler(SimpleHTTPRequestHandler):
-    server_version = "Nifty50LiveServer/1.0"
+    server_version = "StockSuggestionLiveServer/1.0"
 
     def __init__(self, *args: Any, directory: str | None = None, world_timespan: str = "3days", world_maxrecords: int = 50, **kwargs: Any) -> None:
         self.world_timespan = world_timespan
@@ -111,7 +113,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path)
         if parsed_path.path == "/api/health":
-            self._send_json(HTTPStatus.OK, {"ok": True, "service": "nifty50-live-server"})
+            self._send_json(HTTPStatus.OK, {"ok": True, "service": "stock-suggestion-live-server"})
             return
 
         if parsed_path.path == "/api/most_active":
@@ -158,6 +160,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             self._serve_live_option_chain()
             return
 
+        if parsed_path.path == "/api/stock_suggestions":
+            self._serve_stock_suggestions()
+            return
+
         super().do_GET()
 
     def do_POST(self) -> None:
@@ -179,6 +185,9 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             return
         if parsed_path.path == "/api/accuracy/recalculate":
             self._recalculate_accuracy()
+            return
+        if parsed_path.path == "/api/stock_suggestions/refresh":
+            self._refresh_stock_suggestions()
             return
 
         if parsed_path.path != "/api/refresh":
@@ -309,6 +318,74 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             "message": "Most Active data not found. Run: python3 load_most_active.py from the project root.",
             "path": str(MOST_ACTIVE)
         })
+
+    def _serve_stock_suggestions(self) -> None:
+        """Serve the latest real NSE intraday stock suggestion index."""
+        if STOCK_SUGGESTION_SNAPSHOT.exists():
+            try:
+                payload = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
+                status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE
+                self._send_json(status, payload)
+                return
+            except Exception as e:
+                self._send_json(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {
+                        "ok": False,
+                        "error": "stock_suggestions_load_failed",
+                        "message": f"Failed to load stock suggestion data: {str(e)}",
+                    },
+                )
+                return
+
+        self._send_json(
+            HTTPStatus.NOT_FOUND,
+            {
+                "ok": False,
+                "error": "no_stock_suggestions",
+                "message": "No real stock suggestion snapshot yet. Use Refresh Live to fetch NSE Top Gainers/Losers and Change in OI.",
+                "path": str(STOCK_SUGGESTION_SNAPSHOT),
+            },
+        )
+
+    def _refresh_stock_suggestions(self) -> None:
+        """Refresh only the new stock suggestion index, independent of old NIFTY flows."""
+        if not REFRESH_LOCK.acquire(blocking=False):
+            self._send_json(
+                HTTPStatus.CONFLICT,
+                {
+                    "ok": False,
+                    "error": "refresh_in_progress",
+                    "message": "A live refresh is already running. Please wait for it to finish.",
+                },
+            )
+            return
+
+        try:
+            result = run_command([sys.executable, str(STOCK_SUGGESTION)], timeout=75)
+        finally:
+            REFRESH_LOCK.release()
+
+        if isinstance(result.get("stdout"), dict):
+            payload = result["stdout"]
+            payload["_refresh"] = {
+                "ok": result["ok"],
+                "duration_seconds": result["duration_seconds"],
+                "stderr": result.get("stderr"),
+            }
+            status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE
+            self._send_json(status, payload)
+            return
+
+        self._send_json(
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            {
+                "ok": False,
+                "error": "stock_suggestion_refresh_failed",
+                "message": "Stock suggestion refresh did not return JSON.",
+                "result": result,
+            },
+        )
 
     def _serve_mysql_candles(self, query: dict[str, list[str]]) -> None:
         candle_python = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
@@ -587,7 +664,7 @@ def main() -> None:
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down NIFTY50 live server...")
+        print("\nShutting down stock suggestion live server...")
     finally:
         server.server_close()
 
