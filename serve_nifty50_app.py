@@ -38,8 +38,9 @@ REFRESH_LOCK = threading.Lock()
 
 
 def parse_args() -> argparse.Namespace:
+    default_host = os.environ.get("HOST") or ("0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
     parser = argparse.ArgumentParser(description="Serve the live market app with one-click refresh APIs.")
-    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"), help="Host to bind. Default: 127.0.0.1")
+    parser.add_argument("--host", default=default_host, help=f"Host to bind. Default: {default_host}")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")), help="Port to bind. Default: 8000")
     parser.add_argument("--world-timespan", default="3days", help="Timespan passed to the downloader's world-signal builder")
     parser.add_argument("--world-maxrecords", type=int, default=50, help="Max records passed to the downloader's world-signal builder")
@@ -324,8 +325,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         if STOCK_SUGGESTION_SNAPSHOT.exists():
             try:
                 payload = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
-                status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE
-                self._send_json(status, payload)
+                if payload.get("ok"):
+                    self._send_json(HTTPStatus.OK, payload)
+                    return
+                status, refreshed = self._refresh_stock_suggestions_payload()
+                refreshed["_auto_refresh_reason"] = "previous_snapshot_failed"
+                self._send_json(status, refreshed)
                 return
             except Exception as e:
                 self._send_json(
@@ -338,28 +343,18 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 )
                 return
 
-        self._send_json(
-            HTTPStatus.NOT_FOUND,
-            {
-                "ok": False,
-                "error": "no_stock_suggestions",
-                "message": "No real stock suggestion snapshot yet. Use Refresh Live to fetch NSE Top Gainers/Losers and Change in OI.",
-                "path": str(STOCK_SUGGESTION_SNAPSHOT),
-            },
-        )
+        status, payload = self._refresh_stock_suggestions_payload()
+        payload["_auto_refresh_reason"] = "snapshot_missing"
+        self._send_json(status, payload)
 
-    def _refresh_stock_suggestions(self) -> None:
+    def _refresh_stock_suggestions_payload(self) -> tuple[HTTPStatus, dict[str, Any]]:
         """Refresh only the new stock suggestion index, independent of old NIFTY flows."""
         if not REFRESH_LOCK.acquire(blocking=False):
-            self._send_json(
-                HTTPStatus.CONFLICT,
-                {
-                    "ok": False,
-                    "error": "refresh_in_progress",
-                    "message": "A live refresh is already running. Please wait for it to finish.",
-                },
-            )
-            return
+            return HTTPStatus.CONFLICT, {
+                "ok": False,
+                "error": "refresh_in_progress",
+                "message": "A live refresh is already running. Please wait for it to finish.",
+            }
 
         try:
             result = run_command([sys.executable, str(STOCK_SUGGESTION)], timeout=75)
@@ -374,18 +369,18 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "stderr": result.get("stderr"),
             }
             status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE
-            self._send_json(status, payload)
-            return
+            return status, payload
 
-        self._send_json(
-            HTTPStatus.INTERNAL_SERVER_ERROR,
-            {
-                "ok": False,
-                "error": "stock_suggestion_refresh_failed",
-                "message": "Stock suggestion refresh did not return JSON.",
-                "result": result,
-            },
-        )
+        return HTTPStatus.INTERNAL_SERVER_ERROR, {
+            "ok": False,
+            "error": "stock_suggestion_refresh_failed",
+            "message": "Stock suggestion refresh did not return JSON.",
+            "result": result,
+        }
+
+    def _refresh_stock_suggestions(self) -> None:
+        status, payload = self._refresh_stock_suggestions_payload()
+        self._send_json(status, payload)
 
     def _serve_mysql_candles(self, query: dict[str, list[str]]) -> None:
         candle_python = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Intraday Stock Suggestion Index</title>
+  <title>One-Side Rally Stock Index</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@500;700;800&display=swap');
 
@@ -412,7 +412,7 @@
 
     table {
       width: 100%;
-      min-width: 1080px;
+      min-width: 1220px;
       border-collapse: collapse;
     }
 
@@ -599,8 +599,8 @@
       <div class="brand">
         <div class="brand-mark">SI</div>
         <div>
-          <div class="brand-title">Stock Index</div>
-          <div class="brand-sub">Intraday suggestion desk</div>
+          <div class="brand-title">Rally Index</div>
+          <div class="brand-sub">One-side stock desk</div>
         </div>
       </div>
 
@@ -619,7 +619,7 @@
 
       <div class="side-card">
         <strong>No dummy data</strong>
-        <p>If NSE Gainers/Losers or Change in OI is unavailable, the dashboard will show a real-data error instead of sample suggestions.</p>
+        <p>If NSE Gainers/Losers, Change in OI, or market context is unavailable, the dashboard shows a real-data error instead of sample suggestions.</p>
       </div>
     </aside>
 
@@ -627,16 +627,16 @@
       <section class="topbar">
         <div>
           <div class="eyebrow"><span class="pulse"></span><span id="phasePill">Real NSE scan</span></div>
-          <h1>Intraday Stock Suggestion Index</h1>
+          <h1>One-Side Rally Stock Index</h1>
           <p class="lead">
-            Practical stock-only scanner using only the overlap between NSE Change in Open Interest and NSE F&O Top 20 Gainers/Losers.
-            It refreshes every 30 seconds while open, waits for the opening move to form, then gives separate gainer and loser watchlists with trigger,
-            target, stop loss, OI classification, and score.
+            Practical stock-only scanner for one-sided intraday rallies. It intersects NSE Change in Open Interest with NSE F&O Top 20
+            Gainers/Losers, then cross-checks NIFTY and BANKNIFTY context, range hold, from-open move, volume, and OI setup.
+            Output stays focused: minimum 1 and maximum 5 stocks per side when real candidates exist.
           </p>
         </div>
         <div class="refresh-panel">
           <button class="refresh-btn" id="refreshBtn" type="button">Refresh Live Now</button>
-          <div class="status-box" id="statusBox">Start the local Python server, then refresh to fetch real NSE data.</div>
+          <div class="status-box" id="statusBox">Loading real NSE one-side rally scan...</div>
         </div>
       </section>
 
@@ -648,18 +648,18 @@
         </article>
         <article class="rule">
           <span>2</span>
-          <h3>OI confirmation</h3>
-          <p>Prefer Long Buildup for gainers and Short Buildup for losers.</p>
+          <h3>One-side quality</h3>
+          <p>Price must hold near day high/low and move clearly from the session open.</p>
         </article>
         <article class="rule">
           <span>3</span>
-          <h3>Trade after breakout</h3>
-          <p>Do not chase immediately. Use the entry trigger after morning high/low breaks.</p>
+          <h3>Index cross-check</h3>
+          <p>NIFTY and BANKNIFTY are checked for market support or relative strength/weakness.</p>
         </article>
         <article class="rule">
           <span>4</span>
-          <h3>Reset daily</h3>
-          <p>After market close the list is stale and next session must create a fresh scan.</p>
+          <h3>Breakout only</h3>
+          <p>Do not chase. Trade only after trigger breakout/retest confirms continuation.</p>
         </article>
       </section>
 
@@ -670,17 +670,17 @@
           <small id="marketClock">Clock --</small>
         </div>
         <div class="metric">
-          <label>Matched gainers</label>
+          <label>One-side gainers</label>
           <strong id="bullishCount">--</strong>
           <small id="priorityBullish">Priority --</small>
         </div>
         <div class="metric">
-          <label>Matched losers</label>
+          <label>One-side losers</label>
           <strong id="bearishCount">--</strong>
           <small id="priorityBearish">Priority --</small>
         </div>
         <div class="metric">
-          <label>OI + mover overlap</label>
+          <label>NIFTY / BANKNIFTY</label>
           <strong id="oiCoverage">--</strong>
           <small id="sourceStatus">Real NSE only</small>
         </div>
@@ -690,8 +690,8 @@
         <article class="table-card" id="gainers">
           <div class="table-head">
             <div>
-              <h2>Change in OI + Top Gainers</h2>
-              <p>Max 5 stocks. Trade only above trigger after breakout/retest confirmation.</p>
+              <h2>One-Side Rally Gainers</h2>
+              <p>Only Change-in-OI + Top Gainer stocks holding upper range. Trade above trigger after breakout/retest.</p>
             </div>
             <span class="count-pill green" id="gainerPill">0 / 5</span>
           </div>
@@ -702,17 +702,18 @@
                   <th>Rank</th>
                   <th>Stock</th>
                   <th>LTP / Change</th>
-                  <th>OI setup</th>
+                  <th>One-side setup</th>
                   <th>Volume</th>
+                  <th>Market check</th>
                   <th>Entry trigger</th>
                   <th>Target</th>
                   <th>Stop loss</th>
-                  <th>Score</th>
+                  <th>Rally score</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody id="bullishRows">
-                <tr><td colspan="10"><div class="empty">No real scan loaded yet.</div></td></tr>
+                <tr><td colspan="11"><div class="empty">No real scan loaded yet.</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -721,8 +722,8 @@
         <article class="table-card" id="losers">
           <div class="table-head">
             <div>
-              <h2>Change in OI + Top Losers</h2>
-              <p>Max 5 stocks. Trade only below trigger after breakdown/retest confirmation.</p>
+              <h2>One-Side Rally Losers</h2>
+              <p>Only Change-in-OI + Top Loser stocks holding lower range. Trade below trigger after breakdown/retest.</p>
             </div>
             <span class="count-pill red" id="loserPill">0 / 5</span>
           </div>
@@ -733,17 +734,18 @@
                   <th>Rank</th>
                   <th>Stock</th>
                   <th>LTP / Change</th>
-                  <th>OI setup</th>
+                  <th>One-side setup</th>
                   <th>Volume</th>
+                  <th>Market check</th>
                   <th>Entry trigger</th>
                   <th>Target</th>
                   <th>Stop loss</th>
-                  <th>Score</th>
+                  <th>Rally score</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody id="bearishRows">
-                <tr><td colspan="10"><div class="empty">No real scan loaded yet.</div></td></tr>
+                <tr><td colspan="11"><div class="empty">No real scan loaded yet.</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -751,13 +753,13 @@
       </section>
 
       <section class="notes">
-        Practical use: let the first 30 to 45 minutes print real volume and OI. Around 10:00, focus only on
-        Priority or Watch stocks where price breaks the trigger level. These names are filtered from the overlap of
-        NSE Change in OI and Top 20 Gainers/Losers only. Avoid trades if the stock is already too
-        far from trigger, if market breadth suddenly reverses, or if liquidity is weak.
+        Practical use: let the first 30 to 45 minutes print real price, volume, and OI. Around 10:00, focus only on
+        Priority Rally or Rally Watch stocks where price breaks the trigger level. These names are filtered for
+        one-sided strength/weakness, not ordinary movement. Avoid trades if the stock is already too far from trigger,
+        if NIFTY/BANKNIFTY suddenly reverses, or if liquidity is weak.
       </section>
 
-      <div class="source-line" id="sourceLine">Sources: NSE India Top 20 Gainers/Losers and NSE Change in Open Interest. No dummy stocks are added.</div>
+      <div class="source-line" id="sourceLine">Sources: NSE India Top 20 Gainers/Losers, NSE Change in Open Interest, NIFTY 50, and NIFTY BANK. No dummy stocks are added.</div>
     </main>
   </div>
 
@@ -800,6 +802,30 @@
       return row.side === "GAINER" ? "bull" : "bear";
     }
 
+    function compactTags(row) {
+      const tags = Array.isArray(row.quality_tags) ? row.quality_tags.slice(0, 3) : [];
+      if (row.range_position_percent !== null && row.range_position_percent !== undefined) {
+        tags.unshift(`range ${Number(row.range_position_percent).toFixed(1)}%`);
+      }
+      if (row.move_from_open_percent !== null && row.move_from_open_percent !== undefined) {
+        const move = Number(row.move_from_open_percent);
+        tags.unshift(`open ${move >= 0 ? "+" : ""}${move.toFixed(2)}%`);
+      }
+      return tags.length ? tags.join(" | ") : row.rally_type || "One-side check";
+    }
+
+    function indexContextSummary(payload) {
+      const indexes = payload.index_context || {};
+      const nifty = indexes["NIFTY 50"] || {};
+      const bank = indexes["NIFTY BANK"] || {};
+      const niftyPct = nifty.percent_change === null || nifty.percent_change === undefined ? "n/a" : pct(nifty.percent_change);
+      const bankPct = bank.percent_change === null || bank.percent_change === undefined ? "n/a" : pct(bank.percent_change);
+      return {
+        headline: `${niftyPct} / ${bankPct}`,
+        detail: `NIFTY / BANKNIFTY`
+      };
+    }
+
     function statusClass(value) {
       const lower = String(value || "").toLowerCase();
       if (lower.includes("priority")) return "priority";
@@ -821,9 +847,10 @@
           </td>
           <td>
             <strong>${pct(row.oi_change_percent)}</strong><br>
-            <span>${row.oi_change !== null && row.oi_change !== undefined ? n0(row.oi_change) : "OI n/a"}</span>
+            <span>${compactTags(row)}</span>
           </td>
           <td>${n0(row.volume)}</td>
+          <td>${row.index_context || "Index context n/a"}</td>
           <td>
             <strong>${n(row.entry)}</strong><br>
             <span>${row.trade_plan || ""}</span>
@@ -832,8 +859,8 @@
           <td>${n(row.stop_loss)}</td>
           <td>
             <span class="score">
-              <strong>${row.score || 0}</strong>
-              <span class="bar"><i style="width:${Math.max(0, Math.min(100, row.score || 0))}%"></i></span>
+              <strong>${row.one_side_rally_score ?? row.score ?? 0}</strong>
+              <span class="bar"><i style="width:${Math.max(0, Math.min(100, row.one_side_rally_score ?? row.score ?? 0))}%"></i></span>
             </span>
           </td>
           <td>
@@ -843,7 +870,7 @@
     }
 
     function emptyRow(message) {
-      return `<tr><td colspan="10"><div class="empty">${message}</div></td></tr>`;
+      return `<tr><td colspan="11"><div class="empty">${message}</div></td></tr>`;
     }
 
     function renderRows(id, rows, emptyMessage) {
@@ -859,9 +886,12 @@
     function render(payload) {
       const ok = Boolean(payload && payload.ok);
       statusBox.className = `status-box ${ok ? "good" : "bad"}`;
+      const modeHint = window.location.protocol === "file:"
+        ? "Run python3 serve_nifty50_app.py and open the localhost URL."
+        : "Server refresh is unavailable or NSE rejected the deployed request. Try Refresh Live Now again.";
       statusBox.textContent = ok
         ? `Last real scan: ${payload.generated_at_ist || "--"} | ${payload.analysis_phase || ""}`
-        : `${payload.message || "Real NSE data unavailable."} ${API_BASE ? "" : "Start python3 serve_nifty50_app.py for live refresh."}`;
+        : `${payload.message || "Real NSE data unavailable."} ${modeHint}`;
 
       text("phasePill", payload.analysis_phase || "Real NSE scan");
       text("sessionDate", payload.session_date || "--");
@@ -879,15 +909,16 @@
       const maxPerSide = coverage.max_suggestions_per_side ?? 5;
       const gainerMatches = coverage.gainers_with_oi_match ?? bullish.length;
       const loserMatches = coverage.losers_with_oi_match ?? bearish.length;
+      const indexSummary = indexContextSummary(payload);
       text("gainerPill", `${bullish.length} / ${maxPerSide}`);
       text("loserPill", `${bearish.length} / ${maxPerSide}`);
       text("navBull", String(bullish.length || "--"));
       text("navBear", String(bearish.length || "--"));
-      text("oiCoverage", `${coverage.top_rows_with_oi_match ?? "--"}`);
-      text("sourceStatus", `${gainerMatches} gainers + ${loserMatches} losers matched OI`);
+      text("oiCoverage", indexSummary.headline);
+      text("sourceStatus", `${indexSummary.detail} | ${gainerMatches} gainers + ${loserMatches} losers passed OI overlap`);
 
-      renderRows("bullishRows", bullish, ok ? "No Change-in-OI stocks matched NSE Top 20 Gainers right now." : "No real bullish data available.");
-      renderRows("bearishRows", bearish, ok ? "No Change-in-OI stocks matched NSE Top 20 Losers right now." : "No real bearish data available.");
+      renderRows("bullishRows", bullish, ok ? "No one-side rally gainer passed the full NSE + OI + index check right now." : "No real bullish data available.");
+      renderRows("bearishRows", bearish, ok ? "No one-side rally loser passed the full NSE + OI + index check right now." : "No real bearish data available.");
     }
 
     async function loadSuggestions({ refresh = false } = {}) {

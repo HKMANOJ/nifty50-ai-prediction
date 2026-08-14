@@ -38,6 +38,11 @@ SUGGESTION_READY = time(10, 0)
 MARKET_CLOSE = time(15, 30)
 NSE_TOP_ROWS = 20
 DEFAULT_SUGGESTIONS_PER_SIDE = 5
+MIN_ONE_SIDE_SCORE = 70
+MIN_BULLISH_CHANGE = 0.65
+MIN_BEARISH_CHANGE = -0.65
+MIN_RANGE_EXTREME = 0.60
+INDEX_LIKE_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
 
 
 class LiveDataError(RuntimeError):
@@ -61,6 +66,12 @@ class Suggestion:
     stop_loss: float | None
     target: float | None
     score: int
+    one_side_rally_score: int
+    rally_type: str
+    range_position_percent: float | None
+    move_from_open_percent: float | None
+    index_context: str
+    quality_tags: list[str]
     status: str
     reason: str
 
@@ -81,6 +92,12 @@ class Suggestion:
             "stop_loss": self.stop_loss,
             "target": self.target,
             "score": self.score,
+            "one_side_rally_score": self.one_side_rally_score,
+            "rally_type": self.rally_type,
+            "range_position_percent": self.range_position_percent,
+            "move_from_open_percent": self.move_from_open_percent,
+            "index_context": self.index_context,
+            "quality_tags": self.quality_tags,
             "status": self.status,
             "reason": self.reason,
         }
@@ -348,6 +365,40 @@ def fetch_change_in_oi() -> tuple[dict[str, dict[str, Any]], list[str]]:
     return by_symbol, errors
 
 
+def normalize_index_row(index_name: str, payload: Any) -> dict[str, Any]:
+    meta = payload.get("metadata") if isinstance(payload, dict) else {}
+    if not isinstance(meta, dict):
+        meta = {}
+    rows = rows_from_any_payload(payload)
+    first_row = rows[0] if rows else {}
+    source = meta or first_row
+    ltp = parse_float(first_value(source, ("last", "lastPrice", "ltp", "LTP")))
+    pct_change = parse_float(first_value(source, ("percChange", "pChange", "percentChange", "%CHNG", "% Change")))
+    change = parse_float(first_value(source, ("change", "netChange", "CHNG")))
+    return {
+        "name": index_name,
+        "ltp": ltp,
+        "percent_change": pct_change,
+        "change": change,
+        "direction": "bullish" if (pct_change or 0) > 0 else "bearish" if (pct_change or 0) < 0 else "flat",
+    }
+
+
+def fetch_index_context() -> tuple[dict[str, dict[str, Any]], list[str]]:
+    referer = f"{NSE_BASE}/market-data/live-equity-market"
+    errors: list[str] = []
+    indexes: dict[str, dict[str, Any]] = {}
+    for index_name in ("NIFTY 50", "NIFTY BANK"):
+        encoded = urllib.parse.quote(index_name)
+        url = f"{NSE_BASE}/api/equity-stockIndices?index={encoded}"
+        try:
+            payload = nse_get_json(url, referer=referer)
+            indexes[index_name] = normalize_index_row(index_name, payload)
+        except Exception as exc:  # noqa: BLE001 - index context is useful but not mandatory
+            errors.append(f"index {index_name}: {exc}")
+    return indexes, errors
+
+
 def classify_oi(price_change: float | None, oi_change: float | None) -> str:
     if price_change is None or oi_change is None:
         return "OI not confirmed"
@@ -360,6 +411,57 @@ def classify_oi(price_change: float | None, oi_change: float | None) -> str:
     if price_change < 0 and oi_change < 0:
         return "Long unwinding"
     return "Flat OI"
+
+
+def day_range_position(row: dict[str, Any]) -> float | None:
+    high = row.get("high")
+    low = row.get("low")
+    ltp = row.get("ltp")
+    if high is None or low is None or ltp is None or high <= low:
+        return None
+    return max(0.0, min(1.0, (ltp - low) / (high - low)))
+
+
+def pct_from_open(row: dict[str, Any]) -> float | None:
+    open_price = row.get("open")
+    ltp = row.get("ltp")
+    if open_price in (None, 0) or ltp is None:
+        return None
+    return ((ltp - open_price) / open_price) * 100
+
+
+def index_context_note(row: dict[str, Any], side: str, index_context: dict[str, dict[str, Any]]) -> tuple[str, int]:
+    available = [item for item in index_context.values() if item.get("percent_change") is not None]
+    stock_change = row.get("percent_change")
+    if not available or stock_change is None:
+        return "Index context unavailable", 0
+
+    nifty = index_context.get("NIFTY 50", {})
+    bank = index_context.get("NIFTY BANK", {})
+    nifty_pct = nifty.get("percent_change")
+    bank_pct = bank.get("percent_change")
+    market_best = max([item["percent_change"] for item in available])
+    market_worst = min([item["percent_change"] for item in available])
+    note = f"NIFTY {nifty_pct:+.2f}% | BANKNIFTY {bank_pct:+.2f}%" if nifty_pct is not None and bank_pct is not None else "Partial index context"
+
+    if side == "bullish":
+        relative_gap = stock_change - market_best
+        if relative_gap >= 1.0:
+            return f"{note} | strong relative strength", 8
+        if market_best >= 0:
+            return f"{note} | market supports upside", 5
+        if stock_change >= 1.25:
+            return f"{note} | stock resisting weak index", 4
+        return f"{note} | market not supportive", -4
+
+    relative_gap = market_worst - stock_change
+    if relative_gap >= 1.0:
+        return f"{note} | strong relative weakness", 8
+    if market_worst <= 0:
+        return f"{note} | market supports downside", 5
+    if stock_change <= -1.25:
+        return f"{note} | stock falling despite firm index", 4
+    return f"{note} | market not supportive", -4
 
 
 def calc_score(row: dict[str, Any], oi: dict[str, Any] | None, *, side: str, max_volume: float) -> int:
@@ -381,6 +483,151 @@ def calc_score(row: dict[str, Any], oi: dict[str, Any] | None, *, side: str, max
         alignment_score = 15 if setup == "Short buildup" else 10
 
     return int(round(max(0, min(100, price_score + volume_score + value_score + oi_score + alignment_score))))
+
+
+def assess_one_side_rally(
+    row: dict[str, Any],
+    oi: dict[str, Any] | None,
+    *,
+    side: str,
+    max_volume: float,
+    index_context: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    setup = classify_oi(row.get("percent_change"), (oi or {}).get("oi_change"))
+    pct_change = row.get("percent_change")
+    range_pos = day_range_position(row)
+    open_move = pct_from_open(row)
+    volume = row.get("volume") or (oi or {}).get("volume_contracts") or 0
+    oi_change_percent = abs((oi or {}).get("oi_change_percent") or 0)
+    tags: list[str] = []
+    blockers: list[str] = []
+    score = 0.0
+
+    if pct_change is None:
+        blockers.append("price change unavailable")
+    elif side == "bullish":
+        if pct_change >= 2.0:
+            score += 22
+            tags.append("strong price expansion")
+        elif pct_change >= 1.0:
+            score += 17
+            tags.append("clean price momentum")
+        elif pct_change >= MIN_BULLISH_CHANGE:
+            score += 10
+            tags.append("early upside momentum")
+        else:
+            blockers.append(f"price move below +{MIN_BULLISH_CHANGE:.2f}%")
+    else:
+        if pct_change <= -2.0:
+            score += 22
+            tags.append("strong downside expansion")
+        elif pct_change <= -1.0:
+            score += 17
+            tags.append("clean downside momentum")
+        elif pct_change <= MIN_BEARISH_CHANGE:
+            score += 10
+            tags.append("early downside momentum")
+        else:
+            blockers.append(f"price move above {MIN_BEARISH_CHANGE:.2f}%")
+
+    if range_pos is None:
+        score += 4
+        tags.append("range position unavailable")
+    elif side == "bullish":
+        if range_pos >= 0.72:
+            score += 22
+            tags.append("holding near day high")
+        elif range_pos >= MIN_RANGE_EXTREME:
+            score += 14
+            tags.append("holding upper range")
+        else:
+            blockers.append("not holding upper range")
+    else:
+        if range_pos <= 0.28:
+            score += 22
+            tags.append("holding near day low")
+        elif range_pos <= (1 - MIN_RANGE_EXTREME):
+            score += 14
+            tags.append("holding lower range")
+        else:
+            blockers.append("not holding lower range")
+
+    if open_move is None:
+        tags.append("open move unavailable")
+    elif side == "bullish":
+        if open_move >= 0.50:
+            score += 14
+            tags.append("above open with control")
+        elif open_move >= 0.15:
+            score += 8
+            tags.append("above open")
+        elif open_move < 0:
+            blockers.append("below session open")
+    else:
+        if open_move <= -0.50:
+            score += 14
+            tags.append("below open with control")
+        elif open_move <= -0.15:
+            score += 8
+            tags.append("below open")
+        elif open_move > 0:
+            blockers.append("above session open")
+
+    if side == "bullish":
+        if setup == "Long buildup":
+            score += 25
+            tags.append("fresh long buildup")
+        elif setup == "Short covering":
+            score += 12
+            tags.append("short covering rally")
+        else:
+            blockers.append("OI setup not bullish")
+    else:
+        if setup == "Short buildup":
+            score += 25
+            tags.append("fresh short buildup")
+        elif setup == "Long unwinding":
+            score += 12
+            tags.append("long unwinding slide")
+        else:
+            blockers.append("OI setup not bearish")
+
+    if oi_change_percent >= 15:
+        score += 10
+        tags.append("OI surge")
+    elif oi_change_percent >= 7:
+        score += 7
+        tags.append("OI expansion")
+    elif oi_change_percent > 0:
+        score += 3
+        tags.append("OI present")
+    else:
+        blockers.append("OI change weak")
+
+    if max_volume > 0 and volume > 0:
+        score += min(volume / max_volume, 1.0) * 7
+
+    note, index_score = index_context_note(row, side, index_context)
+    score += index_score
+    tags.append(note)
+
+    score_int = int(round(max(0, min(100, score))))
+    primary_setup = setup in {"Long buildup", "Short buildup"}
+    one_side = score_int >= MIN_ONE_SIDE_SCORE and not blockers
+    status = "Priority Rally" if one_side and score_int >= 82 and primary_setup else "Rally Watch" if one_side else "Filtered"
+    rally_type = "One-side bullish rally" if side == "bullish" else "One-side bearish slide"
+
+    return {
+        "score": score_int,
+        "status": status,
+        "rally_type": rally_type,
+        "range_position_percent": None if range_pos is None else round(range_pos * 100, 1),
+        "move_from_open_percent": None if open_move is None else round(open_move, 2),
+        "index_context": note,
+        "quality_tags": tags,
+        "blockers": blockers,
+        "is_one_side": one_side,
+    }
 
 
 def build_trade_levels(row: dict[str, Any], *, side: str) -> tuple[float | None, float | None, float | None, str]:
@@ -410,37 +657,54 @@ def build_trade_levels(row: dict[str, Any], *, side: str) -> tuple[float | None,
 
 
 def status_from_score(score: int, setup: str) -> str:
-    if score >= 78:
-        return "Priority"
-    if score >= 62:
-        return "Watch"
+    if score >= 82:
+        return "Priority Rally"
+    if score >= MIN_ONE_SIDE_SCORE:
+        return "Rally Watch"
     if "not confirmed" in setup.lower():
         return "Need OI"
-    return "Low priority"
+    return "Filtered"
 
 
-def build_suggestions(rows: list[dict[str, Any]], oi_by_symbol: dict[str, dict[str, Any]], *, side: str, top: int) -> list[Suggestion]:
-    matched_rows = [row for row in rows if row["symbol"] in oi_by_symbol]
-    max_volume = max([row.get("volume") or 0 for row in matched_rows] or [0])
+def build_suggestions(
+    rows: list[dict[str, Any]],
+    oi_by_symbol: dict[str, dict[str, Any]],
+    *,
+    side: str,
+    top: int,
+    index_context: dict[str, dict[str, Any]],
+) -> tuple[list[Suggestion], int]:
+    matched_rows = [row for row in rows if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS]
+    max_volume = max([(row.get("volume") or oi_by_symbol[row["symbol"]].get("volume_contracts") or 0) for row in matched_rows] or [0])
     suggestions: list[Suggestion] = []
     for row in matched_rows:
         symbol = row["symbol"]
         oi = oi_by_symbol[symbol]
         setup = classify_oi(row.get("percent_change"), oi.get("oi_change"))
-        score = calc_score(row, oi, side=side, max_volume=max_volume)
+        base_score = calc_score(row, oi, side=side, max_volume=max_volume)
+        rally = assess_one_side_rally(row, oi, side=side, max_volume=max_volume, index_context=index_context)
+        if not rally["is_one_side"]:
+            continue
         entry, stop, target, plan = build_trade_levels(row, side=side)
         oi_change_percent = oi.get("oi_change_percent")
         oi_change = oi.get("oi_change")
+        display_volume = row.get("volume") or oi.get("volume_contracts")
         reason_parts = [
+            rally["rally_type"],
             setup,
             f"price move {row.get('percent_change'):+.2f}%" if row.get("percent_change") is not None else "price move unavailable",
         ]
+        if rally.get("move_from_open_percent") is not None:
+            reason_parts.append(f"from open {rally['move_from_open_percent']:+.2f}%")
+        if rally.get("range_position_percent") is not None:
+            reason_parts.append(f"range hold {rally['range_position_percent']:.1f}%")
         if oi_change_percent is not None:
             reason_parts.append(f"OI change {oi_change_percent:+.2f}%")
         else:
             reason_parts.append("OI change unavailable")
-        if row.get("volume") is not None:
-            reason_parts.append(f"volume {int(row['volume']):,}")
+        reason_parts.append(str(rally["index_context"]))
+        if display_volume is not None:
+            reason_parts.append(f"volume {int(display_volume):,}")
         suggestions.append(
             Suggestion(
                 symbol=symbol,
@@ -452,23 +716,29 @@ def build_suggestions(rows: list[dict[str, Any]], oi_by_symbol: dict[str, dict[s
                 percent_change=row.get("percent_change"),
                 oi_change_percent=oi_change_percent,
                 oi_change=oi_change,
-                volume=row.get("volume"),
+                volume=display_volume,
                 value_lakhs=row.get("value_lakhs"),
                 entry=entry,
                 stop_loss=stop,
                 target=target,
-                score=score,
-                status=status_from_score(score, setup),
+                score=max(base_score, rally["score"]),
+                one_side_rally_score=rally["score"],
+                rally_type=rally["rally_type"],
+                range_position_percent=rally["range_position_percent"],
+                move_from_open_percent=rally["move_from_open_percent"],
+                index_context=rally["index_context"],
+                quality_tags=rally["quality_tags"],
+                status=rally["status"] or status_from_score(rally["score"], setup),
                 reason=" | ".join(reason_parts),
             )
         )
 
-    suggestions.sort(key=lambda item: (item.score, abs(item.percent_change or 0)), reverse=True)
+    suggestions.sort(key=lambda item: (item.one_side_rally_score, abs(item.percent_change or 0)), reverse=True)
     ranked = suggestions[:top]
     return [
         Suggestion(**{**item.to_dict(), "rank": index})
         for index, item in enumerate(ranked, start=1)
-    ]
+    ], len(matched_rows)
 
 
 def phase_for_time(now_ist: datetime) -> str:
@@ -489,11 +759,13 @@ def build_payload(top: int) -> dict[str, Any]:
     errors.extend(variation_errors)
     oi_by_symbol, oi_errors = fetch_change_in_oi()
     errors.extend(oi_errors)
+    index_context, index_errors = fetch_index_context()
+    errors.extend(index_errors)
 
-    bullish = build_suggestions(gainers, oi_by_symbol, side="bullish", top=top)
-    bearish = build_suggestions(losers, oi_by_symbol, side="bearish", top=top)
-    gainers_with_oi = sum(1 for row in gainers if row["symbol"] in oi_by_symbol)
-    losers_with_oi = sum(1 for row in losers if row["symbol"] in oi_by_symbol)
+    bullish, gainer_stock_overlap = build_suggestions(gainers, oi_by_symbol, side="bullish", top=top, index_context=index_context)
+    bearish, loser_stock_overlap = build_suggestions(losers, oi_by_symbol, side="bearish", top=top, index_context=index_context)
+    gainers_with_oi = sum(1 for row in gainers if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS)
+    losers_with_oi = sum(1 for row in losers if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS)
     oi_matched = gainers_with_oi + losers_with_oi
 
     return {
@@ -503,17 +775,20 @@ def build_payload(top: int) -> dict[str, Any]:
         "session_date": now_ist.date().isoformat(),
         "market_clock_ist": now_ist.strftime("%H:%M:%S"),
         "analysis_phase": phase_for_time(now_ist),
-        "strategy_name": "Intraday Stock Suggestion Index",
+        "strategy_name": "One-Side Rally Stock Suggestion Index",
         "strategy_rules": [
             "Use only stocks that appear in both NSE F&O Top 20 Gainers/Losers and Change in Open Interest.",
-            "Prefer Long Buildup for bullish candidates and Short Buildup for bearish candidates.",
+            "Show only one-side rally candidates: price must hold near the day high/low, move from open, and align with OI.",
+            "Cross-check NIFTY and BANKNIFTY context for market support or relative strength/weakness.",
             "Trade only after the stock breaks its morning high/low; do not chase before breakout.",
             "Today-only list; refresh creates a new snapshot and the next session resets the view.",
         ],
         "source": {
             "top_gainers_losers": f"{NSE_BASE}/market-data/top-gainers-losers",
             "change_in_oi": f"{NSE_BASE}/market-data/oi-spurts",
+            "index_context": f"{NSE_BASE}/market-data/live-equity-market",
         },
+        "index_context": index_context,
         "coverage": {
             "gainers_loaded": len(gainers),
             "losers_loaded": len(losers),
@@ -521,13 +796,16 @@ def build_payload(top: int) -> dict[str, Any]:
             "gainers_with_oi_match": gainers_with_oi,
             "losers_with_oi_match": losers_with_oi,
             "top_rows_with_oi_match": oi_matched,
+            "gainer_stock_overlap_before_rally_filter": gainer_stock_overlap,
+            "loser_stock_overlap_before_rally_filter": loser_stock_overlap,
             "max_suggestions_per_side": top,
+            "one_side_min_score": MIN_ONE_SIDE_SCORE,
         },
         "summary": {
             "bullish_candidates": len(bullish),
             "bearish_candidates": len(bearish),
-            "priority_bullish": sum(1 for item in bullish if item.status == "Priority"),
-            "priority_bearish": sum(1 for item in bearish if item.status == "Priority"),
+            "priority_bullish": sum(1 for item in bullish if item.status == "Priority Rally"),
+            "priority_bearish": sum(1 for item in bearish if item.status == "Priority Rally"),
         },
         "bullish": [item.to_dict() for item in bullish],
         "bearish": [item.to_dict() for item in bearish],
@@ -561,8 +839,12 @@ def error_payload(exc: Exception) -> dict[str, Any]:
             "gainers_with_oi_match": 0,
             "losers_with_oi_match": 0,
             "top_rows_with_oi_match": 0,
+            "gainer_stock_overlap_before_rally_filter": 0,
+            "loser_stock_overlap_before_rally_filter": 0,
             "max_suggestions_per_side": DEFAULT_SUGGESTIONS_PER_SIDE,
+            "one_side_min_score": MIN_ONE_SIDE_SCORE,
         },
+        "index_context": {},
     }
 
 
