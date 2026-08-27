@@ -79,14 +79,59 @@
       top: 0;
       height: 100vh;
       z-index: 50;
+      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow-x: hidden;
+    }
+
+    .sidebar.collapsed {
+      width: 68px;
     }
 
     .sidebar-brand {
-      padding: 20px 18px;
+      padding: 16px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      white-space: nowrap;
+    }
+
+    .brand-left-group {
       display: flex;
       align-items: center;
       gap: 10px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .sidebar-toggle-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #94a3b8;
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+      transition: all 0.2s ease;
+    }
+
+    .sidebar-toggle-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+    }
+
+    .sidebar-toggle-btn .bar {
+      width: 14px;
+      height: 2px;
+      background-color: currentColor;
+      border-radius: 2px;
+      transition: all 0.2s ease;
     }
 
     .brand-logo-badge {
@@ -98,12 +143,14 @@
       place-items: center;
       color: white;
       font-weight: 800;
-      font-size: 16px;
+      font-size: 15px;
+      flex-shrink: 0;
     }
 
     .brand-names {
       display: flex;
       flex-direction: column;
+      transition: opacity 0.2s ease, transform 0.2s ease;
     }
 
     .brand-names .name-main {
@@ -119,12 +166,31 @@
       font-weight: 500;
     }
 
+    .sidebar.collapsed .brand-names,
+    .sidebar.collapsed .menu-label,
+    .sidebar.collapsed .sidebar-footer {
+      display: none;
+    }
+
+    .sidebar.collapsed .sidebar-brand {
+      padding: 16px 14px;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .sidebar.collapsed .menu-item {
+      justify-content: center;
+      padding: 10px 0;
+    }
+
     .sidebar-menu {
       padding: 14px 10px;
       display: flex;
       flex-direction: column;
       gap: 4px;
       flex: 1;
+      white-space: nowrap;
     }
 
     .menu-item {
@@ -784,13 +850,151 @@
       background: linear-gradient(90deg, #2563eb, #10b981);
     }
 
-    /* ── Responsive ── */
-    @media (max-width: 1200px) {
+    /* ── Mobile Sidebar Drawer & Backdrop ── */
+    .mobile-nav-toggle {
+      display: none;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: #ffffff;
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+    }
+
+    .mobile-nav-toggle .bar {
+      width: 16px;
+      height: 2px;
+      background: #ffffff;
+      border-radius: 2px;
+    }
+
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 99;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    .sidebar-backdrop.active {
+      display: block;
+      opacity: 1;
+    }
+
+    /* ── Universal Responsive Breakpoints (iPad Pro, iPad, Tablet, Mobile) ── */
+    @media (max-width: 1400px) {
+      .metrics-row {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
+    @media (max-width: 1080px) {
       .metrics-row {
         grid-template-columns: repeat(3, 1fr);
       }
       .split-layout {
         grid-template-columns: 1fr;
+      }
+      .chart-container {
+        height: 380px;
+      }
+    }
+
+    /* Tablets & iPad portrait (768px - 991px) */
+    @media (max-width: 991px) {
+      .mobile-nav-toggle {
+        display: flex;
+      }
+
+      .sidebar {
+        position: fixed;
+        left: -260px;
+        top: 0;
+        bottom: 0;
+        width: 250px;
+        z-index: 100;
+        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .sidebar.mobile-open {
+        transform: translateX(260px);
+      }
+
+      .sidebar.collapsed {
+        width: 250px;
+      }
+
+      .sidebar.collapsed .brand-names,
+      .sidebar.collapsed .menu-label,
+      .sidebar.collapsed .sidebar-footer {
+        display: flex;
+      }
+
+      .content-container {
+        padding: 12px;
+      }
+
+      .metrics-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+    }
+
+    /* Mobile Phones (under 640px) */
+    @media (max-width: 640px) {
+      .top-navbar {
+        padding: 8px 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .navbar-status {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .navbar-ticker {
+        gap: 8px;
+      }
+
+      .ticker-chip {
+        font-size: 11px;
+        padding: 4px 8px;
+      }
+
+      .metrics-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .chart-container {
+        height: 320px;
+      }
+
+      .chart-panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .table-card-body {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .scanner-table {
+        min-width: 780px;
       }
     }
   </style>
@@ -799,39 +1003,46 @@
 
 <div class="app-shell">
   <!-- Left Sidebar (manojLabs AI Station) -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="appSidebar">
     <div class="sidebar-brand">
-      <div class="brand-logo-badge">ML</div>
-      <div class="brand-names">
-        <span class="name-main">manojLabs</span>
-        <span class="name-sub">AI Stock Hunter V2</span>
+      <div class="brand-left-group">
+        <div class="brand-logo-badge">ML</div>
+        <div class="brand-names">
+          <span class="name-main">manojLabs</span>
+          <span class="name-sub">AI Stock Hunter V2</span>
+        </div>
       </div>
+      <button class="sidebar-toggle-btn" id="sidebarToggleBtn" title="Toggle Sidebar (Open / Close)">
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+      </button>
     </div>
 
     <nav class="sidebar-menu">
       <div class="menu-item active">
         <span class="icon">📈</span>
-        <span>Futures & Options</span>
+        <span class="menu-label">Futures & Options</span>
       </div>
       <div class="menu-item">
         <span class="icon">⚡</span>
-        <span>Intraday Momentum</span>
+        <span class="menu-label">Intraday Momentum</span>
       </div>
       <div class="menu-item">
         <span class="icon">🎯</span>
-        <span>Breakout Hunter</span>
+        <span class="menu-label">Breakout Hunter</span>
       </div>
       <div class="menu-item">
         <span class="icon">📊</span>
-        <span>Sector Analysis</span>
+        <span class="menu-label">Sector Analysis</span>
       </div>
       <div class="menu-item">
         <span class="icon">🗺️</span>
-        <span>Heatmaps</span>
+        <span class="menu-label">Heatmaps</span>
       </div>
       <div class="menu-item">
         <span class="icon">📉</span>
-        <span>Market Sentiment</span>
+        <span class="menu-label">Market Sentiment</span>
       </div>
     </nav>
 
@@ -841,18 +1052,28 @@
     </div>
   </aside>
 
+  <!-- Mobile Sidebar Backdrop Overlay -->
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
   <!-- Main Canvas -->
   <main class="main-canvas">
     <!-- Top Navbar Bar -->
     <header class="top-navbar">
-      <div class="navbar-ticker">
-        <div class="ticker-chip up">
-          <span>NIFTY 50</span>
-          <span class="val" id="niftyVal">--</span>
-        </div>
-        <div class="ticker-chip up">
-          <span>BANK NIFTY</span>
-          <span class="val" id="bankVal">--</span>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button class="mobile-nav-toggle" id="mobileNavToggle" title="Open Menu">
+          <span class="bar"></span>
+          <span class="bar"></span>
+          <span class="bar"></span>
+        </button>
+        <div class="navbar-ticker">
+          <div class="ticker-chip up">
+            <span>NIFTY 50</span>
+            <span class="val" id="niftyVal">--</span>
+          </div>
+          <div class="ticker-chip up">
+            <span>BANK NIFTY</span>
+            <span class="val" id="bankVal">--</span>
+          </div>
         </div>
       </div>
 
@@ -1499,7 +1720,53 @@
   }
 
   setInterval(updateLiveClock, 1000);
-  updateLiveClock();
+  /* ── Sidebar 3-Line Open / Close Toggle (Desktop & Tablet) ── */
+  const sidebarEl = document.getElementById("appSidebar");
+  const sidebarToggleBtn = document.getElementById("sidebarToggleBtn");
+  const mobileNavToggle = document.getElementById("mobileNavToggle");
+  const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+
+  function triggerChartResize() {
+    setTimeout(() => {
+      if (_chart && chartContainer) {
+        _chart.applyOptions({
+          width: chartContainer.clientWidth,
+          height: chartContainer.clientHeight || 420
+        });
+        _chart.timeScale().fitContent();
+      }
+    }, 280);
+  }
+
+  // Desktop/Laptop toggle (Collapse / Expand)
+  sidebarToggleBtn?.addEventListener("click", () => {
+    if (!sidebarEl) return;
+    sidebarEl.classList.toggle("collapsed");
+    triggerChartResize();
+  });
+
+  // Mobile / iPad Drawer Toggle
+  mobileNavToggle?.addEventListener("click", () => {
+    if (!sidebarEl) return;
+    sidebarEl.classList.toggle("mobile-open");
+    sidebarBackdrop?.classList.toggle("active");
+  });
+
+  // Close drawer when clicking dark backdrop
+  sidebarBackdrop?.addEventListener("click", () => {
+    sidebarEl?.classList.remove("mobile-open");
+    sidebarBackdrop?.classList.remove("active");
+  });
+
+  // Universal Screen Resize handler (iPad rotation, browser resize)
+  window.addEventListener("resize", () => {
+    if (_chart && chartContainer) {
+      _chart.applyOptions({
+        width: chartContainer.clientWidth,
+        height: chartContainer.clientHeight || 420
+      });
+    }
+  });
 
   // Auto-refresh live market scanner every 45 seconds during live hours
   setInterval(() => {
