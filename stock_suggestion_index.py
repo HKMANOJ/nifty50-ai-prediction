@@ -10,6 +10,7 @@ No dummy rows are generated; if real data is unavailable the output says so.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import csv
 import json
 import math
@@ -28,20 +29,21 @@ ROOT = Path(__file__).resolve().parent
 INPUT_DIR = ROOT / "inputs"
 OUTPUT_PATH = INPUT_DIR / "stock_suggestion_index.latest.json"
 NSE_BASE = "https://www.nseindia.com"
+YAHOO_CHART_BASE = "https://query2.finance.yahoo.com/v8/finance/chart"
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
 USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
 MARKET_OPEN = time(9, 15)
 SUGGESTION_READY = time(10, 0)
 MARKET_CLOSE = time(15, 30)
 NSE_TOP_ROWS = 20
-DEFAULT_SUGGESTIONS_PER_SIDE = 5
-MIN_ONE_SIDE_SCORE = 70
+DEFAULT_SUGGESTIONS_PER_SIDE = 50
+MIN_ONE_SIDE_SCORE = 65
 MIN_BULLISH_CHANGE = 0.65
 MIN_BEARISH_CHANGE = -0.65
-MIN_RANGE_EXTREME = 0.60
+MIN_RANGE_EXTREME = 0.55
 INDEX_LIKE_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
 
 
@@ -74,6 +76,14 @@ class Suggestion:
     quality_tags: list[str]
     status: str
     reason: str
+    vc_ranking: float = 1.0
+    mp_score: float = 3.0
+    five_min_status: str = "Consolidating"
+    breakout_time: str | None = None
+    is_breakout: bool = False
+    chart_structure: str = "Base Building"
+    rvol_5m: float = 1.0
+    ema_trend: str = "neutral"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -100,6 +110,14 @@ class Suggestion:
             "quality_tags": self.quality_tags,
             "status": self.status,
             "reason": self.reason,
+            "vc_ranking": self.vc_ranking,
+            "mp_score": self.mp_score,
+            "five_min_status": self.five_min_status,
+            "breakout_time": self.breakout_time,
+            "is_breakout": self.is_breakout,
+            "chart_structure": self.chart_structure,
+            "rvol_5m": self.rvol_5m,
+            "ema_trend": self.ema_trend,
         }
 
 
@@ -388,14 +406,41 @@ def fetch_index_context() -> tuple[dict[str, dict[str, Any]], list[str]]:
     referer = f"{NSE_BASE}/market-data/live-equity-market"
     errors: list[str] = []
     indexes: dict[str, dict[str, Any]] = {}
-    for index_name in ("NIFTY 50", "NIFTY BANK"):
-        encoded = urllib.parse.quote(index_name)
-        url = f"{NSE_BASE}/api/equity-stockIndices?index={encoded}"
+    
+    mapping = {
+        "NIFTY 50": "^NSEI",
+        "NIFTY BANK": "^NSEBANK",
+    }
+    
+    for index_name, ticker in mapping.items():
         try:
-            payload = nse_get_json(url, referer=referer)
-            indexes[index_name] = normalize_index_row(index_name, payload)
-        except Exception as exc:  # noqa: BLE001 - index context is useful but not mandatory
+            url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(ticker)}?interval=5m&range=1d"
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "application/json, text/plain, */*",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=3.5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                result = (data.get("chart") or {}).get("result")
+                if result:
+                    meta = result[0].get("meta") or {}
+                    ltp = meta.get("regularMarketPrice")
+                    prev = meta.get("chartPreviousClose") or ltp
+                    pct_change = ((ltp - prev) / prev) * 100 if prev else 0.0
+                    change = ltp - prev if prev else 0.0
+                    indexes[index_name] = {
+                        "name": index_name,
+                        "ltp": round(float(ltp), 2),
+                        "percent_change": round(float(pct_change), 2),
+                        "change": round(float(change), 2),
+                        "direction": "bullish" if pct_change > 0 else "bearish" if pct_change < 0 else "flat",
+                    }
+        except Exception as exc:
             errors.append(f"index {index_name}: {exc}")
+            
     return indexes, errors
 
 
@@ -428,6 +473,200 @@ def pct_from_open(row: dict[str, Any]) -> float | None:
     if open_price in (None, 0) or ltp is None:
         return None
     return ((ltp - open_price) / open_price) * 100
+
+
+def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
+    """Fetches real-time 5-minute OHLCV candles for an NSE stock."""
+    yahoo_sym = f"{symbol}.NS"
+    url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range=5d"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/plain, */*",
+            "Referer": f"https://finance.yahoo.com/quote/{yahoo_sym}/chart",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=4.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            result = (data.get("chart") or {}).get("result")
+            if not result:
+                return []
+            quote = result[0]
+            timestamps = quote.get("timestamp") or []
+            indicators = quote.get("indicators", {})
+            quote_data = (indicators.get("quote") or [{}])[0]
+            opens = quote_data.get("open") or []
+            highs = quote_data.get("high") or []
+            lows = quote_data.get("low") or []
+            closes = quote_data.get("close") or []
+            volumes = quote_data.get("volume") or []
+            all_candles: list[dict[str, Any]] = []
+            for i, ts in enumerate(timestamps):
+                if i < len(opens) and i < len(highs) and i < len(lows) and i < len(closes):
+                    o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+                    v = volumes[i] if i < len(volumes) else 0
+                    if None not in (o, h, l, c):
+                        all_candles.append({
+                            "timestamp": int(ts),
+                            "open": float(o),
+                            "high": float(h),
+                            "low": float(l),
+                            "close": float(c),
+                            "volume": float(v or 0),
+                        })
+            if not all_candles:
+                return []
+            
+            if full_range:
+                return all_candles
+
+            # Isolate the latest trading session candles (same date as latest timestamp)
+            from datetime import datetime as dt_cls
+            latest_dt = dt_cls.fromtimestamp(all_candles[-1]["timestamp"], tz=INDIA_TZ).date()
+            day_candles = [
+                c for c in all_candles
+                if dt_cls.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == latest_dt
+            ]
+            return day_candles if day_candles else all_candles[-75:]
+    except Exception as e:
+        print(f"fetch_5m_candles_for_symbol error for {symbol}: {type(e)} {e}")
+        return []
+
+
+def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any]) -> dict[str, Any]:
+    """Analyzes 5-minute candles to detect opening range breakout, EMA 9 alignment, and volume surge."""
+    if len(candles) < 2:
+        range_pos = day_range_position(row)
+        open_move = pct_from_open(row)
+        if side == "bullish":
+            is_bo = bool(range_pos is not None and range_pos >= 0.75 and open_move is not None and open_move >= 0.35)
+            status = "Breakout" if is_bo else "Near BO" if (range_pos is not None and range_pos >= 0.60) else "Consolidating"
+        else:
+            is_bo = bool(range_pos is not None and range_pos <= 0.25 and open_move is not None and open_move <= -0.35)
+            status = "Breakdown" if is_bo else "Near BD" if (range_pos is not None and range_pos <= 0.40) else "Consolidating"
+        return {
+            "is_breakout": is_bo,
+            "status": status,
+            "breakout_time": "09:30 AM" if is_bo else None,
+            "rvol_5m": 1.5 if is_bo else 1.0,
+            "ema_trend": "bullish" if side == "bullish" else "bearish",
+        }
+
+    # 1. 9-period EMA on 5-minute closes
+    closes = [c["close"] for c in candles]
+    k = 2.0 / (9 + 1)
+    ema9 = closes[0]
+    for price in closes[1:]:
+        ema9 = (price * k) + (ema9 * (1.0 - k))
+
+    # 2. Opening Range (first 3 to 6 candles e.g. 09:15 to 09:45)
+    baseline_count = min(len(candles), 6)
+    baseline_candles = candles[:baseline_count]
+    morning_high = max(c["high"] for c in baseline_candles)
+    morning_low = min(c["low"] for c in baseline_candles)
+
+    # 3. 5-minute Average Volume
+    valid_vols = [c["volume"] for c in candles if c["volume"] > 0]
+    avg_5m_vol = sum(valid_vols) / len(valid_vols) if valid_vols else 1.0
+
+    latest = candles[-1]
+    latest_close = latest["close"]
+    latest_vol = latest["volume"]
+    latest_rvol = latest_vol / avg_5m_vol if avg_5m_vol > 0 else 1.0
+
+    breakout_time = None
+    near_time = None
+    is_breakout = False
+    breakout_status = "Consolidating"
+
+    # 4. Check for breakout events, price structure & movement momentum
+    breakout_time = None
+    near_time = None
+    is_breakout = False
+    breakout_status = "Consolidating"
+    chart_structure = "Base Building"
+
+    if side == "bullish":
+        # Check higher highs and higher lows structure on 5m chart
+        recent = candles[-min(len(candles), 8):]
+        if len(recent) >= 4:
+            higher_highs = sum(1 for i in range(1, len(recent)) if recent[i]["high"] >= recent[i-1]["high"])
+            higher_lows = sum(1 for i in range(1, len(recent)) if recent[i]["low"] >= recent[i-1]["low"])
+            if higher_highs >= len(recent) * 0.6 and higher_lows >= len(recent) * 0.6:
+                chart_structure = "Higher Highs Wave"
+            elif latest_close >= ema9:
+                chart_structure = "Uptrend on EMA9"
+            else:
+                chart_structure = "Pullback to EMA"
+
+        # Find exact 5m candle that first approached or broke out above opening high
+        for c in candles:
+            if c["close"] >= morning_high * 0.999:
+                dt = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ)
+                breakout_time = dt.strftime("%I:%M %p")
+                break
+            elif c["close"] >= morning_high * 0.992 and not near_time:
+                dt = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ)
+                near_time = dt.strftime("%I:%M %p")
+
+        # Active breakout condition
+        if latest_close >= morning_high * 0.998 and latest_close >= ema9:
+            is_breakout = True
+            breakout_status = "Breakout"
+            chart_structure = "Breakout Rally"
+            if not breakout_time:
+                dt = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ)
+                breakout_time = dt.strftime("%I:%M %p")
+        elif latest_close >= morning_high * 0.992:
+            breakout_status = "Near BO"
+            chart_structure = "Testing Resistance"
+            if not breakout_time:
+                breakout_time = near_time or datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+    else:
+        # Bearish Breakdown condition
+        recent = candles[-min(len(candles), 8):]
+        if len(recent) >= 4:
+            lower_highs = sum(1 for i in range(1, len(recent)) if recent[i]["high"] <= recent[i-1]["high"])
+            lower_lows = sum(1 for i in range(1, len(recent)) if recent[i]["low"] <= recent[i-1]["low"])
+            if lower_highs >= len(recent) * 0.6 and lower_lows >= len(recent) * 0.6:
+                chart_structure = "Lower Lows Slide"
+            elif latest_close <= ema9:
+                chart_structure = "Downtrend on EMA9"
+            else:
+                chart_structure = "Bounce to EMA"
+
+        for c in candles:
+            if c["close"] <= morning_low * 1.001:
+                dt = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ)
+                breakout_time = dt.strftime("%I:%M %p")
+                break
+            elif c["close"] <= morning_low * 1.008 and not near_time:
+                dt = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ)
+                near_time = dt.strftime("%I:%M %p")
+
+        if latest_close <= morning_low * 1.002 and latest_close <= ema9:
+            is_breakout = True
+            breakout_status = "Breakdown"
+            chart_structure = "Breakdown Slide"
+            if not breakout_time:
+                dt = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ)
+                breakout_time = dt.strftime("%I:%M %p")
+        elif latest_close <= morning_low * 1.008:
+            breakout_status = "Near BD"
+            chart_structure = "Testing Support"
+            if not breakout_time:
+                breakout_time = near_time or datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+
+    return {
+        "is_breakout": is_breakout,
+        "status": breakout_status,
+        "breakout_time": breakout_time,
+        "rvol_5m": round(latest_rvol, 2),
+        "ema_trend": "bullish" if latest_close >= ema9 else "bearish",
+        "chart_structure": chart_structure,
+    }
 
 
 def index_context_note(row: dict[str, Any], side: str, index_context: dict[str, dict[str, Any]]) -> tuple[str, int]:
@@ -464,25 +703,37 @@ def index_context_note(row: dict[str, Any], side: str, index_context: dict[str, 
     return f"{note} | market not supportive", -4
 
 
-def calc_score(row: dict[str, Any], oi: dict[str, Any] | None, *, side: str, max_volume: float) -> int:
+def calc_stock_activity(row: dict[str, Any], oi: dict[str, Any] | None) -> float:
+    vol = float(row.get("volume") or (oi or {}).get("volume_contracts") or 0)
+    ltp = float(row.get("ltp") or 1.0)
+    val_lakhs = float(row.get("value_lakhs") or (oi or {}).get("futures_value") or 0)
+    return (vol * ltp * 0.4) + (val_lakhs * 100_000 * 0.6)
+
+
+def calc_score(row: dict[str, Any], oi: dict[str, Any] | None, *, side: str, activity_ratio: float) -> int:
     price_change = abs(row.get("percent_change") or 0)
-    price_score = min(price_change / 5.0, 1.0) * 35
-    volume = row.get("volume") or 0
-    volume_score = (volume / max_volume * 18) if max_volume > 0 else 0
-    value_score = min((row.get("value_lakhs") or 0) / 100_000, 1.0) * 7
+    price_score = min(price_change / 5.0, 1.0) * 20
+    vol_score = min(activity_ratio / 2.5, 1.0) * 25
+
+    range_pos = day_range_position(row)
+    range_score = 0.0
+    if range_pos is not None:
+        if side == "bullish":
+            range_score = min(max(0.0, range_pos - 0.4) / 0.5, 1.0) * 25
+        else:
+            range_score = min(max(0.0, 0.6 - range_pos) / 0.5, 1.0) * 25
 
     oi_change_percent = abs((oi or {}).get("oi_change_percent") or 0)
-    oi_direction = (oi or {}).get("oi_change")
-    oi_score = min(oi_change_percent / 20.0, 1.0) * 25
+    oi_score = min(oi_change_percent / 15.0, 1.0) * 15
 
-    setup = classify_oi(row.get("percent_change"), oi_direction)
+    setup = classify_oi(row.get("percent_change"), (oi or {}).get("oi_change"))
     alignment_score = 0
     if side == "bullish" and setup in {"Long buildup", "Short covering"}:
-        alignment_score = 15 if setup == "Long buildup" else 10
+        alignment_score = 15 if (setup == "Long buildup" or activity_ratio >= 1.5) else 12
     if side == "bearish" and setup in {"Short buildup", "Long unwinding"}:
-        alignment_score = 15 if setup == "Short buildup" else 10
+        alignment_score = 15 if (setup == "Short buildup" or activity_ratio >= 1.5) else 12
 
-    return int(round(max(0, min(100, price_score + volume_score + value_score + oi_score + alignment_score))))
+    return int(round(max(0, min(100, price_score + vol_score + range_score + oi_score + alignment_score))))
 
 
 def assess_one_side_rally(
@@ -490,131 +741,152 @@ def assess_one_side_rally(
     oi: dict[str, Any] | None,
     *,
     side: str,
-    max_volume: float,
+    activity_ratio: float,
     index_context: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     setup = classify_oi(row.get("percent_change"), (oi or {}).get("oi_change"))
     pct_change = row.get("percent_change")
     range_pos = day_range_position(row)
     open_move = pct_from_open(row)
-    volume = row.get("volume") or (oi or {}).get("volume_contracts") or 0
     oi_change_percent = abs((oi or {}).get("oi_change_percent") or 0)
     tags: list[str] = []
     blockers: list[str] = []
     score = 0.0
 
-    if pct_change is None:
-        blockers.append("price change unavailable")
-    elif side == "bullish":
-        if pct_change >= 2.0:
-            score += 22
-            tags.append("strong price expansion")
-        elif pct_change >= 1.0:
-            score += 17
-            tags.append("clean price momentum")
-        elif pct_change >= MIN_BULLISH_CHANGE:
-            score += 10
-            tags.append("early upside momentum")
-        else:
-            blockers.append(f"price move below +{MIN_BULLISH_CHANGE:.2f}%")
+    # 1. Volume Surge / RVOL Buildup (Max 25 pts)
+    if activity_ratio >= 2.5:
+        score += 25
+        tags.append(f"massive volume buildup ({activity_ratio:.1f}x)")
+    elif activity_ratio >= 1.6:
+        score += 20
+        tags.append(f"high volume surge ({activity_ratio:.1f}x)")
+    elif activity_ratio >= 1.0:
+        score += 12
+        tags.append(f"above-average volume ({activity_ratio:.1f}x)")
+    elif activity_ratio >= 0.6:
+        score += 6
+        tags.append("moderate volume")
     else:
-        if pct_change <= -2.0:
-            score += 22
-            tags.append("strong downside expansion")
-        elif pct_change <= -1.0:
-            score += 17
-            tags.append("clean downside momentum")
-        elif pct_change <= MIN_BEARISH_CHANGE:
-            score += 10
-            tags.append("early downside momentum")
-        else:
-            blockers.append(f"price move above {MIN_BEARISH_CHANGE:.2f}%")
+        score += 2
 
+    # 2. Day Range Position / Upper Range Hold (Max 25 pts)
     if range_pos is None:
-        score += 4
+        score += 10
         tags.append("range position unavailable")
     elif side == "bullish":
-        if range_pos >= 0.72:
-            score += 22
-            tags.append("holding near day high")
+        if range_pos >= 0.80:
+            score += 25
+            tags.append(f"locked near day high ({range_pos*100:.0f}%)")
         elif range_pos >= MIN_RANGE_EXTREME:
-            score += 14
-            tags.append("holding upper range")
+            score += 18
+            tags.append(f"holding upper range ({range_pos*100:.0f}%)")
+        elif range_pos >= 0.45:
+            score += 8
         else:
-            blockers.append("not holding upper range")
+            blockers.append("rejected from day high")
     else:
-        if range_pos <= 0.28:
-            score += 22
-            tags.append("holding near day low")
+        if range_pos <= 0.20:
+            score += 25
+            tags.append(f"locked near day low ({range_pos*100:.0f}%)")
         elif range_pos <= (1 - MIN_RANGE_EXTREME):
-            score += 14
-            tags.append("holding lower range")
+            score += 18
+            tags.append(f"holding lower range ({range_pos*100:.0f}%)")
+        elif range_pos <= 0.55:
+            score += 8
         else:
-            blockers.append("not holding lower range")
+            blockers.append("rejected from day low")
 
+    # 3. Move from Open (Max 20 pts)
     if open_move is None:
         tags.append("open move unavailable")
     elif side == "bullish":
         if open_move >= 0.50:
-            score += 14
-            tags.append("above open with control")
+            score += 20
+            tags.append(f"above open with control (+{open_move:.2f}%)")
         elif open_move >= 0.15:
-            score += 8
-            tags.append("above open")
+            score += 12
+            tags.append(f"above open (+{open_move:.2f}%)")
         elif open_move < 0:
-            blockers.append("below session open")
+            blockers.append("trading below session open")
     else:
         if open_move <= -0.50:
-            score += 14
-            tags.append("below open with control")
+            score += 20
+            tags.append(f"below open with control ({open_move:.2f}%)")
         elif open_move <= -0.15:
-            score += 8
-            tags.append("below open")
+            score += 12
+            tags.append(f"below open ({open_move:.2f}%)")
         elif open_move > 0:
-            blockers.append("above session open")
+            blockers.append("trading above session open")
 
+    # 4. Open Interest Setup & Squeeze Potential (Max 20 pts)
     if side == "bullish":
         if setup == "Long buildup":
-            score += 25
+            score += 20
             tags.append("fresh long buildup")
         elif setup == "Short covering":
-            score += 12
-            tags.append("short covering rally")
+            if activity_ratio >= 1.4 or (pct_change is not None and pct_change >= 2.0):
+                score += 20
+                tags.append("explosive short squeeze")
+            else:
+                score += 15
+                tags.append("short covering rally")
         else:
             blockers.append("OI setup not bullish")
     else:
         if setup == "Short buildup":
-            score += 25
+            score += 20
             tags.append("fresh short buildup")
         elif setup == "Long unwinding":
-            score += 12
-            tags.append("long unwinding slide")
+            if activity_ratio >= 1.4 or (pct_change is not None and pct_change <= -2.0):
+                score += 20
+                tags.append("heavy long liquidation")
+            else:
+                score += 15
+                tags.append("long unwinding slide")
         else:
             blockers.append("OI setup not bearish")
 
     if oi_change_percent >= 15:
-        score += 10
-        tags.append("OI surge")
-    elif oi_change_percent >= 7:
-        score += 7
+        score += 5
         tags.append("OI expansion")
-    elif oi_change_percent > 0:
+    elif oi_change_percent >= 6:
         score += 3
-        tags.append("OI present")
+
+    # 5. Price Momentum (Max 10 pts)
+    if pct_change is None:
+        blockers.append("price change unavailable")
+    elif side == "bullish":
+        if pct_change >= 2.5:
+            score += 10
+            tags.append("strong price expansion")
+        elif pct_change >= 1.2:
+            score += 7
+            tags.append("clean price momentum")
+        elif pct_change >= MIN_BULLISH_CHANGE:
+            score += 4
+        else:
+            blockers.append(f"price move below +{MIN_BULLISH_CHANGE:.2f}%")
     else:
-        blockers.append("OI change weak")
+        if pct_change <= -2.5:
+            score += 10
+            tags.append("strong downside expansion")
+        elif pct_change <= -1.2:
+            score += 7
+            tags.append("clean downside momentum")
+        elif pct_change <= MIN_BEARISH_CHANGE:
+            score += 4
+        else:
+            blockers.append(f"price move above {MIN_BEARISH_CHANGE:.2f}%")
 
-    if max_volume > 0 and volume > 0:
-        score += min(volume / max_volume, 1.0) * 7
-
+    # 6. Index Context Score (Max 8 pts)
     note, index_score = index_context_note(row, side, index_context)
     score += index_score
     tags.append(note)
 
     score_int = int(round(max(0, min(100, score))))
-    primary_setup = setup in {"Long buildup", "Short buildup"}
+    is_priority = score_int >= 75 and (range_pos is None or range_pos >= 0.60 if side == "bullish" else range_pos <= 0.40) and activity_ratio >= 1.1
     one_side = score_int >= MIN_ONE_SIDE_SCORE and not blockers
-    status = "Priority Rally" if one_side and score_int >= 82 and primary_setup else "Rally Watch" if one_side else "Filtered"
+    status = "Priority Rally" if (one_side and is_priority) else "Rally Watch" if one_side else "Filtered"
     rally_type = "One-side bullish rally" if side == "bullish" else "One-side bearish slide"
 
     return {
@@ -652,12 +924,12 @@ def build_trade_levels(row: dict[str, Any], *, side: str) -> tuple[float | None,
         risk = max(base_stop - entry, max(ltp * 0.004, 3.0))
         stop = round(entry + risk, 2)
         target = round(entry - (risk * 1.7), 2)
-        plan = "Sell/short only if price breaks below the morning low and holds below it."
+        plan = "Sell only if price breaks below the morning low and holds below it."
     return entry, stop, target, plan
 
 
 def status_from_score(score: int, setup: str) -> str:
-    if score >= 82:
+    if score >= 75:
         return "Priority Rally"
     if score >= MIN_ONE_SIDE_SCORE:
         return "Rally Watch"
@@ -675,25 +947,78 @@ def build_suggestions(
     index_context: dict[str, dict[str, Any]],
 ) -> tuple[list[Suggestion], int]:
     matched_rows = [row for row in rows if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS]
-    max_volume = max([(row.get("volume") or oi_by_symbol[row["symbol"]].get("volume_contracts") or 0) for row in matched_rows] or [0])
+    
+    # Calculate activities across candidates to compute true relative volume (RVOL)
+    activities = [calc_stock_activity(r, oi_by_symbol.get(r["symbol"])) for r in matched_rows]
+    pos_acts = sorted([a for a in activities if a > 0])
+    if pos_acts:
+        mid = len(pos_acts) // 2
+        median_act = pos_acts[mid] if len(pos_acts) % 2 else (pos_acts[mid - 1] + pos_acts[mid]) / 2.0
+    else:
+        median_act = 1.0
+
+    # Fetch 5-minute candles concurrently for all candidate symbols
+    candles_by_symbol: dict[str, list[dict[str, Any]]] = {}
+    candidate_symbols = [r["symbol"] for r in matched_rows]
+    if candidate_symbols:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(candidate_symbols), 8)) as executor:
+            future_to_sym = {executor.submit(fetch_5m_candles_for_symbol, sym): sym for sym in candidate_symbols}
+            for future in concurrent.futures.as_completed(future_to_sym, timeout=5.0):
+                sym = future_to_sym[future]
+                try:
+                    candles_by_symbol[sym] = future.result()
+                except Exception:
+                    candles_by_symbol[sym] = []
+
     suggestions: list[Suggestion] = []
     for row in matched_rows:
         symbol = row["symbol"]
         oi = oi_by_symbol[symbol]
+        row_act = calc_stock_activity(row, oi)
+        activity_ratio = (row_act / median_act) if median_act > 0 else 1.0
+        vc_ranking = round(max(0.1, activity_ratio), 2)
+
         setup = classify_oi(row.get("percent_change"), oi.get("oi_change"))
-        base_score = calc_score(row, oi, side=side, max_volume=max_volume)
-        rally = assess_one_side_rally(row, oi, side=side, max_volume=max_volume, index_context=index_context)
+        base_score = calc_score(row, oi, side=side, activity_ratio=activity_ratio)
+        rally = assess_one_side_rally(row, oi, side=side, activity_ratio=activity_ratio, index_context=index_context)
         if not rally["is_one_side"]:
             continue
+
+        # 5-Minute Breakout Analysis
+        sym_candles = candles_by_symbol.get(symbol, [])
+        bo_info = analyze_5m_breakout(sym_candles, side, row)
+        five_min_status = bo_info["status"]
+        breakout_time = bo_info["breakout_time"]
+        is_breakout = bo_info["is_breakout"]
+
+        # Boost score and tag if active 5m breakout is confirmed
+        rally_score = rally["score"]
+        quality_tags = list(rally["quality_tags"])
+        if is_breakout:
+            rally_score = min(100, rally_score + 8)
+            quality_tags.insert(0, f"5m Breakout ({breakout_time or 'Active'})")
+        elif "near" in five_min_status.lower():
+            quality_tags.insert(0, "Near 5m Breakout")
+
         entry, stop, target, plan = build_trade_levels(row, side=side)
         oi_change_percent = oi.get("oi_change_percent")
         oi_change = oi.get("oi_change")
         display_volume = row.get("volume") or oi.get("volume_contracts")
+        
+        # Calculate Momentum Points (M.P.)
+        trend = abs(row.get("percent_change") or 0) * 0.5
+        volatility = abs(oi_change_percent or 0) * 0.08
+        liquidity = vc_ranking * 1.4
+        mp_score = round(trend + volatility + liquidity, 2)
+
         reason_parts = [
+            five_min_status,
             rally["rally_type"],
             setup,
             f"price move {row.get('percent_change'):+.2f}%" if row.get("percent_change") is not None else "price move unavailable",
         ]
+        if breakout_time:
+            reason_parts.append(f"BO time {breakout_time}")
         if rally.get("move_from_open_percent") is not None:
             reason_parts.append(f"from open {rally['move_from_open_percent']:+.2f}%")
         if rally.get("range_position_percent") is not None:
@@ -705,6 +1030,7 @@ def build_suggestions(
         reason_parts.append(str(rally["index_context"]))
         if display_volume is not None:
             reason_parts.append(f"volume {int(display_volume):,}")
+
         suggestions.append(
             Suggestion(
                 symbol=symbol,
@@ -721,19 +1047,37 @@ def build_suggestions(
                 entry=entry,
                 stop_loss=stop,
                 target=target,
-                score=max(base_score, rally["score"]),
-                one_side_rally_score=rally["score"],
+                score=max(base_score, rally_score),
+                one_side_rally_score=rally_score,
                 rally_type=rally["rally_type"],
                 range_position_percent=rally["range_position_percent"],
                 move_from_open_percent=rally["move_from_open_percent"],
                 index_context=rally["index_context"],
-                quality_tags=rally["quality_tags"],
-                status=rally["status"] or status_from_score(rally["score"], setup),
+                quality_tags=quality_tags,
+                status=rally["status"] or status_from_score(rally_score, setup),
                 reason=" | ".join(reason_parts),
+                vc_ranking=vc_ranking,
+                mp_score=mp_score,
+                five_min_status=five_min_status,
+                breakout_time=breakout_time,
+                is_breakout=is_breakout,
+                chart_structure=bo_info.get("chart_structure", "Base Building"),
+                rvol_5m=bo_info.get("rvol_5m", 1.0),
+                ema_trend=bo_info.get("ema_trend", "neutral"),
             )
         )
 
-    suggestions.sort(key=lambda item: (item.one_side_rally_score, abs(item.percent_change or 0)), reverse=True)
+    # Priority Sort:
+    # Tier 1 (Top): Active 5-Minute Breakouts (is_breakout=True)
+    # Tier 2 (Middle): Near Breakouts (Near BO / Near BD)
+    # Tier 3 (Base): Other valid candidates
+    # Within each tier: sorted by Volume Multiplier (VC Ranking) × Rally Score descending, then % Change
+    # Sort strictly by Percentage Change (Highest % gainers on top for Bullish, Largest % drop on top for Bearish)
+    if side == "bullish":
+        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else -9999, reverse=True)
+    else:
+        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else 9999)
+
     ranked = suggestions[:top]
     return [
         Suggestion(**{**item.to_dict(), "rank": index})

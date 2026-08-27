@@ -113,6 +113,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path)
+        if parsed_path.path in ("", "/"):
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", "/MLAIStockV2.html")
+            self.end_headers()
+            return
+
         if parsed_path.path == "/api/health":
             self._send_json(HTTPStatus.OK, {"ok": True, "service": "stock-suggestion-live-server"})
             return
@@ -163,6 +169,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
         if parsed_path.path == "/api/stock_suggestions":
             self._serve_stock_suggestions()
+            return
+
+        if parsed_path.path == "/api/stock_candles":
+            self._serve_stock_candles(parse_qs(parsed_path.query))
             return
 
         super().do_GET()
@@ -322,14 +332,21 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def _serve_stock_suggestions(self) -> None:
         """Serve the latest real NSE intraday stock suggestion index."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+        today_str = now_ist.date().isoformat()
+
         if STOCK_SUGGESTION_SNAPSHOT.exists():
             try:
                 payload = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
-                if payload.get("ok"):
+                snapshot_date = payload.get("session_date")
+                # If snapshot is from previous date or marked failed, auto-refresh live
+                if payload.get("ok") and snapshot_date == today_str:
                     self._send_json(HTTPStatus.OK, payload)
                     return
                 status, refreshed = self._refresh_stock_suggestions_payload()
-                refreshed["_auto_refresh_reason"] = "previous_snapshot_failed"
+                refreshed["_auto_refresh_reason"] = "stale_session_auto_refreshed"
                 self._send_json(status, refreshed)
                 return
             except Exception as e:
@@ -381,6 +398,81 @@ class NiftyHandler(SimpleHTTPRequestHandler):
     def _refresh_stock_suggestions(self) -> None:
         status, payload = self._refresh_stock_suggestions_payload()
         self._send_json(status, payload)
+
+    def _serve_stock_candles(self, query: dict[str, list[str]]) -> None:
+        symbol = (query.get("symbol") or ["MUTHOOTFIN"])[0].strip().upper()
+        try:
+            from stock_suggestion_index import fetch_5m_candles_for_symbol
+            candles = fetch_5m_candles_for_symbol(symbol, full_range=True)
+            if not candles:
+                self._send_json(HTTPStatus.OK, {
+                    "ok": True,
+                    "symbol": symbol,
+                    "candles": [],
+                    "message": "No candle data available."
+                })
+                return
+            
+            # Compute PDH (Prior Day High), PDL (Prior Day Low), Open, High, Low
+            opens = [c["open"] for c in candles if c.get("open") is not None]
+            highs = [c["high"] for c in candles if c.get("high") is not None]
+            lows = [c["low"] for c in candles if c.get("low") is not None]
+            closes = [c["close"] for c in candles if c.get("close") is not None]
+            volumes = [c["volume"] for c in candles if c.get("volume") is not None]
+
+            # Morning opening range (first 3 to 6 candles e.g. 09:15 - 09:45)
+            base_count = min(len(candles), 6)
+            orb_high = max(c["high"] for c in candles[:base_count]) if candles else None
+            orb_low = min(c["low"] for c in candles[:base_count]) if candles else None
+
+            # Calculate 9 EMA line
+            ema9_series = []
+            if closes:
+                k = 2.0 / (9 + 1)
+                curr_ema = closes[0]
+                for c in candles:
+                    p = c["close"]
+                    curr_ema = (p * k) + (curr_ema * (1.0 - k))
+                    ema9_series.append({"time": c["timestamp"], "value": round(curr_ema, 2)})
+
+            # Format candles for TradingView Lightweight Charts
+            # Lightweight charts expects: { time: unix_timestamp (seconds), open, high, low, close, volume }
+            tv_candles = []
+            tv_volumes = []
+            for c in candles:
+                tv_candles.append({
+                    "time": c["timestamp"],
+                    "open": round(c["open"], 2),
+                    "high": round(c["high"], 2),
+                    "low": round(c["low"], 2),
+                    "close": round(c["close"], 2),
+                })
+                is_up = c["close"] >= c["open"]
+                tv_volumes.append({
+                    "time": c["timestamp"],
+                    "value": int(c["volume"]),
+                    "color": "rgba(10, 143, 79, 0.6)" if is_up else "rgba(255, 80, 80, 0.6)",
+                })
+
+            self._send_json(HTTPStatus.OK, {
+                "ok": True,
+                "symbol": symbol,
+                "candles": tv_candles,
+                "volumes": tv_volumes,
+                "ema9": ema9_series,
+                "orb_high": round(orb_high, 2) if orb_high else None,
+                "orb_low": round(orb_low, 2) if orb_low else None,
+                "day_high": round(max(highs), 2) if highs else None,
+                "day_low": round(min(lows), 2) if lows else None,
+                "day_open": round(opens[0], 2) if opens else None,
+                "ltp": round(closes[-1], 2) if closes else None,
+            })
+        except Exception as e:
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {
+                "ok": False,
+                "error": "stock_candles_failed",
+                "message": str(e),
+            })
 
     def _serve_mysql_candles(self, query: dict[str, list[str]]) -> None:
         candle_python = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
