@@ -603,6 +603,32 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
     is_breakout = False
     breakout_status = "Consolidating"
 
+
+    # --- FIRST 5-MINUTE EARLY BREAKOUT DETECTION ---
+    # If the very first candle of the day is a massive gap-and-go with high volume,
+    # we classify it as an instant breakout.
+    if len(candles) >= 1:
+        first_candle = candles[0]
+        # We need to know if the first candle's body is strong (e.g., body is > 60% of the candle's total range)
+        candle_range = first_candle["high"] - first_candle["low"]
+        if candle_range > 0:
+            if side == "bullish":
+                body = first_candle["close"] - first_candle["open"]
+                if body > 0 and (body / candle_range) >= 0.60:
+                    # Gap up and strong close
+                    is_breakout = True
+                    breakout_status = "Breakout"
+                    chart_structure = "First 5m Gap-and-Go"
+                    breakout_time = datetime.fromtimestamp(first_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+            else:
+                body = first_candle["open"] - first_candle["close"]
+                if body > 0 and (body / candle_range) >= 0.60:
+                    # Gap down and strong close
+                    is_breakout = True
+                    breakout_status = "Breakdown"
+                    chart_structure = "First 5m Breakdown"
+                    breakout_time = datetime.fromtimestamp(first_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+
     # 4. Check for breakout events, price structure & movement momentum
     breakout_time = None
     near_time = None
