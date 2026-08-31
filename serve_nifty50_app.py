@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from functools import partial
+from datetime import datetime, timezone, timedelta
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -19,6 +20,13 @@ from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parent
+
+# Ensure local venv packages (e.g. websockets) are importable under any python3 invoker
+import glob
+for _sp in glob.glob(str(ROOT / "venv/lib/python*/site-packages")):
+    if _sp not in sys.path:
+        sys.path.insert(0, _sp)
+
 DOWNLOADER = ROOT / "download_real_market_inputs.py"
 COLLECTOR = ROOT / "collect_nifty50_market_data.py"
 MOST_ACTIVE_FETCHER = ROOT / "fetch_most_active_nse.py"
@@ -30,11 +38,83 @@ OPPORTUNITY_AUDIT = ROOT / "opportunity_audit_mysql.py"
 REPLAY_AUDIT = ROOT / "replay_opportunity_audit.py"
 ACCURACY_API = ROOT / "accuracy_api.py"
 STOCK_SUGGESTION = ROOT / "stock_suggestion_index.py"
-VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
+VENV_PYTHON = ROOT / "venv" / "bin" / "python"
 SNAPSHOT = ROOT / "market_snapshot.latest.json"
 MOST_ACTIVE = ROOT / "inputs" / "most_active.latest.json"
 STOCK_SUGGESTION_SNAPSHOT = ROOT / "inputs" / "stock_suggestion_index.latest.json"
 REFRESH_LOCK = threading.Lock()
+
+IST_TZ = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now() -> datetime:
+    return datetime.now(IST_TZ)
+
+def is_ist_market_hours(check_dt: datetime | None = None) -> bool:
+    """Checks if the given or current timestamp falls within Indian market hours (09:15-15:30 IST, Mon-Fri)."""
+    dt = check_dt or get_ist_now()
+    if dt.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    current_minutes = dt.hour * 60 + dt.minute
+    return (9 * 60 + 15) <= current_minutes <= (15 * 60 + 30)
+
+LAST_AUTO_SCAN_INFO: dict[str, Any] = {
+    "enabled": True,
+    "interval_seconds": 300,
+    "last_run_ist": None,
+    "last_duration_seconds": None,
+    "status": "idle",
+    "next_run_ist": None,
+}
+
+def start_background_auto_scanner(interval_seconds: int = 300) -> None:
+    """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 5 min during market hours."""
+    def _loop() -> None:
+        time.sleep(5)  # Grace period on boot
+        while True:
+            try:
+                now_ist = get_ist_now()
+                if is_ist_market_hours(now_ist):
+                    if REFRESH_LOCK.acquire(blocking=False):
+                        LAST_AUTO_SCAN_INFO["status"] = "running"
+                        scan_start = time.time()
+                        print(f"[{now_ist.strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Executing 5-minute background market scan...")
+                        try:
+                            exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
+                            res = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
+                            dur = round(time.time() - scan_start, 1)
+                            is_ok = res.get("ok", False)
+                            LAST_AUTO_SCAN_INFO["last_run_ist"] = get_ist_now().strftime("%I:%M:%S %p IST")
+                            LAST_AUTO_SCAN_INFO["last_duration_seconds"] = dur
+                            LAST_AUTO_SCAN_INFO["status"] = "success" if is_ok else "failed"
+                            print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Scan completed in {dur}s (ok={is_ok})")
+                            # Real-time WebSocket push to all connected browsers
+                            if is_ok and isinstance(res.get("stdout"), dict):
+                                try:
+                                    from websocket_server import broadcast_scanner_update_sync
+                                    broadcast_scanner_update_sync(res["stdout"])
+                                except Exception as bc_err:
+                                    print(f"[WS BROADCAST ERROR] {bc_err}")
+                        except Exception as scan_err:
+                            print(f"[AUTO-SCANNER ERROR] {scan_err}")
+                            LAST_AUTO_SCAN_INFO["status"] = f"error: {scan_err}"
+                        finally:
+                            REFRESH_LOCK.release()
+                    else:
+                        print("[AUTO-SCANNER] Skipping interval: manual refresh or lock is currently active.")
+
+                    next_run = get_ist_now() + timedelta(seconds=interval_seconds)
+                    LAST_AUTO_SCAN_INFO["next_run_ist"] = next_run.strftime("%I:%M:%S %p IST")
+                    time.sleep(interval_seconds)
+                else:
+                    LAST_AUTO_SCAN_INFO["status"] = "market_closed"
+                    time.sleep(30)
+            except Exception as e:
+                print(f"[AUTO-SCANNER LOOP EXCEPTION] {e}")
+                time.sleep(30)
+
+    scanner_thread = threading.Thread(target=_loop, name="BackgroundAutoScanner", daemon=True)
+    scanner_thread.start()
+    print(f"[AUTO-SCANNER] Background 5-min auto-scanner thread active (interval: {interval_seconds}s).")
 
 
 def parse_args() -> argparse.Namespace:
@@ -175,7 +255,62 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             self._serve_stock_candles(parse_qs(parsed_path.query))
             return
 
+        if parsed_path.path == "/api/index_live":
+            self._serve_index_live()
+            return
+
         super().do_GET()
+
+    def _serve_index_live(self) -> None:
+        """Real-time NIFTY 50 & BANK NIFTY fetch from official NSE India API (matches Groww/Zerodha)."""
+        result = {}
+        try:
+            from stock_suggestion_index import nse_get_json, NSE_BASE
+            data = nse_get_json(f"{NSE_BASE}/api/allIndices", referer=f"{NSE_BASE}/market-data/live-equity-market")
+            for item in data.get("data", []):
+                idx = item.get("index")
+                if idx in ("NIFTY 50", "NIFTY BANK"):
+                    pct = float(item.get("percentChange", 0))
+                    ltp = float(item.get("last", 0))
+                    chg = float(item.get("variation", 0))
+                    result[idx] = {
+                        "name": idx,
+                        "ltp": round(ltp, 2),
+                        "percent_change": round(pct, 2),
+                        "change": round(chg, 2),
+                        "direction": "bullish" if pct >= 0 else "bearish",
+                    }
+        except Exception:
+            pass
+
+        # Fallback if NSE failed: try Yahoo Finance
+        if not result or "NIFTY 50" not in result:
+            import urllib.request as _ur
+            for symbol, label in [("^NSEI", "NIFTY 50"), ("^NSEBANK", "NIFTY BANK")]:
+                if label in result:
+                    continue
+                try:
+                    url = f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=1d"
+                    req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with _ur.urlopen(req, timeout=6) as r:
+                        data = json.loads(r.read())
+                    meta = data["chart"]["result"][0]["meta"]
+                    ltp = meta.get("regularMarketPrice") or 0
+                    prev = meta.get("chartPreviousClose") or meta.get("previousClose") or ltp
+                    pct = round(((ltp - prev) / prev) * 100, 2) if prev else 0
+                    chg = round(ltp - prev, 2)
+                    result[label] = {
+                        "name": label,
+                        "ltp": round(ltp, 2),
+                        "percent_change": pct,
+                        "change": chg,
+                        "direction": "bullish" if pct >= 0 else "bearish",
+                    }
+                except Exception:
+                    pass
+
+        self._send_json(HTTPStatus.OK, {"ok": True, "index_context": result})
+
 
     def do_POST(self) -> None:
         parsed_path = urlparse(self.path)
@@ -341,12 +476,15 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             try:
                 payload = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
                 snapshot_date = payload.get("session_date")
+                # Attach live auto-scanner telemetry
+                payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
                 # If snapshot is from previous date or marked failed, auto-refresh live
                 if payload.get("ok") and snapshot_date == today_str:
                     self._send_json(HTTPStatus.OK, payload)
                     return
                 status, refreshed = self._refresh_stock_suggestions_payload()
                 refreshed["_auto_refresh_reason"] = "stale_session_auto_refreshed"
+                refreshed["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
                 self._send_json(status, refreshed)
                 return
             except Exception as e:
@@ -362,6 +500,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
         status, payload = self._refresh_stock_suggestions_payload()
         payload["_auto_refresh_reason"] = "snapshot_missing"
+        payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
         self._send_json(status, payload)
 
     def _refresh_stock_suggestions_payload(self) -> tuple[HTTPStatus, dict[str, Any]]:
@@ -374,7 +513,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             }
 
         try:
-            result = run_command([sys.executable, str(STOCK_SUGGESTION)], timeout=75)
+            exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
+            result = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
         finally:
             REFRESH_LOCK.release()
 
@@ -385,6 +525,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "duration_seconds": result["duration_seconds"],
                 "stderr": result.get("stderr"),
             }
+            # Real-time WebSocket push to all open tabs
+            try:
+                from websocket_server import broadcast_scanner_update_sync
+                broadcast_scanner_update_sync(payload)
+            except Exception:
+                pass
             status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE
             return status, payload
 
@@ -747,7 +893,19 @@ def main() -> None:
         world_maxrecords=args.world_maxrecords,
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
-    print(json.dumps({"ok": True, "url": f"http://{args.host}:{args.port}/nifty50_ai_prediction_console.html"}, indent=2))
+    print(json.dumps({"ok": True, "url": f"http://{args.host}:{args.port}/MLAIStockV2.html"}, indent=2))
+    
+    # Launch autonomous 5-minute background auto-scanner
+    start_background_auto_scanner(interval_seconds=300)
+
+    # Launch Real-Time WebSocket Push Server on port 8765
+    try:
+        from websocket_server import start_websocket_server_thread
+        start_websocket_server_thread(host="0.0.0.0", port=8765)
+        print("[WEBSOCKET] Real-time push engine active on ws://127.0.0.1:8765")
+    except Exception as ws_err:
+        print(f"[WEBSOCKET ERROR] Failed to start WebSocket engine: {ws_err}")
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:

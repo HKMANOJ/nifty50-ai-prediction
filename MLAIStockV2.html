@@ -1020,27 +1020,31 @@
     </div>
 
     <nav class="sidebar-menu">
-      <div class="menu-item active">
+      <div class="menu-item active" id="navDashboard" data-view="dashboard">
         <span class="icon">📈</span>
-        <span class="menu-label">Futures & Options</span>
+        <span class="menu-label">Dashboard</span>
       </div>
-      <div class="menu-item">
+      <div class="menu-item" id="navFO" data-view="dashboard">
+        <span class="icon">📋</span>
+        <span class="menu-label">Futures &amp; Options</span>
+      </div>
+      <div class="menu-item" id="navIntraday" data-view="dashboard">
         <span class="icon">⚡</span>
         <span class="menu-label">Intraday Momentum</span>
       </div>
-      <div class="menu-item">
+      <div class="menu-item" id="navBreakout" data-view="dashboard">
         <span class="icon">🎯</span>
         <span class="menu-label">Breakout Hunter</span>
       </div>
-      <div class="menu-item">
+      <div class="menu-item" id="navSector" data-view="sector">
         <span class="icon">📊</span>
         <span class="menu-label">Sector Analysis</span>
       </div>
-      <div class="menu-item">
+      <div class="menu-item" id="navHeatmap" data-view="dashboard">
         <span class="icon">🗺️</span>
         <span class="menu-label">Heatmaps</span>
       </div>
-      <div class="menu-item">
+      <div class="menu-item" id="navSentiment" data-view="dashboard">
         <span class="icon">📉</span>
         <span class="menu-label">Market Sentiment</span>
       </div>
@@ -1078,6 +1082,14 @@
       </div>
 
       <div class="navbar-status">
+        <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px;" title="Real-Time WebSocket Push Engine (0ms Latency)">
+          <span id="wsStatusDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#16a34a;"></span>
+          <span id="wsStatusText">WS: Connecting...</span>
+        </span>
+        <span id="autoScanBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:inline-flex; align-items:center; gap:6px;" title="Background Engine automatically rescans 200+ NSE F&O stocks every 5 minutes during market hours">
+          <span id="autoScanDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#2563eb;"></span>
+          <span id="autoScanText">Auto-Scan: 5m Active</span>
+        </span>
         <span class="status-badge live" id="liveStatusBadge">● Live Real-Time Data</span>
         <span style="font-size:12px; color:var(--text-muted); font-family:var(--font-mono);" id="marketClock">Clock --</span>
         <button class="refresh-pill-btn" id="refreshBtn" type="button">⚡ Refresh Live</button>
@@ -1085,7 +1097,7 @@
     </header>
 
     <!-- Main Content Container -->
-    <div class="content-container">
+    <div id="viewDashboard" class="content-container">
       <!-- Row 1: Vardhaan Metrics Summary Bar -->
       <section class="metrics-row">
         <!-- Session Leaders -->
@@ -1110,21 +1122,32 @@
           </div>
         </div>
 
-        <!-- AI System Top Pick & Trigger Time (New) -->
-        <div class="summary-card" style="background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%); border-color: #86efac;">
+        <!-- AI System Top Pick (Disciplined Trader Mode: Blank unless ALL criteria met) -->
+        <div class="summary-card" id="topPickCard" style="border-color: #e2e8f0; background: #ffffff;">
           <div class="summary-card-title">
-            <span style="color:#15803d; font-weight:800;">⚡ System Top Pick</span>
-            <span style="background:#dcfce7; color:#15803d; font-size:9px; padding:2px 6px; border-radius:4px; font-weight:800;">OPTION TRADE</span>
+            <span style="color:#64748b; font-weight:800;" id="topPickLabel">⚡ System Top Pick</span>
+            <span id="topPickBadge" style="font-size:9px; padding:2px 6px; border-radius:4px; font-weight:800; background:#f1f5f9; color:#64748b;">SCANNING...</span>
           </div>
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2px;">
-            <div>
-              <div style="font-size:16px; font-weight:900; color:#0f172a; letter-spacing:-0.02em;" id="topPickSym">KAYNES</div>
-              <div style="font-size:11px; font-weight:700; color:#16a34a;" id="topPickChg">+3.92% Long buildup</div>
+          <!-- Blank / Waiting state (default) -->
+          <div id="topPickBlank" style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:6px 0; gap:4px;">
+            <div style="font-size:18px;">🔍</div>
+            <div style="font-size:11px; font-weight:700; color:#94a3b8; text-align:center; line-height:1.4;">No high-conviction<br>setup right now</div>
+            <div style="font-size:9px; color:#cbd5e1; font-weight:600; text-align:center;">Waiting for all 4 conditions</div>
+          </div>
+          <!-- Active Trade Pick (only shown when all strict criteria are met) -->
+          <div id="topPickActive" style="display:none;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:2px;">
+              <div>
+                <div style="font-size:17px; font-weight:900; color:#0f172a; letter-spacing:-0.02em;" id="topPickSym">--</div>
+                <div style="font-size:11px; font-weight:700; color:#16a34a;" id="topPickChg">-- Long buildup</div>
+                <div style="font-size:10px; font-weight:600; color:#64748b; margin-top:2px;" id="topPickReason">--</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:13px; font-weight:800; color:#2563eb; font-family:var(--font-mono);" id="topPickTime">--</div>
+                <div style="font-size:9px; font-weight:700; color:#64748b; text-transform:uppercase;">Breakout Trigger</div>
+              </div>
             </div>
-            <div style="text-align:right;">
-              <div style="font-size:13px; font-weight:800; color:#2563eb; font-family:var(--font-mono);" id="topPickTime">10:25 AM</div>
-              <div style="font-size:9px; font-weight:700; color:#64748b; text-transform:uppercase;">Breakout Trigger</div>
-            </div>
+            <div style="display:flex; gap:4px; margin-top:6px; flex-wrap:wrap;" id="topPickCriteria"></div>
           </div>
         </div>
 
@@ -1252,6 +1275,92 @@
         </div>
       </section>
     </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         SECTOR ANALYSIS VIEW (hidden by default, shown on nav click)
+         ═══════════════════════════════════════════════════════════ -->
+    <div id="viewSectorAnalysis" class="content-container" style="display:none; flex-direction:column; padding:16px 20px; gap:18px;">
+
+      <!-- Header -->
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+        <div>
+          <h2 style="font-size:18px; font-weight:800; color:#0f172a; margin:0;">📊 Institutional Sector Flow Desk</h2>
+          <p style="font-size:12px; color:#64748b; margin:4px 0 0;">Real-time sector tailwinds · Leaders &amp; Laggards · Theme Alignment · Trade Recommendations</p>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span id="sectorLastUpdated" style="font-size:11px; color:#94a3b8; font-family:monospace;">Updated --</span>
+          <button onclick="renderSectorView()" style="background:#0f172a; color:#fff; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">⚡ Refresh</button>
+        </div>
+      </div>
+
+      <!-- ── SECTION 1: Sector Heatmap Tiles ── -->
+      <section>
+        <div style="font-size:12px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:.06em; margin-bottom:10px;">
+          🌡️ Sector Heatmap — Color Coded by Net Inflow
+        </div>
+        <div id="sectorTilesGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)); gap:10px;"></div>
+      </section>
+
+      <!-- ── SECTION 2: Sector RS Bar Chart (canvas-based) ── -->
+      <section style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px;">
+        <div style="font-size:12px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px;">
+          📈 Relative Strength vs NIFTY 50 — All Sectors
+        </div>
+        <div id="sectorRsChart" style="overflow-x:auto; padding-bottom:4px;"></div>
+      </section>
+
+      <!-- ── SECTION 3: Top Stocks per Sector ── -->
+      <section style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px;">
+        <div style="font-size:12px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px;">
+          🏆 Top Stocks by Sector — RS · RVOL · Money Flow
+        </div>
+        <!-- Sector filter pills -->
+        <div id="sectorFilterPills" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px;"></div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead>
+              <tr style="border-bottom:2px solid #e2e8f0; color:#64748b; text-align:left;">
+                <th style="padding:8px 10px; font-weight:700;">#</th>
+                <th style="padding:8px 10px; font-weight:700;">Stock</th>
+                <th style="padding:8px 10px; font-weight:700;">Sector</th>
+                <th style="padding:8px 10px; font-weight:700;">Price</th>
+                <th style="padding:8px 10px; font-weight:700;">CHG %</th>
+                <th style="padding:8px 10px; font-weight:700;">RVOL</th>
+                <th style="padding:8px 10px; font-weight:700;">Range Hold</th>
+                <th style="padding:8px 10px; font-weight:700;">Sector Verdict</th>
+                <th style="padding:8px 10px; font-weight:700;">Trade Setup</th>
+              </tr>
+            </thead>
+            <tbody id="sectorStocksBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── SECTION 4: Theme Alignment Table ── -->
+      <section style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px;">
+        <div style="font-size:12px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px;">
+          🎯 Theme Alignment — Stock × Sector Tailwind × Trade Recommendation
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead>
+              <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0; color:#475569;">
+                <th style="padding:9px 12px; font-weight:700; text-align:left;">Stock</th>
+                <th style="padding:9px 12px; font-weight:700; text-align:left;">Sector</th>
+                <th style="padding:9px 12px; font-weight:700; text-align:center;">Sector CHG%</th>
+                <th style="padding:9px 12px; font-weight:700; text-align:center;">Tailwind</th>
+                <th style="padding:9px 12px; font-weight:700; text-align:center;">Stock CHG%</th>
+                <th style="padding:9px 12px; font-weight:700; text-align:center;">RVOL</th>
+                <th style="padding:9px 12px; font-weight:700; text-align:center;">Trading Recommendation</th>
+              </tr>
+            </thead>
+            <tbody id="themeAlignBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </div><!-- /viewSectorAnalysis -->
+
   </main>
 </div>
 
@@ -1384,6 +1493,11 @@
   async function selectStock(symbol, meta = {}) {
     if (!symbol) return;
     _selectedSymbol = symbol.toUpperCase();
+
+    // Notify WebSocket server to switch live candle stream to this symbol
+    if (_wsClient && _wsClient.readyState === WebSocket.OPEN) {
+      _wsClient.send(JSON.stringify({ action: "subscribe", symbol: _selectedSymbol }));
+    }
 
     // Update Header
     const symEl = document.getElementById("chartSymbol");
@@ -1577,8 +1691,44 @@
     const bnk = idxs["NIFTY BANK"] || {};
     const n50El = document.getElementById("niftyVal");
     const bnkEl = document.getElementById("bankVal");
-    if (n50El) n50El.textContent = `${pct(n50.percent_change)}`;
-    if (bnkEl) bnkEl.textContent = `${pct(bnk.percent_change)}`;
+    if (n50El && n50.percent_change !== undefined) {
+      const p = n50.percent_change;
+      const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
+      n50El.textContent = `${ltpStr}(${pct(p)})`;
+      n50El.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+    }
+    if (bnkEl && bnk.percent_change !== undefined) {
+      const p = bnk.percent_change;
+      const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
+      bnkEl.textContent = `${ltpStr}(${pct(p)})`;
+      bnkEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+    }
+
+    // Auto-Scan Badge Telemetry
+    const scanBadge = document.getElementById("autoScanBadge");
+    const scanText = document.getElementById("autoScanText");
+    const scanDot = document.getElementById("autoScanDot");
+    const scanInfo = payload._auto_scan_info || {};
+    if (scanText) {
+      if (isMarketHours()) {
+        const lastT = scanInfo.last_run_ist ? scanInfo.last_run_ist.replace(" IST", "") : (payload.market_clock_ist || "");
+        scanText.textContent = lastT ? `Auto-Scan: 5m (Last: ${lastT})` : "Auto-Scan: 5m Active";
+        if (scanBadge) {
+          scanBadge.style.background = "#eff6ff";
+          scanBadge.style.color = "#1d4ed8";
+          scanBadge.style.borderColor = "#bfdbfe";
+        }
+        if (scanDot) scanDot.style.background = "#2563eb";
+      } else {
+        scanText.textContent = "Auto-Scan: Idle (Market Closed)";
+        if (scanBadge) {
+          scanBadge.style.background = "#f1f5f9";
+          scanBadge.style.color = "#64748b";
+          scanBadge.style.borderColor = "#e2e8f0";
+        }
+        if (scanDot) scanDot.style.background = "#94a3b8";
+      }
+    }
 
     // Top Leaders Strip
     const strip = document.getElementById("topLeadersStrip");
@@ -1591,18 +1741,148 @@
       `).join("");
     }
 
-    // Dynamic AI System Top Pick for Option Trading
-    const topBreakout = _currentBullish.find(x => x.is_breakout && (x.vc_ranking >= 1.5 || x.one_side_rally_score >= 95)) 
-      || _currentBullish.find(x => x.is_breakout) 
-      || _currentBullish[0];
-      
-    if (topBreakout) {
-      const topSymEl = document.getElementById("topPickSym");
-      const topChgEl = document.getElementById("topPickChg");
-      const topTimeEl = document.getElementById("topPickTime");
-      if (topSymEl) topSymEl.textContent = topBreakout.symbol;
-      if (topChgEl) topChgEl.textContent = `${pct(topBreakout.percent_change)} ${topBreakout.setup || "Long buildup"}`;
-      if (topTimeEl) topTimeEl.textContent = topBreakout.breakout_time || "09:30 AM";
+    // ─────────────────────────────────────────────────────────────
+    // DISCIPLINED TRADER: System Top Pick
+    // A real trader takes max 1 trade/day.
+    // Show NOTHING unless ALL 5 gates pass. No fallback to random picks.
+    // Gate 1: Confirmed 5m Breakout (candle closed ABOVE morning high)
+    // Gate 2: Institutional Volume RVOL >= 2.0x
+    // Gate 3: Long buildup (OI Expanding, not short covering)
+    // Gate 4: Holding top 85%+ of day's range (not fading)
+    // Gate 5: NIFTY 50 market direction is NOT bearish (>= -0.3%)
+    //         A CE trade in a bearish NIFTY is fighting the current — blocked!
+    // ─────────────────────────────────────────────────────────────
+
+    const pickCard  = document.getElementById("topPickCard");
+    const pickBlank = document.getElementById("topPickBlank");
+    const pickActive = document.getElementById("topPickActive");
+    const pickLabel = document.getElementById("topPickLabel");
+    const pickBadge = document.getElementById("topPickBadge");
+    const pickCriteria = document.getElementById("topPickCriteria");
+
+    // Gate 5: Read live NIFTY direction from payload
+    const _niftyPct = (idxs["NIFTY 50"] || {}).percent_change ?? 0;
+    const _niftyBearish = _niftyPct < -0.3;   // NIFTY down more than -0.3% = bearish market
+
+    // Run strict gate filter (Gates 1-4)
+    const strictPick = _currentBullish.find(x => {
+      const gate1 = x.is_breakout === true;                               // confirmed 5m breakout
+      const gate2 = (x.vc_ranking || 0) >= 2.0;                          // institutional RVOL >= 2x
+      const gate3 = (x.setup || "").toLowerCase().includes("long buildup"); // pure long buildup only
+      const gate4 = (x.range_position_percent || 0) >= 85;               // holding near top of day range
+      return gate1 && gate2 && gate3 && gate4;
+    });
+
+    if (_niftyBearish) {
+      // ⛔ NIFTY is bearish — Block CE, but search for the best PE (breakdown) trade instead
+      // Apply same 4-gate logic but MIRRORED for bearish:
+      // Gate 1: Confirmed 5m Breakdown (is_breakout = true on bearish side = breakdown below support)
+      // Gate 2: Institutional Volume RVOL >= 2.0x (institutional selling, not panic retail)
+      // Gate 3: Short Buildup (Price ↓ + OI ↑ = institutional shorts being added)
+      // Gate 4: Holding BOTTOM 15% of day's range (range_position_percent <= 15%)
+      const strictPE = _currentBearish.find(x => {
+        const peGate1 = x.is_breakout === true;                                  // confirmed 5m breakdown below support
+        const peGate2 = (x.vc_ranking || 0) >= 2.0;                             // institutional volume >= 2x
+        const peGate3 = (x.setup || "").toLowerCase().includes("short buildup"); // fresh institutional shorts
+        const peGate4 = (x.range_position_percent || 100) <= 15;                // holding near bottom of day range
+        return peGate1 && peGate2 && peGate3 && peGate4;
+      });
+
+      if (strictPE) {
+        // ✅ Bearish market + PE setup found — show PE trade pick
+        pickBlank.style.display = "none";
+        pickActive.style.display = "block";
+        pickCard.style.background = "linear-gradient(135deg, #fff1f2 0%, #ffffff 100%)";
+        pickCard.style.borderColor = "#fda4af";
+        pickLabel.style.color = "#be123c";
+        pickBadge.textContent = "PE TRADE";
+        pickBadge.style.background = "#ffe4e6";
+        pickBadge.style.color = "#be123c";
+
+        document.getElementById("topPickSym").textContent = strictPE.symbol;
+        document.getElementById("topPickChg").textContent = `${pct(strictPE.percent_change)} ${strictPE.setup}`;
+        document.getElementById("topPickTime").textContent = strictPE.breakout_time || "--";
+        document.getElementById("topPickReason").textContent = `RVOL ${(strictPE.vc_ranking||0).toFixed(1)}x · Range ${strictPE.range_position_percent}% · NIFTY ${_niftyPct.toFixed(2)}%`;
+
+        // Show mini criteria badges for PE
+        if (pickCriteria) {
+          pickCriteria.innerHTML = [
+            ["📉 Breakdown",                                      "#ffe4e6", "#be123c"],
+            [`📉 RVOL ${(strictPE.vc_ranking||0).toFixed(1)}x`,   "#ffe4e6", "#be123c"],
+            ["📉 Short Buildup",                                  "#ffe4e6", "#be123c"],
+            [`📉 Range ${strictPE.range_position_percent}%`,      "#ffe4e6", "#be123c"],
+            [`📉 NIFTY ${_niftyPct.toFixed(2)}%`,                "#ffe4e6", "#be123c"],
+          ].map(([txt, bg, col]) =>
+            `<span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${bg};color:${col}">${txt}</span>`
+          ).join("");
+        }
+
+      } else {
+        // ❌ Bearish market but no clean PE setup qualifies either — show warning + best candidate
+        pickBlank.style.display = "flex";
+        pickActive.style.display = "none";
+        pickCard.style.background = "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)";
+        pickCard.style.borderColor = "#fed7aa";
+        pickLabel.style.color = "#c2410c";
+        pickBadge.textContent = "CE BLOCKED";
+        pickBadge.style.background = "#ffedd5";
+        pickBadge.style.color = "#c2410c";
+
+        // Show best bearish candidate even if it hasn't fully qualified
+        const bestPE = _currentBearish[0];
+        pickBlank.innerHTML = `
+          <div style="text-align:center;padding:12px 8px;">
+            <div style="font-size:20px;margin-bottom:4px;">⛔</div>
+            <div style="font-size:12px;font-weight:700;color:#c2410c;margin-bottom:4px;">CE Trades Blocked — Market Bearish</div>
+            <div style="font-size:11px;color:#9a3412;margin-bottom:8px;">NIFTY ${_niftyPct.toFixed(2)}% · Watch for PE breakdown confirmation</div>
+            ${bestPE ? `
+            <div style="background:#fff1f2;border:1px solid #fda4af;border-radius:6px;padding:8px 10px;text-align:left;">
+              <div style="font-size:9px;font-weight:700;color:#9f1239;letter-spacing:0.5px;margin-bottom:3px;">👀 WATCH FOR PE SETUP</div>
+              <div style="font-size:14px;font-weight:800;color:#be123c;">${bestPE.symbol}</div>
+              <div style="font-size:11px;color:#9a3412;">${pct(bestPE.percent_change)} · RVOL ${bestPE.vc_ranking}x · ${bestPE.setup}</div>
+              <div style="font-size:10px;color:#64748b;margin-top:2px;">⚠ Needs confirmed 5m breakdown + RVOL ≥ 2x to qualify</div>
+            </div>` : ""}
+          </div>`;
+      }
+
+    } else if (strictPick) {
+      // ✅ All 5 gates passed — show trade pick
+      pickBlank.style.display = "none";
+      pickActive.style.display = "block";
+      pickCard.style.background = "linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)";
+      pickCard.style.borderColor = "#86efac";
+      pickLabel.style.color = "#15803d";
+      pickBadge.textContent = "OPTION TRADE";
+      pickBadge.style.background = "#dcfce7";
+      pickBadge.style.color = "#15803d";
+
+      document.getElementById("topPickSym").textContent = strictPick.symbol;
+      document.getElementById("topPickChg").textContent = `${pct(strictPick.percent_change)} ${strictPick.setup}`;
+      document.getElementById("topPickTime").textContent = strictPick.breakout_time || "--";
+      document.getElementById("topPickReason").textContent = `RVOL ${(strictPick.vc_ranking||0).toFixed(1)}x · Range ${strictPick.range_position_percent}% · NIFTY ${_niftyPct >= 0 ? "+" : ""}${_niftyPct.toFixed(2)}%`;
+
+      // Show mini criteria badges
+      if (pickCriteria) {
+        pickCriteria.innerHTML = [
+          ["✅ Breakout",                                   "#dcfce7", "#166534"],
+          [`✅ RVOL ${(strictPick.vc_ranking||0).toFixed(1)}x`, "#dcfce7", "#166534"],
+          ["✅ Long Buildup",                               "#dcfce7", "#166534"],
+          [`✅ Range ${strictPick.range_position_percent}%`, "#dcfce7", "#166534"],
+          [`✅ NIFTY ${_niftyPct >= 0 ? "+" : ""}${_niftyPct.toFixed(2)}%`, "#dcfce7", "#166534"],
+        ].map(([txt, bg, col]) =>
+          `<span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${bg};color:${col}">${txt}</span>`
+        ).join("");
+      }
+    } else {
+      // ❌ Nothing qualifies — keep blank
+      pickBlank.style.display = "flex";
+      pickActive.style.display = "none";
+      pickCard.style.background = "#ffffff";
+      pickCard.style.borderColor = "#e2e8f0";
+      pickLabel.style.color = "#64748b";
+      pickBadge.textContent = "SCANNING...";
+      pickBadge.style.background = "#f1f5f9";
+      pickBadge.style.color = "#64748b";
     }
 
     // Dynamic Summary Stats
@@ -1648,6 +1928,7 @@
         cache: "no-store"
       });
       const data = await res.json();
+      _sectorPayload = data;  // cache for sector view reuse
       renderAll(data);
     } catch (e) {
       console.error("Load failed:", e);
@@ -1687,7 +1968,7 @@
   /* ── Live Real-Time Ticking Clock (Every Second) ── */
   function updateLiveClock() {
     const clockEl = document.getElementById("marketClock");
-    const statusPill = document.querySelector(".live-pill");
+    if (!clockEl) return;
     const now = new Date();
     const istTimeStr = now.toLocaleTimeString("en-IN", {
       timeZone: "Asia/Kolkata",
@@ -1696,27 +1977,7 @@
       minute: "2-digit",
       second: "2-digit"
     });
-
-    if (clockEl) {
-      clockEl.textContent = `Clock ${istTimeStr}`;
-    }
-
-    // Check if market is open (09:15 to 15:30 IST on Mon-Fri)
-    const istHours = parseInt(now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, hour: "2-digit" }), 10);
-    const istMins = parseInt(now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false, minute: "2-digit" }), 10);
-    const day = now.getDay();
-    const timeInMins = istHours * 60 + istMins;
-    const isMarketOpen = (day >= 1 && day <= 5) && (timeInMins >= (9 * 60 + 15) && timeInMins <= (15 * 60 + 30));
-
-    if (statusPill) {
-      if (isMarketOpen) {
-        statusPill.innerHTML = `● Live Real-Time Data`;
-        statusPill.style.color = `#16a34a`;
-      } else {
-        statusPill.innerHTML = `● Market Closed (Session Snapshot)`;
-        statusPill.style.color = `#64748b`;
-      }
-    }
+    clockEl.textContent = `Clock ${istTimeStr}`;
   }
 
   setInterval(updateLiveClock, 1000);
@@ -1768,10 +2029,619 @@
     }
   });
 
-  // Auto-refresh live market scanner every 45 seconds during live hours
+  // ═══════════════════════════════════════════════════════════════════
+  // SMART REFRESH — Market Hours Gate
+  // Only poll NSE during Mon–Fri 9:00 AM – 3:30 PM IST
+  // Outside hours: show "Market Closed" badge, stop all polling
+  // ═══════════════════════════════════════════════════════════════════
+
+  function getISTTime() {
+    // Convert current UTC to IST (UTC + 5h 30m)
+    const now = new Date();
+    return new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+  }
+
+  function isMarketHours() {
+    const ist = getISTTime();
+    const day  = ist.getUTCDay();          // 0=Sun, 6=Sat
+    const h    = ist.getUTCHours();
+    const m    = ist.getUTCMinutes();
+    const mins = h * 60 + m;
+    if (day === 0 || day === 6) return false;   // Weekend
+    return mins >= (9 * 60) && mins <= (15 * 60 + 30); // 9:00 AM – 3:30 PM
+  }
+
+  function isPreMarket() {
+    const ist = getISTTime();
+    const day  = ist.getUTCDay();
+    const h    = ist.getUTCHours();
+    const m    = ist.getUTCMinutes();
+    const mins = h * 60 + m;
+    if (day === 0 || day === 6) return false;
+    return mins >= (8 * 60 + 45) && mins < (9 * 60); // 8:45–9:00 AM warmup
+  }
+
+  function updateMarketStatusBadge() {
+    const badge   = document.getElementById("liveStatusBadge");
+    const ist     = getISTTime();
+    const day     = ist.getUTCDay();
+    const h       = ist.getUTCHours();
+    const m       = ist.getUTCMinutes();
+    const mins    = h * 60 + m;
+    const isWeekend = day === 0 || day === 6;
+
+    if (!badge) return;
+
+    if (isMarketHours()) {
+      badge.textContent = "● Live Real-Time Data";
+      badge.style.background = "#dcfce7";
+      badge.style.color = "#166534";
+      badge.style.borderColor = "#86efac";
+    } else if (isPreMarket()) {
+      badge.textContent = "⏳ Pre-Market (9:00 AM Open)";
+      badge.style.background = "#fefce8";
+      badge.style.color = "#854d0e";
+      badge.style.borderColor = "#fde68a";
+    } else if (isWeekend) {
+      badge.textContent = "📅 Weekend — Market Closed";
+      badge.style.background = "#f1f5f9";
+      badge.style.color = "#64748b";
+      badge.style.borderColor = "#e2e8f0";
+    } else if (mins > (15 * 60 + 30)) {
+      badge.textContent = "🔒 Market Closed (Session Snapshot)";
+      badge.style.background = "#fef3c7";
+      badge.style.color = "#92400e";
+      badge.style.borderColor = "#fde68a";
+    } else {
+      badge.textContent = "● Market Closed";
+      badge.style.background = "#f1f5f9";
+      badge.style.color = "#64748b";
+      badge.style.borderColor = "#e2e8f0";
+    }
+  }
+
+  // Auto-refresh live market scanner — ONLY during market hours
   setInterval(() => {
-    loadData();
+    if (isMarketHours()) {
+      loadData();
+    }
   }, 45000);
+
+  // ── Live NIFTY / BANK NIFTY ticker: refresh every 30s ──
+  async function pollIndexLive(isImmediate = false) {
+    if (!isImmediate && !isMarketHours() && !isPreMarket()) return; // skip periodic polling outside trading window
+    try {
+      const res = await fetch(`${API_BASE}/api/index_live`, { cache: "no-store" });
+      const d = await res.json();
+      if (!d.ok || !d.index_context) return;
+      const n50 = d.index_context["NIFTY 50"] || {};
+      const bnk = d.index_context["NIFTY BANK"] || {};
+      const n50El = document.getElementById("niftyVal");
+      const bnkEl = document.getElementById("bankVal");
+      if (n50El && n50.percent_change !== undefined) {
+        const p = n50.percent_change;
+        const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
+        n50El.textContent = `${ltpStr}(${pct(p)})`;
+        n50El.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+      }
+      if (bnkEl && bnk.percent_change !== undefined) {
+        const p = bnk.percent_change;
+        const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
+        bnkEl.textContent = `${ltpStr}(${pct(p)})`;
+        bnkEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+      }
+      if (_sectorPayload) {
+        _sectorPayload.index_context = d.index_context;
+      }
+    } catch(e) { /* silent fail — stale value stays */ }
+  }
+
+  pollIndexLive(true);                     // immediate call on load to get accurate official closing data
+  setInterval(() => pollIndexLive(false), 30000); // timer runs every 30s (gated by market hours)
+  setInterval(updateMarketStatusBadge, 60000); // refresh badge every 1 min
+  updateMarketStatusBadge();               // set correct badge immediately on load
+
+  // ═══════════════════════════════════════════════════════════════════
+  // WEBSOCKET REAL-TIME PUSH ENGINE
+  // Streams live 5m candles to TradingView chart & broadcasts scan updates
+  // ═══════════════════════════════════════════════════════════════════
+  let _wsClient = null;
+
+  function connectWebSocket() {
+    // Smart WebSocket URL detection:
+    // - Local dev (HTTP):   ws://127.0.0.1:8765  (separate WS port)
+    // - Production (HTTPS): wss://yourapp.onrender.com/ws  (same port via path upgrade)
+    const isLocalDev = (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = isLocalDev
+      ? `ws://127.0.0.1:8765`
+      : `${wsProtocol}//${window.location.host}/ws`;
+
+    const badge = document.getElementById("wsStatusBadge");
+    const dot   = document.getElementById("wsStatusDot");
+    const text  = document.getElementById("wsStatusText");
+
+    try {
+      _wsClient = new WebSocket(wsUrl);
+    } catch (e) {
+      if (text) text.textContent = "WS: Offline";
+      return;
+    }
+
+
+    _wsClient.onopen = () => {
+      if (dot) dot.style.background = "#16a34a";
+      if (text) text.textContent = "WS: Push Live";
+      if (badge) {
+        badge.style.background = "#f0fdf4";
+        badge.style.color = "#166534";
+        badge.style.borderColor = "#bbf7d0";
+      }
+      // Immediately subscribe to current active stock
+      if (_selectedSymbol) {
+        _wsClient.send(JSON.stringify({ action: "subscribe", symbol: _selectedSymbol }));
+      }
+    };
+
+    _wsClient.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === "candle_update") {
+          // Native TradingView lightweight chart update without refresh!
+          if (msg.symbol === _selectedSymbol && _candleSeries && msg.candle) {
+            _candleSeries.update(msg.candle);
+            const ltpEl = document.getElementById("chartLtp");
+            if (ltpEl && msg.candle.close) {
+              ltpEl.textContent = `₹${Number(msg.candle.close).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+            }
+          }
+        } else if (msg.type === "scanner_update" && msg.payload) {
+          // Instant full dashboard update from 5-minute auto-scanner push
+          renderAll(msg.payload);
+        } else if (msg.type === "index_update" && msg.index_context) {
+          const n50 = msg.index_context["NIFTY 50"] || {};
+          const bnk = msg.index_context["NIFTY BANK"] || {};
+          const n50El = document.getElementById("niftyVal");
+          const bnkEl = document.getElementById("bankVal");
+          if (n50El && n50.percent_change !== undefined) {
+            const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
+            n50El.textContent = `${ltpStr}(${pct(n50.percent_change)})`;
+            n50El.style.color = (n50.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
+          }
+          if (bnkEl && bnk.percent_change !== undefined) {
+            const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
+            bnkEl.textContent = `${ltpStr}(${pct(bnk.percent_change)})`;
+            bnkEl.style.color = (bnk.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
+          }
+        }
+      } catch (err) {
+        console.warn("[WS message parse error]", err);
+      }
+    };
+
+    _wsClient.onclose = () => {
+      if (dot) dot.style.background = "#f59e0b";
+      if (text) text.textContent = "WS: Reconnecting...";
+      if (badge) {
+        badge.style.background = "#fffbeb";
+        badge.style.color = "#b45309";
+        badge.style.borderColor = "#fde68a";
+      }
+      // Auto-reconnect after 2.5 seconds
+      setTimeout(connectWebSocket, 2500);
+    };
+
+    _wsClient.onerror = () => {
+      _wsClient?.close();
+    };
+  }
+
+  // Launch WebSocket Connection
+  connectWebSocket();
+
+
+
+  // ═══════════════════════════════════════════════════════════════════
+  // NAV VIEW SWITCHER
+  // ═══════════════════════════════════════════════════════════════════
+  function switchView(targetView) {
+    // Toggle visibility of views
+    document.getElementById("viewDashboard").style.display   = targetView === "dashboard" ? "" : "none";
+    document.getElementById("viewSectorAnalysis").style.display = targetView === "sector"    ? "flex" : "none";
+
+    // Update active nav item highlight
+    document.querySelectorAll(".menu-item[data-view]").forEach(el => {
+      el.classList.remove("active");
+    });
+
+    // Activate the clicked item
+    if (targetView === "sector") {
+      document.getElementById("navSector").classList.add("active");
+      renderSectorView();
+    } else {
+      document.getElementById("navDashboard").classList.add("active");
+    }
+
+    // Close mobile drawer after nav click
+    document.getElementById("appSidebar")?.classList.remove("mobile-open");
+    document.getElementById("sidebarBackdrop")?.classList.remove("active");
+  }
+
+  // Wire up all nav items
+  document.querySelectorAll(".menu-item[data-view]").forEach(el => {
+    el.addEventListener("click", () => switchView(el.dataset.view));
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // SECTOR ANALYSIS ENGINE
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Static NSE F&O symbol → sector mapping (top 200 F&O stocks)
+  const SECTOR_MAP = {
+    // IT / Technology
+    TCS:"IT", INFY:"IT", WIPRO:"IT", HCLTECH:"IT", TECHM:"IT", LTIM:"IT",
+    MPHASIS:"IT", COFORGE:"IT", PERSISTENT:"IT", LTTS:"IT", KPITTECH:"IT",
+    BIRLASOFT:"IT", HEXAWARE:"IT",
+    // Banks
+    HDFCBANK:"Banks", ICICIBANK:"Banks", KOTAK:"Banks", AXISBANK:"Banks",
+    SBIN:"Banks", INDUSINDBK:"Banks", BANDHANBNK:"Banks", IDFCFIRSTB:"Banks",
+    FEDERALBNK:"Banks", RBLBANK:"Banks", AUBANK:"Banks", PNB:"Banks",
+    CANBK:"Banks", UNIONBANK:"Banks",
+    // Fin Services / NBFC
+    BAJFINANCE:"Fin Serv", BAJAJFINSV:"Fin Serv", MUTHOOTFIN:"Fin Serv",
+    CHOLAFIN:"Fin Serv", IIFL:"Fin Serv", ABCAPITAL:"Fin Serv",
+    M_MFIN:"Fin Serv", MANAPPURAM:"Fin Serv", MOTILALOFS:"Fin Serv",
+    ANGELONE:"Fin Serv",
+    // Pharma / Healthcare
+    SUNPHARMA:"Pharma", DRREDDY:"Pharma", CIPLA:"Pharma", DIVISLAB:"Pharma",
+    APOLLOHOSP:"Pharma", LUPIN:"Pharma", BIOCON:"Pharma", TORNTPHARM:"Pharma",
+    GLENMARK:"Pharma", AUROPHARMA:"Pharma", ABBOTINDIA:"Pharma", SAGILITY:"Pharma",
+    // Auto
+    TATAMOTORS:"Auto", MARUTI:"Auto", EICHERMOT:"Auto", "BAJAJ-AUTO":"Auto",
+    HEROMOTOCO:"Auto", M_M:"Auto", TVSMOTOR:"Auto", ASHOKLEY:"Auto", MAHINDRA:"Auto",
+    // Metal / Mining
+    TATASTEEL:"Metal", HINDALCO:"Metal", JSWSTEEL:"Metal", SAIL:"Metal",
+    VEDL:"Metal", NMDC:"Metal", HINDZINC:"Metal", NATIONALUM:"Metal",
+    ONGC:"Metal", COALINDIA:"Metal",
+    // Energy / Oil & Gas
+    RELIANCE:"Energy", BPCL:"Energy", ONGC:"Energy", IOC:"Energy",
+    HINDPETRO:"Energy", GAIL:"Energy", PETRONET:"Energy", MGL:"Energy",
+    ATGL:"Energy", ADANIGREEN:"Energy", TATAPOWER:"Energy",
+    // FMCG / Consumer
+    HINDUNILVR:"FMCG", NESTLEIND:"FMCG", BRITANNIA:"FMCG", DABUR:"FMCG",
+    MARICO:"FMCG", GODREJCP:"FMCG", ITC:"FMCG", COLPAL:"FMCG",
+    TATACONSUM:"FMCG", EMAMILTD:"FMCG",
+    // Infra / Realty / Capital Goods
+    LTTS:"Infra", LT:"Infra", LODHA:"Infra", DLF:"Infra",
+    GODREJPROP:"Infra", PRESTIGE:"Infra", PHOENIXLTD:"Infra",
+    ULTRACEMCO:"Infra", AMBUJACEM:"Infra", SHREECEM:"Infra",
+    SIEMENS:"Capital Goods", ABB:"Capital Goods", BHEL:"Capital Goods",
+    KAYNES:"Capital Goods", AEQUITAS:"Capital Goods",
+    // Telecom / Media
+    BHARTIARTL:"Telecom", IDEA:"Telecom", INDUSTOWER:"Telecom",
+    ZEEL:"Media", PVRINOX:"Media",
+    // PSU Bank
+    PSBs: "PSU Bank",
+    // Transport / Logistics
+    CONCOR:"Logistics", IRFC:"Logistics", IRCTC:"Logistics",
+    ADANIPORTS:"Logistics",
+    // Power
+    NTPC:"Power", POWERGRID:"Power", TORNTPOWER:"Power",
+    CESC:"Power", ADANIPOWER:"Power",
+    // Chemicals
+    ATUL:"Chemicals", PIDILITIND:"Chemicals", NAVINFLUOR:"Chemicals",
+    // Defence
+    HAL:"Defence", BEL:"Defence", DRDO:"Defence", BHEL:"Defence",
+    // Others
+    ZOMATO:"Internet", POLICYBZR:"Internet", NYKAA:"Internet",
+    PAYTM:"Internet", DMART:"Retail", TRENT:"Retail",
+    ATHERENERG:"EV/Energy", OLECTRA:"EV/Energy",
+  };
+
+  const SECTOR_ICONS = {
+    "IT":"💻", "Banks":"🏦", "Fin Serv":"📑", "Pharma":"💊", "Auto":"🚗",
+    "Metal":"⚙️", "Energy":"⚡", "FMCG":"🛒", "Infra":"🏗️", "Capital Goods":"🔧",
+    "Telecom":"📡", "Media":"📺", "PSU Bank":"🏛️", "Logistics":"🚚",
+    "Power":"🔋", "Chemicals":"🧪", "Defence":"🛡️", "Internet":"🌐",
+    "Retail":"🛍️", "EV/Energy":"🌱",
+  };
+
+  let _sectorFilter = "ALL";
+  let _sectorPayload = null;
+
+  async function renderSectorView() {
+    // Update last-refresh label
+    const now = new Date();
+    const hhmm = now.toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit",hour12:true});
+    const el = document.getElementById("sectorLastUpdated");
+    if (el) el.textContent = `Updated ${hhmm}`;
+
+    // Reuse latest payload if available, else fetch
+    let payload = _sectorPayload;
+    if (!payload) {
+      try {
+        const res = await fetch(`${API_BASE}/api/stock_suggestions`);
+        payload = await res.json();
+        _sectorPayload = payload;
+      } catch(e) {
+        console.error("Sector fetch failed", e);
+        return;
+      }
+    }
+
+    const allStocks = [...(payload.bullish || []), ...(payload.bearish || [])];
+
+    // ── Step 1: Compute per-sector stats from live stock data ──
+    const sectorStats = {};
+    for (const s of allStocks) {
+      const sector = SECTOR_MAP[s.symbol] || "Other";
+      if (!sectorStats[sector]) {
+        sectorStats[sector] = { stocks: [], totalPct: 0, count: 0 };
+      }
+      sectorStats[sector].stocks.push(s);
+      sectorStats[sector].totalPct += (s.percent_change || 0);
+      sectorStats[sector].count++;
+    }
+
+    // Compute average % change per sector & sort
+    const sectorList = Object.entries(sectorStats).map(([name, data]) => {
+      const avgPct = data.count > 0 ? data.totalPct / data.count : 0;
+      const bullCount = data.stocks.filter(s => (s.percent_change||0) > 0).length;
+      const leader = data.stocks.sort((a,b) => (b.percent_change||0)-(a.percent_change||0))[0];
+      const laggard = [...data.stocks].sort((a,b) => (a.percent_change||0)-(b.percent_change||0))[0];
+      let status, tailwind;
+      if (avgPct >= 1.0)       { status = "Bullish";  tailwind = "Strong Tailwind"; }
+      else if (avgPct >= 0.2)  { status = "Bullish";  tailwind = "Moderate Tailwind"; }
+      else if (avgPct > -0.2)  { status = "Neutral";  tailwind = "Neutral"; }
+      else if (avgPct > -1.0)  { status = "Bearish";  tailwind = "Mild Headwind"; }
+      else                     { status = "Bearish";  tailwind = "Strong Headwind"; }
+      return { name, avgPct, count: data.count, bullCount, leader, laggard, status, tailwind, stocks: data.stocks };
+    }).sort((a,b) => b.avgPct - a.avgPct);
+
+    // ── RENDER 1: Sector Heatmap Tiles ──
+    const tilesGrid = document.getElementById("sectorTilesGrid");
+    if (tilesGrid) {
+      tilesGrid.innerHTML = sectorList.map(sec => {
+        const isUp = sec.avgPct >= 0;
+        const isBull = sec.status === "Bullish";
+        const isBear = sec.status === "Bearish";
+        const bg    = isBull ? "#f0fdf4" : isBear ? "#fff1f2" : "#fafaf9";
+        const border= isBull ? "#86efac" : isBear ? "#fca5a5" : "#e2e8f0";
+        const pctCol= isUp ? "#16a34a" : "#dc2626";
+        const icon  = SECTOR_ICONS[sec.name] || "📦";
+        const leaderName = sec.leader ? sec.leader.symbol : "—";
+        return `
+          <div style="background:${bg}; border:1.5px solid ${border}; border-radius:10px; padding:10px 12px; cursor:pointer;"
+               onclick="filterSectorTable('${sec.name}')">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:11px; font-weight:800; color:#0f172a;">${icon} ${sec.name}</span>
+              <span style="font-size:13px; font-weight:900; color:${pctCol};">${isUp?"+":""}${sec.avgPct.toFixed(2)}%</span>
+            </div>
+            <div style="font-size:10px; color:#64748b; margin-top:4px; font-weight:600;">${sec.tailwind}</div>
+            <div style="font-size:10px; color:#94a3b8; margin-top:2px;">
+              ${isBull ? "Leader" : isBear ? "Laggard" : "Watch"}: <b style="color:#0f172a;">${leaderName}</b>
+            </div>
+            <div style="font-size:9px; color:#cbd5e1; margin-top:4px;">${sec.bullCount}↑ of ${sec.count} stocks</div>
+          </div>`;
+      }).join("");
+    }
+
+    // ── RENDER 2: RS Horizontal Bar Chart — full width, always readable ──
+    const chartDiv = document.getElementById("sectorRsChart");
+    if (chartDiv && sectorList.length > 0) {
+      const maxAbs = Math.max(...sectorList.map(s => Math.abs(s.avgPct)), 0.5);
+      chartDiv.innerHTML = sectorList.map(sec => {
+        const isUp = sec.avgPct >= 0;
+        const barPct = Math.max((Math.abs(sec.avgPct) / maxAbs) * 100, 2);
+        const color = isUp ? "#16a34a" : "#dc2626";
+        const bgColor = isUp ? "#dcfce7" : "#fee2e2";
+        const icon = SECTOR_ICONS[sec.name] || "📦";
+        return `
+          <div style="display:grid; grid-template-columns:130px 1fr 52px; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid #f8fafc;">
+            <div style="font-size:11px; font-weight:700; color:#374151; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              ${icon} ${sec.name}
+            </div>
+            <div style="position:relative; height:20px; background:#f1f5f9; border-radius:4px; overflow:hidden;">
+              <div style="
+                position:absolute;
+                ${isUp ? "left:50%" : "right:50%"};
+                top:0; bottom:0;
+                width:${barPct / 2}%;
+                background:${color};
+                opacity:0.85;
+                border-radius:${isUp ? "0 4px 4px 0" : "4px 0 0 4px"};
+              "></div>
+              <div style="position:absolute; left:50%; top:0; bottom:0; width:1.5px; background:#cbd5e1;"></div>
+            </div>
+            <div style="font-size:11px; font-weight:800; color:${color}; text-align:left; white-space:nowrap;">
+              ${isUp ? "+" : ""}${sec.avgPct.toFixed(2)}%
+            </div>
+          </div>`;
+      }).join("");
+    }
+
+    // ── RENDER 3: Sector Filter Pills ──
+    const pillsDiv = document.getElementById("sectorFilterPills");
+    if (pillsDiv) {
+      const allPill = `<button onclick="filterSectorTable('ALL')" 
+        style="padding:5px 12px; border-radius:20px; font-size:11px; font-weight:700; cursor:pointer;
+               background:${_sectorFilter==="ALL"?"#0f172a":"#f1f5f9"};
+               color:${_sectorFilter==="ALL"?"#fff":"#475569"}; border:none;">All</button>`;
+      const secPills = sectorList.map(sec => {
+        const isActive = _sectorFilter === sec.name;
+        return `<button onclick="filterSectorTable('${sec.name}')" 
+          style="padding:5px 12px; border-radius:20px; font-size:11px; font-weight:700; cursor:pointer;
+                 background:${isActive?"#0f172a":"#f1f5f9"};
+                 color:${isActive?"#fff":"#475569"}; border:none;">
+          ${SECTOR_ICONS[sec.name]||"📦"} ${sec.name}
+        </button>`;
+      }).join("");
+      pillsDiv.innerHTML = allPill + secPills;
+    }
+
+    // ── RENDER 4: Stocks Table ──
+    renderSectorStocksTable(allStocks, sectorList);
+
+    // ── RENDER 5: Theme Alignment Table ──
+    renderThemeAlignment(allStocks, sectorList);
+  }
+
+  function filterSectorTable(sectorName) {
+    _sectorFilter = sectorName;
+    // Refresh pill highlight and table without full re-render
+    renderSectorView();
+  }
+
+  function renderSectorStocksTable(allStocks, sectorList) {
+    const tbody = document.getElementById("sectorStocksBody");
+    if (!tbody) return;
+
+    // Build sector avg lookup
+    const sectorAvg = {};
+    sectorList.forEach(s => { sectorAvg[s.name] = { avgPct: s.avgPct, tailwind: s.tailwind, status: s.status }; });
+
+    let stocks = allStocks.map(s => ({ ...s, sector: SECTOR_MAP[s.symbol] || "Other" }));
+    if (_sectorFilter !== "ALL") stocks = stocks.filter(s => s.sector === _sectorFilter);
+    stocks.sort((a,b) => (b.percent_change||0) - (a.percent_change||0));
+
+    tbody.innerHTML = stocks.map((s, i) => {
+      const pctUp = (s.percent_change||0) >= 0;
+      const sInfo = sectorAvg[s.sector] || { avgPct: 0, tailwind: "—", status: "Neutral" };
+      const tailwindColor = sInfo.status === "Bullish" ? "#16a34a" : sInfo.status === "Bearish" ? "#dc2626" : "#64748b";
+      const tailwindBg    = sInfo.status === "Bullish" ? "#f0fdf4" : sInfo.status === "Bearish" ? "#fff1f2" : "#f8fafc";
+      const rvol = s.vc_ranking || 0;
+      const range = s.range_position_percent || 0;
+
+      // Trade setup badge
+      let setup = "Watch";
+      let setupBg = "#f1f5f9"; let setupCol = "#64748b";
+      if (s.is_breakout && rvol >= 2.0 && sInfo.status === "Bullish") {
+        setup = "HIGH CONVICTION BUY"; setupBg = "#dcfce7"; setupCol = "#166534";
+      } else if (s.is_breakout && sInfo.status === "Bullish") {
+        setup = "CE Buy"; setupBg = "#eff6ff"; setupCol = "#1d4ed8";
+      } else if (sInfo.status === "Bearish" && (s.percent_change||0) < -0.5) {
+        setup = "PE Buy"; setupBg = "#fff1f2"; setupCol = "#b91c1c";
+      } else if (sInfo.status === "Neutral") {
+        setup = "Avoid / Neutral"; setupBg = "#fafaf9"; setupCol = "#78716c";
+      }
+
+      return `<tr style="border-bottom:1px solid #f1f5f9; transition:background .1s;" 
+                  onmouseover="this.style.background='#f8fafc'" 
+                  onmouseout="this.style.background=''">
+        <td style="padding:8px 10px; color:#94a3b8; font-weight:600;">${i+1}</td>
+        <td style="padding:8px 10px; font-weight:800; color:#0f172a; white-space:nowrap;">
+          ${s.symbol}
+          ${s.is_breakout ? '<span style="font-size:9px;background:#eff6ff;color:#2563eb;padding:1px 4px;border-radius:3px;margin-left:4px;font-weight:700;">BO</span>' : ""}
+        </td>
+        <td style="padding:8px 10px; color:#64748b; font-size:11px;">${SECTOR_ICONS[s.sector]||"📦"} ${s.sector}</td>
+        <td style="padding:8px 10px; font-weight:700; color:#0f172a; font-family:monospace;">₹${(s.ltp||0).toFixed(1)}</td>
+        <td style="padding:8px 10px; font-weight:800; color:${pctUp?"#16a34a":"#dc2626"};">
+          ${pctUp?"+":""}${(s.percent_change||0).toFixed(2)}%
+        </td>
+        <td style="padding:8px 10px; font-weight:700; color:${rvol>=2?"#16a34a":rvol>=1?"#0f172a":"#94a3b8"};">
+          ${rvol.toFixed(1)}x
+        </td>
+        <td style="padding:8px 10px;">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <div style="width:60px; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+              <div style="width:${Math.min(range,100)}%; height:100%; background:${range>=85?"#16a34a":range>=60?"#f59e0b":"#94a3b8"}; border-radius:3px;"></div>
+            </div>
+            <span style="font-size:10px; font-weight:700; color:#64748b;">${range.toFixed(0)}%</span>
+          </div>
+        </td>
+        <td style="padding:8px 10px;">
+          <span style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:${tailwindBg}; color:${tailwindColor};">
+            ${sInfo.tailwind}
+          </span>
+        </td>
+        <td style="padding:8px 10px;">
+          <span style="font-size:10px; font-weight:700; padding:3px 8px; border-radius:12px; background:${setupBg}; color:${setupCol};">
+            ${setup}
+          </span>
+        </td>
+      </tr>`;
+    }).join("");
+
+    if (stocks.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" style="padding:30px; text-align:center; color:#94a3b8; font-size:12px;">No stocks found for this sector in today's scanner.</td></tr>`;
+    }
+  }
+
+  function renderThemeAlignment(allStocks, sectorList) {
+    const tbody = document.getElementById("themeAlignBody");
+    if (!tbody) return;
+
+    const sectorAvg = {};
+    sectorList.forEach(s => { sectorAvg[s.name] = s; });
+
+    // Only show stocks with a real sector mapping (skip "Other")
+    const stocks = allStocks
+      .map(s => ({ ...s, sector: SECTOR_MAP[s.symbol] }))
+      .filter(s => s.sector)
+      .sort((a,b) => (b.percent_change||0) - (a.percent_change||0))
+      .slice(0, 20);  // top 20 by % gain
+
+    tbody.innerHTML = stocks.map(s => {
+      const sec = sectorAvg[s.sector] || { avgPct: 0, tailwind: "—", status: "Neutral" };
+      const rvol = s.vc_ranking || 0;
+      const pctUp = (s.percent_change||0) >= 0;
+      const secUp = sec.avgPct >= 0;
+
+      // Tailwind badge
+      const twBg  = sec.status === "Bullish" ? "#dcfce7" : sec.status === "Bearish" ? "#fee2e2" : "#f1f5f9";
+      const twCol = sec.status === "Bullish" ? "#166534" : sec.status === "Bearish" ? "#991b1b" : "#475569";
+
+      // Recommendation logic
+      let rec = "Watch & Monitor"; let recBg = "#f1f5f9"; let recCol = "#64748b";
+      const alligned = pctUp && sec.status === "Bullish";
+      const diverge  = pctUp && sec.status === "Bearish";
+      if (alligned && s.is_breakout && rvol >= 2.0) {
+        rec = "⚡ High Conviction CE Buy"; recBg = "#dcfce7"; recCol = "#166534";
+      } else if (alligned && s.is_breakout) {
+        rec = "✅ CE Buy (Breakout)"; recBg = "#eff6ff"; recCol = "#1d4ed8";
+      } else if (alligned) {
+        rec = "👀 Monitor for Entry"; recBg = "#fefce8"; recCol = "#854d0e";
+      } else if (diverge) {
+        rec = "⚠️ Weak Sector — Avoid"; recBg = "#fff1f2"; recCol = "#9f1239";
+      } else if (!pctUp && sec.status === "Bearish") {
+        rec = "📉 PE Buy (Sector Down)"; recBg = "#fee2e2"; recCol = "#b91c1c";
+      } else {
+        rec = "⏸️ Neutral — Sit Out"; recBg = "#f8fafc"; recCol = "#94a3b8";
+      }
+
+      return `<tr style="border-bottom:1px solid #f1f5f9;"
+                  onmouseover="this.style.background='#f8fafc'" 
+                  onmouseout="this.style.background=''">
+        <td style="padding:9px 12px; font-weight:800; color:#0f172a; white-space:nowrap;">
+          ${s.symbol}
+          ${s.is_breakout ? '<span style="font-size:9px;background:#eff6ff;color:#2563eb;padding:1px 4px;border-radius:3px;margin-left:3px;">BO</span>' : ""}
+        </td>
+        <td style="padding:9px 12px; font-size:11px; color:#64748b;">${SECTOR_ICONS[s.sector]||"📦"} ${s.sector}</td>
+        <td style="padding:9px 12px; text-align:center; font-weight:700; color:${secUp?"#16a34a":"#dc2626"};">
+          ${secUp?"+":""}${sec.avgPct.toFixed(2)}%
+        </td>
+        <td style="padding:9px 12px; text-align:center;">
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${twBg};color:${twCol};">
+            ${sec.tailwind}
+          </span>
+        </td>
+        <td style="padding:9px 12px; text-align:center; font-weight:800; color:${pctUp?"#16a34a":"#dc2626"};">
+          ${pctUp?"+":""}${(s.percent_change||0).toFixed(2)}%
+        </td>
+        <td style="padding:9px 12px; text-align:center; font-weight:700; color:${rvol>=2?"#16a34a":"#0f172a"};">
+          ${rvol.toFixed(1)}x
+        </td>
+        <td style="padding:9px 12px; text-align:center;">
+          <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;background:${recBg};color:${recCol};">
+            ${rec}
+          </span>
+        </td>
+      </tr>`;
+    }).join("");
+  }
+
+  // When main dashboard data loads, also cache it for sector view
+  const _origLoadData = loadData;
 </script>
 </body>
 </html>

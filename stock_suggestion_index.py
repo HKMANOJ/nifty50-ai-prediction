@@ -407,39 +407,61 @@ def fetch_index_context() -> tuple[dict[str, dict[str, Any]], list[str]]:
     errors: list[str] = []
     indexes: dict[str, dict[str, Any]] = {}
     
-    mapping = {
-        "NIFTY 50": "^NSEI",
-        "NIFTY BANK": "^NSEBANK",
-    }
-    
-    for index_name, ticker in mapping.items():
-        try:
-            url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(ticker)}?interval=5m&range=1d"
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": USER_AGENT,
-                    "Accept": "application/json, text/plain, */*",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=3.5) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                result = (data.get("chart") or {}).get("result")
-                if result:
-                    meta = result[0].get("meta") or {}
-                    ltp = meta.get("regularMarketPrice")
-                    prev = meta.get("chartPreviousClose") or ltp
-                    pct_change = ((ltp - prev) / prev) * 100 if prev else 0.0
-                    change = ltp - prev if prev else 0.0
-                    indexes[index_name] = {
-                        "name": index_name,
-                        "ltp": round(float(ltp), 2),
-                        "percent_change": round(float(pct_change), 2),
-                        "change": round(float(change), 2),
-                        "direction": "bullish" if pct_change > 0 else "bearish" if pct_change < 0 else "flat",
-                    }
-        except Exception as exc:
-            errors.append(f"index {index_name}: {exc}")
+    # 1. Primary: Official NSE allIndices API (matches Groww/Zerodha perfectly)
+    try:
+        data = nse_get_json(f"{NSE_BASE}/api/allIndices", referer=referer)
+        for item in data.get("data", []):
+            idx = item.get("index")
+            if idx in ("NIFTY 50", "NIFTY BANK"):
+                pct = float(item.get("percentChange", 0))
+                ltp = float(item.get("last", 0))
+                chg = float(item.get("variation", 0))
+                indexes[idx] = {
+                    "name": idx,
+                    "ltp": round(ltp, 2),
+                    "percent_change": round(pct, 2),
+                    "change": round(chg, 2),
+                    "direction": "bullish" if pct > 0 else "bearish" if pct < 0 else "flat",
+                }
+    except Exception as exc:
+        errors.append(f"nse allIndices: {exc}")
+
+    # 2. Fallback: Yahoo Finance (if NSE blocked)
+    if "NIFTY 50" not in indexes or "NIFTY BANK" not in indexes:
+        mapping = {
+            "NIFTY 50": "^NSEI",
+            "NIFTY BANK": "^NSEBANK",
+        }
+        for index_name, ticker in mapping.items():
+            if index_name in indexes:
+                continue
+            try:
+                url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(ticker)}?interval=5m&range=1d"
+                req = urllib.request.Request(
+                    url,
+                    headers={
+                        "User-Agent": USER_AGENT,
+                        "Accept": "application/json, text/plain, */*",
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=3.5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    result = (data.get("chart") or {}).get("result")
+                    if result:
+                        meta = result[0].get("meta") or {}
+                        ltp = meta.get("regularMarketPrice")
+                        prev = meta.get("chartPreviousClose") or ltp
+                        pct_change = ((ltp - prev) / prev) * 100 if prev else 0.0
+                        change = ltp - prev if prev else 0.0
+                        indexes[index_name] = {
+                            "name": index_name,
+                            "ltp": round(float(ltp), 2),
+                            "percent_change": round(float(pct_change), 2),
+                            "change": round(float(change), 2),
+                            "direction": "bullish" if pct_change > 0 else "bearish" if pct_change < 0 else "flat",
+                        }
+            except Exception as exc:
+                errors.append(f"index {index_name}: {exc}")
             
     return indexes, errors
 
