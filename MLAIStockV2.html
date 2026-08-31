@@ -2155,7 +2155,7 @@
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = isLocalDev
       ? `ws://127.0.0.1:8765`
-      : `${wsProtocol}//${window.location.host}/ws`;
+      : window.location.hostname.match(/^[0-9.]+$/) ? `ws://${window.location.hostname}:8765` : `${wsProtocol}//${window.location.host}/ws`;
 
     const badge = document.getElementById("wsStatusBadge");
     const dot   = document.getElementById("wsStatusDot");
