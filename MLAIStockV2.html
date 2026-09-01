@@ -1764,8 +1764,8 @@
     const _niftyPct = (idxs["NIFTY 50"] || {}).percent_change ?? 0;
 
     // 1. Define base multipliers based on NIFTY trend (+30% bonus for trading with the trend)
-    const ceTrendBonus = _niftyPct >= 0.2 ? 1.3 : 1.0;
-    const peTrendBonus = _niftyPct <= -0.2 ? 1.3 : 1.0;
+    const ceTrendBonus = _niftyPct >= 0.2 ? 1.5 : 1.0;
+    const peTrendBonus = _niftyPct <= -0.2 ? 1.5 : 1.0;
 
     // 2. Helper to find the absolute strongest candidate in a list using Weighted Score
     const getStrongestPick = (list, isPE, trendBonus) => {
