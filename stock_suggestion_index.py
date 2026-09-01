@@ -558,23 +558,15 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
 
 
 def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any]) -> dict[str, Any]:
-    """Analyzes 5-minute candles to detect opening range breakout, EMA 9 alignment, and volume surge."""
+    """Analyzes 5-minute candles using a strict 5-Minute Opening Range Breakout (ORB) and Continuous Wave Tracking."""
     if len(candles) < 2:
-        range_pos = day_range_position(row)
-        open_move = pct_from_open(row)
-        if side == "bullish":
-            is_bo = bool(range_pos is not None and range_pos >= 0.75 and open_move is not None and open_move >= 0.35)
-            status = "Breakout" if is_bo else "Near BO" if (range_pos is not None and range_pos >= 0.60) else "Consolidating"
-        else:
-            is_bo = bool(range_pos is not None and range_pos <= 0.25 and open_move is not None and open_move <= -0.35)
-            status = "Breakdown" if is_bo else "Near BD" if (range_pos is not None and range_pos <= 0.40) else "Consolidating"
         return {
-            "is_breakout": is_bo,
-            "status": status,
-            "breakout_time": "09:15 AM" if is_bo else None,
-            "rvol_5m": 1.5 if is_bo else 1.0,
+            "is_breakout": False,
+            "status": "Setting Opening Range",
+            "breakout_time": None,
+            "rvol_5m": 1.0,
             "ema_trend": "bullish" if side == "bullish" else "bearish",
-            "chart_structure": "First 5m Gap-and-Go" if is_bo else "Consolidating"
+            "chart_structure": "Setting ORB"
         }
 
     # 1. 9-period EMA on 5-minute closes
@@ -584,11 +576,11 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
     for price in closes[1:]:
         ema9 = (price * k) + (ema9 * (1.0 - k))
 
-    # 2. Opening Range (first 3 to 6 candles e.g. 09:15 to 09:45)
-    baseline_count = min(len(candles), 6)
-    baseline_candles = candles[:baseline_count]
-    morning_high = max(c["high"] for c in baseline_candles)
-    morning_low = min(c["low"] for c in baseline_candles)
+    # 2. Strict 5-Minute Opening Range (The high/low of the very first candle)
+    # This prevents blindly calling 09:15 a breakout. The first candle SETS the resistance line.
+    first_candle = candles[0]
+    morning_high = first_candle["high"]
+    morning_low = first_candle["low"]
 
     # 3. 5-minute Average Volume
     valid_vols = [c["volume"] for c in candles if c["volume"] > 0]
@@ -600,109 +592,90 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
     latest_rvol = latest_vol / avg_5m_vol if avg_5m_vol > 0 else 1.0
 
     breakout_time = None
-    near_time = None
     is_breakout = False
     breakout_status = "Consolidating"
     chart_structure = "Base Building"
 
-    # --- FIRST 5-MINUTE EARLY BREAKOUT DETECTION ---
-    first_candle = candles[0]
-    candle_range = first_candle["high"] - first_candle["low"]
-    first_candle_is_bo = False
-    
-    if candle_range > 0:
-        if side == "bullish":
-            body = first_candle["close"] - first_candle["open"]
-            pct_chg = row.get("percent_change") or 0.0
-            if body > 0 and (body / candle_range) >= 0.60 and pct_chg >= 0.30:
-                first_candle_is_bo = True
-                is_breakout = True
-                breakout_status = "Breakout"
-                chart_structure = "First 5m Gap-and-Go"
-                breakout_time = datetime.fromtimestamp(first_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
-        else:
-            body = first_candle["open"] - first_candle["close"]
-            pct_chg = row.get("percent_change") or 0.0
-            if body > 0 and (body / candle_range) >= 0.60 and pct_chg <= -0.30:
-                first_candle_is_bo = True
-                is_breakout = True
-                breakout_status = "Breakdown"
-                chart_structure = "First 5m Breakdown"
-                breakout_time = datetime.fromtimestamp(first_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+    # We only look for breakouts starting from the SECOND candle (09:20 onwards)
+    trading_candles = candles[1:]
 
-    # If it wasn't a massive first candle BO, run the standard analysis
-    if not first_candle_is_bo:
-        if side == "bullish":
-            # Check higher highs and higher lows structure on 5m chart
-            recent = candles[-min(len(candles), 8):]
-            if len(recent) >= 4:
-                higher_highs = sum(1 for i in range(1, len(recent)) if recent[i]["high"] >= recent[i-1]["high"])
-                higher_lows = sum(1 for i in range(1, len(recent)) if recent[i]["low"] >= recent[i-1]["low"])
-                if higher_highs >= len(recent) * 0.6 and higher_lows >= len(recent) * 0.6:
-                    chart_structure = "Higher Highs Wave"
-                elif latest_close >= ema9:
-                    chart_structure = "Uptrend on EMA9"
-                else:
-                    chart_structure = "Pullback to EMA"
+    if side == "bullish":
+        # Check higher highs and higher lows structure on 5m chart
+        recent = candles[-min(len(candles), 8):]
+        if len(recent) >= 4:
+            higher_highs = sum(1 for i in range(1, len(recent)) if recent[i]["high"] >= recent[i-1]["high"])
+            higher_lows = sum(1 for i in range(1, len(recent)) if recent[i]["low"] >= recent[i-1]["low"])
+            if higher_highs >= len(recent) * 0.6 and higher_lows >= len(recent) * 0.6:
+                chart_structure = "Higher Highs Wave"
+            elif latest_close >= ema9:
+                chart_structure = "Uptrend on EMA9"
+            else:
+                chart_structure = "Pullback to EMA"
 
-            # Find exact 5m candle that started the CURRENT breakout wave
-            current_wave_start = None
-            for c in candles:
-                if c["close"] >= morning_high * 0.999:
-                    if not current_wave_start:
-                        current_wave_start = c["timestamp"]
-                else:
-                    current_wave_start = None # reset if it drops back below
-            
-            if current_wave_start:
-                breakout_time = datetime.fromtimestamp(current_wave_start, tz=INDIA_TZ).strftime("%I:%M %p")
+        # Continuous Wave Tracker for the Breakout
+        current_wave_start = None
+        for c in trading_candles:
+            if c["close"] >= morning_high * 0.999: # breached the first candle's high
+                if not current_wave_start:
+                    current_wave_start = c["timestamp"]
+            else:
+                current_wave_start = None # reset if it drops back below the first candle
+        
+        if current_wave_start:
+            breakout_time = datetime.fromtimestamp(current_wave_start, tz=INDIA_TZ).strftime("%I:%M %p")
 
-            # Active breakout condition
-            if latest_close >= morning_high * 0.998 and latest_close >= ema9:
-                is_breakout = True
-                breakout_status = "Breakout"
-                chart_structure = "Breakout Rally"
-                if not breakout_time:
-                    breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
-            elif latest_close >= morning_high * 0.992:
-                breakout_status = "Near BO"
-                chart_structure = "Testing Resistance"
+        # Active breakout condition
+        if latest_close >= morning_high * 0.998 and latest_close >= ema9:
+            is_breakout = True
+            breakout_status = "Breakout"
+            chart_structure = "Breakout Rally"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+        elif latest_close >= morning_high * 0.992:
+            breakout_status = "Near BO"
+            chart_structure = "Testing Resistance"
 
-        else:
-            # Bearish Breakdown condition
-            recent = candles[-min(len(candles), 8):]
-            if len(recent) >= 4:
-                lower_highs = sum(1 for i in range(1, len(recent)) if recent[i]["high"] <= recent[i-1]["high"])
-                lower_lows = sum(1 for i in range(1, len(recent)) if recent[i]["low"] <= recent[i-1]["low"])
-                if lower_highs >= len(recent) * 0.6 and lower_lows >= len(recent) * 0.6:
-                    chart_structure = "Lower Lows Slide"
-                elif latest_close <= ema9:
-                    chart_structure = "Downtrend on EMA9"
-                else:
-                    chart_structure = "Bounce to EMA"
+    else:
+        # Bearish Breakdown condition
+        recent = candles[-min(len(candles), 8):]
+        if len(recent) >= 4:
+            lower_highs = sum(1 for i in range(1, len(recent)) if recent[i]["high"] <= recent[i-1]["high"])
+            lower_lows = sum(1 for i in range(1, len(recent)) if recent[i]["low"] <= recent[i-1]["low"])
+            if lower_highs >= len(recent) * 0.6 and lower_lows >= len(recent) * 0.6:
+                chart_structure = "Lower Lows Slide"
+            elif latest_close <= ema9:
+                chart_structure = "Downtrend on EMA9"
+            else:
+                chart_structure = "Bounce to EMA"
 
-            # Find exact 5m candle that started the CURRENT breakdown wave
-            current_wave_start = None
-            for c in candles:
-                if c["close"] <= morning_low * 1.001:
-                    if not current_wave_start:
-                        current_wave_start = c["timestamp"]
-                else:
-                    current_wave_start = None # reset if it bounces back above
-            
-            if current_wave_start:
-                breakout_time = datetime.fromtimestamp(current_wave_start, tz=INDIA_TZ).strftime("%I:%M %p")
+        # Continuous Wave Tracker for the Breakdown
+        current_wave_start = None
+        for c in trading_candles:
+            if c["close"] <= morning_low * 1.001: # breached the first candle's low
+                if not current_wave_start:
+                    current_wave_start = c["timestamp"]
+            else:
+                current_wave_start = None # reset if it bounces back above
+        
+        if current_wave_start:
+            breakout_time = datetime.fromtimestamp(current_wave_start, tz=INDIA_TZ).strftime("%I:%M %p")
 
-            # Active breakout condition
-            if latest_close <= morning_low * 1.002 and latest_close <= ema9:
-                is_breakout = True
-                breakout_status = "Breakdown"
-                chart_structure = "Breakdown Slide"
-                if not breakout_time:
-                    breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
-            elif latest_close <= morning_low * 1.008:
-                breakout_status = "Near BD"
-                chart_structure = "Testing Support"
+        # Active breakout condition
+        if latest_close <= morning_low * 1.002 and latest_close <= ema9:
+            is_breakout = True
+            breakout_status = "Breakdown"
+            chart_structure = "Breakdown Slide"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+        elif latest_close <= morning_low * 1.008:
+            breakout_status = "Near BD"
+            chart_structure = "Testing Support"
+
+    is_failed_trend = False
+    if side == "bullish" and latest_close < morning_low:
+        is_failed_trend = True
+    elif side == "bearish" and latest_close > morning_high:
+        is_failed_trend = True
 
     return {
         "is_breakout": is_breakout,
@@ -711,6 +684,7 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
         "rvol_5m": round(latest_rvol, 2),
         "ema_trend": "bullish" if latest_close >= ema9 else "bearish",
         "chart_structure": chart_structure,
+        "is_failed_trend": is_failed_trend,
     }
 
 def index_context_note(row: dict[str, Any], side: str, index_context: dict[str, dict[str, Any]]) -> tuple[str, int]:
@@ -1034,6 +1008,10 @@ def build_suggestions(
         five_min_status = bo_info["status"]
         breakout_time = bo_info["breakout_time"]
         is_breakout = bo_info["is_breakout"]
+
+        # If it dropped below PML (Bullish) or above PMH (Bearish), it failed its trend.
+        if bo_info.get("is_failed_trend"):
+            continue
 
         # Boost score and tag if active 5m breakout is confirmed
         rally_score = rally["score"]
