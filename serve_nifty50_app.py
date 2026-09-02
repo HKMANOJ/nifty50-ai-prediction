@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import threading
+from stock_suggestion_index import build_payload, error_payload
 import time
 from functools import partial
 from datetime import datetime, timezone, timedelta
@@ -57,6 +58,7 @@ def is_ist_market_hours(check_dt: datetime | None = None) -> bool:
     current_minutes = dt.hour * 60 + dt.minute
     return (9 * 60 + 15) <= current_minutes <= (15 * 60 + 30)
 
+IN_MEMORY_STOCK_SUGGESTIONS: dict[str, Any] | None = None
 LAST_AUTO_SCAN_INFO: dict[str, Any] = {
     "enabled": True,
     "interval_seconds": 300,
@@ -79,19 +81,29 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                         scan_start = time.time()
                         print(f"[{now_ist.strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Executing 5-minute background market scan...")
                         try:
-                            exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
-                            res = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
+                            global IN_MEMORY_STOCK_SUGGESTIONS
+                            try:
+                                payload = build_payload(20)
+                            except Exception as exc:
+                                payload = error_payload(exc)
+                            
                             dur = round(time.time() - scan_start, 1)
-                            is_ok = res.get("ok", False)
+                            is_ok = payload.get("ok", False)
+                            
+                            # Cache in memory and disk
+                            IN_MEMORY_STOCK_SUGGESTIONS = payload
+                            STOCK_SUGGESTION_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+                            STOCK_SUGGESTION_SNAPSHOT.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                            
                             LAST_AUTO_SCAN_INFO["last_run_ist"] = get_ist_now().strftime("%I:%M:%S %p IST")
                             LAST_AUTO_SCAN_INFO["last_duration_seconds"] = dur
                             LAST_AUTO_SCAN_INFO["status"] = "success" if is_ok else "failed"
-                            print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Scan completed in {dur}s (ok={is_ok})")
-                            # Real-time WebSocket push to all connected browsers
-                            if is_ok and isinstance(res.get("stdout"), dict):
+                            print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] In-memory scan completed in {dur}s (ok={is_ok})")
+                            
+                            if is_ok:
                                 try:
                                     from websocket_server import broadcast_scanner_update_sync
-                                    broadcast_scanner_update_sync(res["stdout"])
+                                    broadcast_scanner_update_sync(payload)
                                 except Exception as bc_err:
                                     print(f"[WS BROADCAST ERROR] {bc_err}")
                         except Exception as scan_err:
@@ -472,9 +484,21 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
         today_str = now_ist.date().isoformat()
 
-        if STOCK_SUGGESTION_SNAPSHOT.exists():
+        global IN_MEMORY_STOCK_SUGGESTIONS
+        
+        # 1. Try In-Memory Cache First (Light Speed)
+        payload = IN_MEMORY_STOCK_SUGGESTIONS
+        
+        # 2. Fallback to Disk if server just restarted
+        if not payload and STOCK_SUGGESTION_SNAPSHOT.exists():
             try:
                 payload = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
+                IN_MEMORY_STOCK_SUGGESTIONS = payload
+            except Exception:
+                pass
+                
+        if payload:
+            try:
                 snapshot_date = payload.get("session_date")
                 # Attach live auto-scanner telemetry
                 payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
@@ -503,43 +527,43 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
         self._send_json(status, payload)
 
-    def _refresh_stock_suggestions_payload(self) -> tuple[HTTPStatus, dict[str, Any]]:
-        """Refresh only the new stock suggestion index, independent of old NIFTY flows."""
+    def _refresh_stock_suggestions_payload(self) -> tuple[HTTPStatus, dict]:
         if not REFRESH_LOCK.acquire(blocking=False):
             return HTTPStatus.CONFLICT, {
                 "ok": False,
                 "error": "refresh_in_progress",
                 "message": "A live refresh is already running. Please wait for it to finish.",
             }
-
         try:
-            exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
-            result = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
+            global IN_MEMORY_STOCK_SUGGESTIONS
+            try:
+                import time
+                start_t = time.time()
+                payload = build_payload(20)
+                dur = round(time.time() - start_t, 2)
+            except Exception as exc:
+                payload = error_payload(exc)
+                dur = 0
+            
+            IN_MEMORY_STOCK_SUGGESTIONS = payload
+            STOCK_SUGGESTION_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+            STOCK_SUGGESTION_SNAPSHOT.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         finally:
             REFRESH_LOCK.release()
 
-        if isinstance(result.get("stdout"), dict):
-            payload = result["stdout"]
-            payload["_refresh"] = {
-                "ok": result["ok"],
-                "duration_seconds": result["duration_seconds"],
-                "stderr": result.get("stderr"),
-            }
-            # Real-time WebSocket push to all open tabs
-            try:
-                from websocket_server import broadcast_scanner_update_sync
-                broadcast_scanner_update_sync(payload)
-            except Exception:
-                pass
-            status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE
-            return status, payload
-
-        return HTTPStatus.INTERNAL_SERVER_ERROR, {
-            "ok": False,
-            "error": "stock_suggestion_refresh_failed",
-            "message": "Stock suggestion refresh did not return JSON.",
-            "result": result,
+        payload["_refresh"] = {
+            "ok": payload.get("ok", False),
+            "duration_seconds": dur,
+            "stderr": payload.get("error", "")
         }
+        
+        try:
+            from websocket_server import broadcast_scanner_update_sync
+            broadcast_scanner_update_sync(payload)
+        except Exception as e:
+            print(f"[WS] Manual refresh broadcast failed: {e}")
+            
+        return HTTPStatus.OK if payload.get("ok") else HTTPStatus.INTERNAL_SERVER_ERROR, payload
 
     def _refresh_stock_suggestions(self) -> None:
         status, payload = self._refresh_stock_suggestions_payload()
