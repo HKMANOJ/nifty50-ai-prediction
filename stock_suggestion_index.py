@@ -557,7 +557,7 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
         return []
 
 
-def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any]) -> dict[str, Any]:
+def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any], activity_ratio: float) -> dict[str, Any]:
     """Analyzes 5-minute candles using a strict 5-Minute Opening Range Breakout (ORB) and Continuous Wave Tracking."""
     if len(candles) < 2:
         return {
@@ -624,10 +624,18 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
         if current_wave_start:
             breakout_time = datetime.fromtimestamp(current_wave_start, tz=INDIA_TZ).strftime("%I:%M %p")
 
-        # Active breakout condition
-        if latest_close >= morning_high * 0.998 and latest_close >= ema9:
+        # Fast Live LTP Breakout Condition (with +0.15% Buffer & Volume Check)
+        live_price = row.get("ltp", latest_close)
+        
+        # Fallback to standard close if volume is low, but use fast live price if volume is high!
+        if (live_price >= morning_high * 1.0015 and activity_ratio >= 2.0 and live_price >= ema9) or (latest_close >= morning_high * 0.998 and latest_close >= ema9):
             is_breakout = True
             breakout_status = "Breakout"
+            # If triggered by live price, overwrite the time to right NOW
+            if live_price >= morning_high * 1.0015 and current_wave_start is None:
+                from datetime import datetime
+                import pytz
+                breakout_time = datetime.now(pytz.timezone('Asia/Kolkata')).strftime("%I:%M %p")
             chart_structure = "Breakout Rally"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
@@ -660,10 +668,18 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
         if current_wave_start:
             breakout_time = datetime.fromtimestamp(current_wave_start, tz=INDIA_TZ).strftime("%I:%M %p")
 
-        # Active breakout condition
-        if latest_close <= morning_low * 1.002 and latest_close <= ema9:
+        # Fast Live LTP Breakout Condition (with +0.15% Buffer & Volume Check)
+        live_price = row.get("ltp", latest_close)
+        
+        # Fallback to standard close if volume is low, but use fast live price if volume is high!
+        if (live_price <= morning_low * 0.9985 and activity_ratio >= 2.0 and live_price <= ema9) or (latest_close <= morning_low * 1.002 and latest_close <= ema9):
             is_breakout = True
             breakout_status = "Breakdown"
+            # If triggered by live price, overwrite the time to right NOW
+            if live_price <= morning_low * 0.9985 and current_wave_start is None:
+                from datetime import datetime
+                import pytz
+                breakout_time = datetime.now(pytz.timezone('Asia/Kolkata')).strftime("%I:%M %p")
             chart_structure = "Breakdown Slide"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
@@ -1004,7 +1020,7 @@ def build_suggestions(
 
         # 5-Minute Breakout Analysis
         sym_candles = candles_by_symbol.get(symbol, [])
-        bo_info = analyze_5m_breakout(sym_candles, side, row)
+        bo_info = analyze_5m_breakout(sym_candles, side, row, activity_ratio)
         five_min_status = bo_info["status"]
         breakout_time = bo_info["breakout_time"]
         is_breakout = bo_info["is_breakout"]
