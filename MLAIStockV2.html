@@ -1387,6 +1387,26 @@
   const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8001" : "";
   const refreshBtn = document.getElementById("refreshBtn");
   
+  const soundToggleBtn = document.getElementById("soundToggleBtn");
+  if (soundToggleBtn) {
+    soundToggleBtn.addEventListener("click", () => {
+      _soundAlertsEnabled = !_soundAlertsEnabled;
+      if (_soundAlertsEnabled) {
+        soundToggleBtn.innerHTML = "🔔 Alerts ON";
+        soundToggleBtn.style.background = "#dbeafe";
+        soundToggleBtn.style.color = "#1d4ed8";
+        soundToggleBtn.style.borderColor = "#bfdbfe";
+        playAlertDing(); // Test sound
+      } else {
+        soundToggleBtn.innerHTML = "🔕 Alerts OFF";
+        soundToggleBtn.style.background = "#f1f5f9";
+        soundToggleBtn.style.color = "#64748b";
+        soundToggleBtn.style.borderColor = "#e2e8f0";
+      }
+    });
+  }
+
+  
   let _currentBullish = [];
   let _currentBearish = [];
   let _activeTab = "bullish";
