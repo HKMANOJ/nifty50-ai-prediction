@@ -202,6 +202,8 @@ def nse_get_json(url: str, *, referer: str) -> Any:
 
     warmup = [
         "curl",
+        "--doh-url",
+        "https://dns.google/dns-query",
         "--silent",
         "--show-error",
         "--location",
@@ -217,6 +219,8 @@ def nse_get_json(url: str, *, referer: str) -> Any:
 
     cmd = [
         "curl",
+        "--doh-url",
+        "https://dns.google/dns-query",
         "--fail",
         "--silent",
         "--show-error",
@@ -633,9 +637,9 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             breakout_status = "Breakout"
             # If triggered by live price, overwrite the time to right NOW
             if live_price >= morning_high * 1.0015 and current_wave_start is None:
-                from datetime import datetime
-                import pytz
-                breakout_time = datetime.now(pytz.timezone('Asia/Kolkata')).strftime("%I:%M %p")
+                
+                
+                breakout_time = datetime.now(INDIA_TZ).strftime("%I:%M %p")
             chart_structure = "Breakout Rally"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
@@ -677,9 +681,9 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             breakout_status = "Breakdown"
             # If triggered by live price, overwrite the time to right NOW
             if live_price <= morning_low * 0.9985 and current_wave_start is None:
-                from datetime import datetime
-                import pytz
-                breakout_time = datetime.now(pytz.timezone('Asia/Kolkata')).strftime("%I:%M %p")
+                
+                
+                breakout_time = datetime.now(INDIA_TZ).strftime("%I:%M %p")
             chart_structure = "Breakdown Slide"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
