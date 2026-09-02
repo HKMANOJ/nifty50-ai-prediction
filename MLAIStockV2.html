@@ -1437,9 +1437,32 @@
     } catch(e) { console.error("Audio error", e); }
   }
 
-  function checkAndTriggerAlerts(list, isPE, isInitialLoad) {
+
+  function isRecentBreakout(boTimeStr, currentIstStr) {
+    if (!boTimeStr || !currentIstStr) return false;
+    const match = boTimeStr.match(/(\d+):(\d+)\s+(AM|PM)/i);
+    if (!match) return false;
+    let [ , h, m, ampm ] = match;
+    h = parseInt(h);
+    if (ampm.toUpperCase() === 'PM' && h < 12) h += 12;
+    if (ampm.toUpperCase() === 'AM' && h === 12) h = 0;
+    const boMinutes = h * 60 + parseInt(m);
+    
+    const cMatch = currentIstStr.match(/(\d+):(\d+):(\d+)/);
+    if (!cMatch) return false;
+    const currentMinutes = parseInt(cMatch[1]) * 60 + parseInt(cMatch[2]);
+    
+    const diff = currentMinutes - boMinutes;
+    return diff >= 0 && diff <= 15; // 15-minute strict cutoff
+  }
+
+  function checkAndTriggerAlerts(list, isPE, isInitialLoad, currentIstStr) {
     list.forEach(x => {
       if (x.is_breakout && x.status === "Priority Rally" && (x.vc_ranking || 0) >= 2.0) {
+        // Enforce strict 15-minute time window
+        if (!isInitialLoad && !isRecentBreakout(x.breakout_time, currentIstStr)) {
+          return; // Skip stale alerts completely
+        }
         const key = x.symbol + "_" + x.breakout_time;
         if (!_alertedBreakouts.has(key)) {
           _alertedBreakouts.add(key); // Register it so we don't alert again
@@ -1781,8 +1804,8 @@
     if (!payload || !payload.ok) return;
     if (typeof checkAndTriggerAlerts === "function") {
       const isInitialLoad = !_initialDataLoaded;
-      checkAndTriggerAlerts(payload.bullish || [], false, isInitialLoad);
-      checkAndTriggerAlerts(payload.bearish || [], true, isInitialLoad);
+      checkAndTriggerAlerts(payload.bullish || [], false, isInitialLoad, payload.market_clock_ist);
+      checkAndTriggerAlerts(payload.bearish || [], true, isInitialLoad, payload.market_clock_ist);
       _initialDataLoaded = true;
     }
 
