@@ -1444,8 +1444,8 @@
           _alertedBreakouts.add(key);
           if (_soundAlertsEnabled) {
             playAlertDing();
-            showStickyToast(x, isPE);
           }
+          showStickyToast(x, isPE); // Always show visual popup!
         }
       }
     });
@@ -1774,6 +1774,10 @@
   /* ── Master Render Function ── */
   function renderAll(payload) {
     if (!payload || !payload.ok) return;
+    if (typeof checkAndTriggerAlerts === "function") {
+      checkAndTriggerAlerts(payload.bullish || [], false);
+      checkAndTriggerAlerts(payload.bearish || [], true);
+    }
 
     _currentBullish = (payload.bullish || []).sort((a, b) => (b.percent_change ?? 0) - (a.percent_change ?? 0));
     _currentBearish = (payload.bearish || []).sort((a, b) => (a.percent_change ?? 0) - (b.percent_change ?? 0));
