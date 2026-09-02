@@ -11,6 +11,21 @@
     }
   </script>
   <style>
+    @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .toast {
+      background: #ffffff; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 12px 16px;
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+      width: 320px; display: flex; justify-content: space-between; align-items: flex-start;
+      animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1); font-family: 'Inter', sans-serif;
+    }
+    .toast.bullish { border-left-color: #22c55e; }
+    .toast.bearish { border-left-color: #ef4444; }
+    .toast-title { font-weight: 800; font-size: 14px; margin-bottom: 2px; }
+    .toast-title.bullish { color: #166534; }
+    .toast-title.bearish { color: #9f1239; }
+    .toast-desc { font-size: 11px; color: #475569; font-weight: 500; }
+    .toast-close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 14px; margin-left: 10px; font-weight: bold; }
+    .toast-close:hover { color: #0f172a; }
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
     :root {
@@ -1090,11 +1105,15 @@
           <span id="autoScanDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#2563eb;"></span>
           <span id="autoScanText">Auto-Scan: 5m Active</span>
         </span>
+        <button id="soundToggleBtn" style="background:#f1f5f9; color:#64748b; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #e2e8f0; cursor:pointer; display:inline-flex; align-items:center;">🔕 Alerts OFF</button>
         <span class="status-badge live" id="liveStatusBadge">● Live Real-Time Data</span>
         <span style="font-size:12px; color:var(--text-muted); font-family:var(--font-mono);" id="marketClock">Clock --</span>
         <button class="refresh-pill-btn" id="refreshBtn" type="button">⚡ Refresh Live</button>
       </div>
     </header>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" style="position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:10px;"></div>
 
     <!-- Main Content Container -->
     <div id="viewDashboard" class="content-container">
@@ -1371,6 +1390,64 @@
   let _currentBullish = [];
   let _currentBearish = [];
   let _activeTab = "bullish";
+  let _soundAlertsEnabled = false;
+  const _alertedBreakouts = new Set();
+
+  function playAlertDing() {
+    if (!_soundAlertsEnabled) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine"; osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
+      
+      setTimeout(() => {
+        const osc2 = ctx.createOscillator(); const gain2 = ctx.createGain();
+        osc2.connect(gain2); gain2.connect(ctx.destination);
+        osc2.type = "sine"; osc2.frequency.setValueAtTime(1108.73, ctx.currentTime);
+        gain2.gain.setValueAtTime(1, ctx.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc2.start(ctx.currentTime); osc2.stop(ctx.currentTime + 0.5);
+      }, 150);
+    } catch(e) { console.error("Audio error", e); }
+  }
+
+  function checkAndTriggerAlerts(list, isPE) {
+    list.forEach(x => {
+      if (x.is_breakout && x.status === "Priority Rally" && (x.vc_ranking || 0) >= 2.0) {
+        const key = x.symbol + "_" + x.breakout_time;
+        if (!_alertedBreakouts.has(key)) {
+          _alertedBreakouts.add(key);
+          if (_soundAlertsEnabled) {
+            playAlertDing();
+            showStickyToast(x, isPE);
+          }
+        }
+      }
+    });
+  }
+
+  function showStickyToast(x, isPE) {
+    const container = document.getElementById("toastContainer");
+    if (!container) return;
+    const type = isPE ? "bearish" : "bullish";
+    const typeName = isPE ? "PE BREAKDOWN" : "CE BREAKOUT";
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+      <div>
+        <div class="toast-title ${type}">🚨 ${x.symbol} - ${typeName}</div>
+        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})<br/>Volume: ${(x.vc_ranking||0).toFixed(1)}x</div>
+      </div>
+      <button class="toast-close">✖</button>
+    `;
+    toast.querySelector(".toast-close").addEventListener("click", () => toast.remove());
+    container.appendChild(toast);
+  }
   let _selectedSymbol = "MUTHOOTFIN";
   let _tvChart = null;
   let _candleSeries = null;
