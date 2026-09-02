@@ -1411,6 +1411,7 @@
   let _currentBearish = [];
   let _activeTab = "bullish";
   let _soundAlertsEnabled = false;
+  let _initialDataLoaded = false;
   const _alertedBreakouts = new Set();
 
   function playAlertDing() {
@@ -1436,16 +1437,20 @@
     } catch(e) { console.error("Audio error", e); }
   }
 
-  function checkAndTriggerAlerts(list, isPE) {
+  function checkAndTriggerAlerts(list, isPE, isInitialLoad) {
     list.forEach(x => {
       if (x.is_breakout && x.status === "Priority Rally" && (x.vc_ranking || 0) >= 2.0) {
         const key = x.symbol + "_" + x.breakout_time;
         if (!_alertedBreakouts.has(key)) {
-          _alertedBreakouts.add(key);
-          if (_soundAlertsEnabled) {
-            playAlertDing();
+          _alertedBreakouts.add(key); // Register it so we don't alert again
+          
+          // Only trigger visual and audio if this is a NEW breakout (not a page refresh)
+          if (!isInitialLoad) {
+            if (_soundAlertsEnabled) {
+              playAlertDing();
+            }
+            showStickyToast(x, isPE); // Always show visual popup!
           }
-          showStickyToast(x, isPE); // Always show visual popup!
         }
       }
     });
@@ -1775,8 +1780,10 @@
   function renderAll(payload) {
     if (!payload || !payload.ok) return;
     if (typeof checkAndTriggerAlerts === "function") {
-      checkAndTriggerAlerts(payload.bullish || [], false);
-      checkAndTriggerAlerts(payload.bearish || [], true);
+      const isInitialLoad = !_initialDataLoaded;
+      checkAndTriggerAlerts(payload.bullish || [], false, isInitialLoad);
+      checkAndTriggerAlerts(payload.bearish || [], true, isInitialLoad);
+      _initialDataLoaded = true;
     }
 
     _currentBullish = (payload.bullish || []).sort((a, b) => (b.percent_change ?? 0) - (a.percent_change ?? 0));
