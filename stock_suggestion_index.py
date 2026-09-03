@@ -656,12 +656,18 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
 
         # Determine Bullish Status
         if retest_confirmed_idx is not None:
-            conf_candle = trading_candles[retest_confirmed_idx]
-            breakout_time = datetime.fromtimestamp(conf_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
-            is_breakout = True
-            breakout_status = "Retest Confirmed"
-            retest_status = "Confirmed"
-            chart_structure = "Retest Bounce Wave"
+            if latest_close >= morning_high * 0.996:
+                conf_candle = trading_candles[retest_confirmed_idx]
+                breakout_time = datetime.fromtimestamp(conf_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                is_breakout = True
+                breakout_status = "Retest Confirmed"
+                retest_status = "Confirmed"
+                chart_structure = "Retest Bounce Wave"
+            else:
+                breakout_status = "Testing Support"
+                retest_status = "Retesting"
+                chart_structure = "Fading PMH"
+                is_breakout = False
         elif retest_pullback_idx is not None and latest_close >= morning_low:
             breakout_status = "Retesting PMH"
             retest_status = "Retesting"
@@ -719,12 +725,18 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
 
         # Determine Bearish Status
         if retest_confirmed_idx is not None:
-            conf_candle = trading_candles[retest_confirmed_idx]
-            breakout_time = datetime.fromtimestamp(conf_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
-            is_breakout = True
-            breakout_status = "Retest Confirmed"
-            retest_status = "Confirmed"
-            chart_structure = "Retest Rejection Slide"
+            if latest_close <= morning_low * 1.004:
+                conf_candle = trading_candles[retest_confirmed_idx]
+                breakout_time = datetime.fromtimestamp(conf_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                is_breakout = True
+                breakout_status = "Retest Confirmed"
+                retest_status = "Confirmed"
+                chart_structure = "Retest Rejection Slide"
+            else:
+                breakout_status = "Testing Resistance"
+                retest_status = "Retesting"
+                chart_structure = "Bouncing PML"
+                is_breakout = False
         elif retest_pullback_idx is not None and latest_close <= morning_high:
             breakout_status = "Retesting PML"
             retest_status = "Retesting"
