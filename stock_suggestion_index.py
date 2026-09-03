@@ -652,6 +652,7 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                     c = trading_candles[idx]
                     if c["close"] > c["open"] and c["close"] >= morning_high * 0.999 and c["close"] >= ema9 * 0.998:
                         retest_confirmed_idx = idx
+                        break  # Lock onto the FIRST confirmed pivot!
 
         # Determine Bullish Status
         if retest_confirmed_idx is not None:
@@ -714,6 +715,7 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                     c = trading_candles[idx]
                     if c["close"] < c["open"] and c["close"] <= morning_low * 1.002 and c["close"] <= ema9 * 1.002:
                         retest_confirmed_idx = idx
+                        break  # Lock onto the FIRST confirmed pivot!
 
         # Determine Bearish Status
         if retest_confirmed_idx is not None:
