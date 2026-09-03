@@ -839,6 +839,10 @@
     .bo-status-pill.bd { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
     .bo-status-pill.near { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
     .bo-status-pill.wait { background: #f1f5f9; color: var(--text-muted); }
+    .bo-status-pill.retest { background: #ecfdf5; color: #047857; border: 1px solid #10b981; font-weight:900; box-shadow: 0 0 6px rgba(16,185,129,0.25); }
+    .bo-status-pill.retest-bd { background: #fef2f2; color: #b91c1c; border: 1px solid #ef4444; font-weight:900; box-shadow: 0 0 6px rgba(239,68,68,0.25); }
+    .bo-status-pill.extended { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
+    .bo-status-pill.pullback { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
 
     .score-meter {
       display: flex;
@@ -1458,7 +1462,9 @@
 
   function checkAndTriggerAlerts(list, isPE, isInitialLoad, currentIstStr) {
     list.forEach(x => {
-      if (x.is_breakout && x.status === "Priority Rally" && (x.vc_ranking || 0) >= 2.0) {
+      // Suppress alert on overextended spikes (wait for retest!)
+      const isExt = (x.retest_status === "Extended") || (x.five_min_status || "").includes("Extended");
+      if (x.is_breakout && x.status === "Priority Rally" && (x.vc_ranking || 0) >= 2.0 && !isExt) {
         // Enforce strict 15-minute time window
         if (!isInitialLoad && !isRecentBreakout(x.breakout_time, currentIstStr)) {
           return; // Skip stale alerts completely
@@ -1486,10 +1492,14 @@
     const typeName = isPE ? "PE BREAKDOWN" : "CE BREAKOUT";
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
+    const isRetest = (x.retest_status === "Confirmed") || (x.five_min_status || "").includes("Retest Confirmed");
+    const subTitle = isRetest ? "🎯 RETEST CONFIRMED (Sniper Entry)" : "BREAKOUT CONFIRMED";
+    const subColor = isRetest ? "#059669" : "#2563eb";
     toast.innerHTML = `
       <div>
         <div class="toast-title ${type}">🚨 ${x.symbol} - ${typeName}</div>
-        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})<br/>Volume: ${(x.vc_ranking||0).toFixed(1)}x</div>
+        <div style="font-size:10px; font-weight:800; color:${subColor}; margin:2px 0;">${subTitle}</div>
+        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})<br/>Volume: ${(x.vc_ranking||0).toFixed(1)}x · VWAP: ₹${x.vwap || '--'}</div>
       </div>
       <button class="toast-close">✖</button>
     `;
@@ -1758,7 +1768,21 @@
       const vcCls = vc >= 2.5 ? "high" : (vc >= 1.2 ? "mid" : "low");
       const mp = row.mp_score || 3.0;
       const statusStr = row.five_min_status || (row.is_breakout ? "Breakout" : "Consolidating");
-      const boCls = statusStr.toLowerCase().includes("breakout") ? "bo" : (statusStr.toLowerCase().includes("breakdown") ? "bd" : (statusStr.toLowerCase().includes("near") ? "near" : "wait"));
+      let boCls = "wait";
+      const sLower = statusStr.toLowerCase();
+      if (sLower.includes("retest confirmed")) {
+        boCls = isUp ? "retest" : "retest-bd";
+      } else if (sLower.includes("extended")) {
+        boCls = "extended";
+      } else if (sLower.includes("retest")) {
+        boCls = "pullback";
+      } else if (sLower.includes("breakout")) {
+        boCls = "bo";
+      } else if (sLower.includes("breakdown")) {
+        boCls = "bd";
+      } else if (sLower.includes("near")) {
+        boCls = "near";
+      }
       const timeStr = row.breakout_time ? ` ${row.breakout_time}` : "";
 
       return `
@@ -2409,72 +2433,229 @@
 
   // Static NSE F&O symbol → sector mapping (top 200 F&O stocks)
   const SECTOR_MAP = {
-    // IT / Technology
-    TCS:"IT", INFY:"IT", WIPRO:"IT", HCLTECH:"IT", TECHM:"IT", LTIM:"IT",
-    MPHASIS:"IT", COFORGE:"IT", PERSISTENT:"IT", LTTS:"IT", KPITTECH:"IT",
-    BIRLASOFT:"IT", HEXAWARE:"IT",
-    // Banks
-    HDFCBANK:"Banks", ICICIBANK:"Banks", KOTAK:"Banks", AXISBANK:"Banks",
-    SBIN:"Banks", INDUSINDBK:"Banks", BANDHANBNK:"Banks", IDFCFIRSTB:"Banks",
-    FEDERALBNK:"Banks", RBLBANK:"Banks", AUBANK:"Banks", PNB:"Banks",
-    CANBK:"Banks", UNIONBANK:"Banks",
-    // Fin Services / NBFC
-    BAJFINANCE:"Fin Serv", BAJAJFINSV:"Fin Serv", MUTHOOTFIN:"Fin Serv",
-    CHOLAFIN:"Fin Serv", IIFL:"Fin Serv", ABCAPITAL:"Fin Serv",
-    M_MFIN:"Fin Serv", MANAPPURAM:"Fin Serv", MOTILALOFS:"Fin Serv",
-    ANGELONE:"Fin Serv",
-    // Pharma / Healthcare
-    SUNPHARMA:"Pharma", DRREDDY:"Pharma", CIPLA:"Pharma", DIVISLAB:"Pharma",
-    APOLLOHOSP:"Pharma", LUPIN:"Pharma", BIOCON:"Pharma", TORNTPHARM:"Pharma",
-    GLENMARK:"Pharma", AUROPHARMA:"Pharma", ABBOTINDIA:"Pharma", SAGILITY:"Pharma",
-    // Auto
-    TATAMOTORS:"Auto", MARUTI:"Auto", EICHERMOT:"Auto", "BAJAJ-AUTO":"Auto",
-    HEROMOTOCO:"Auto", M_M:"Auto", TVSMOTOR:"Auto", ASHOKLEY:"Auto", MAHINDRA:"Auto",
-    // Metal / Mining
-    TATASTEEL:"Metal", HINDALCO:"Metal", JSWSTEEL:"Metal", SAIL:"Metal",
-    VEDL:"Metal", NMDC:"Metal", HINDZINC:"Metal", NATIONALUM:"Metal",
-    ONGC:"Metal", COALINDIA:"Metal",
-    // Energy / Oil & Gas
-    RELIANCE:"Energy", BPCL:"Energy", ONGC:"Energy", IOC:"Energy",
-    HINDPETRO:"Energy", GAIL:"Energy", PETRONET:"Energy", MGL:"Energy",
-    ATGL:"Energy", ADANIGREEN:"Energy", TATAPOWER:"Energy",
-    // FMCG / Consumer
-    HINDUNILVR:"FMCG", NESTLEIND:"FMCG", BRITANNIA:"FMCG", DABUR:"FMCG",
-    MARICO:"FMCG", GODREJCP:"FMCG", ITC:"FMCG", COLPAL:"FMCG",
-    TATACONSUM:"FMCG", EMAMILTD:"FMCG",
-    // Infra / Realty / Capital Goods
-    LTTS:"Infra", LT:"Infra", LODHA:"Infra", DLF:"Infra",
-    GODREJPROP:"Infra", PRESTIGE:"Infra", PHOENIXLTD:"Infra",
-    ULTRACEMCO:"Infra", AMBUJACEM:"Infra", SHREECEM:"Infra",
-    SIEMENS:"Capital Goods", ABB:"Capital Goods", BHEL:"Capital Goods",
-    KAYNES:"Capital Goods", AEQUITAS:"Capital Goods",
-    // Telecom / Media
-    BHARTIARTL:"Telecom", IDEA:"Telecom", INDUSTOWER:"Telecom",
-    ZEEL:"Media", PVRINOX:"Media",
-    // PSU Bank
-    PSBs: "PSU Bank",
-    // Transport / Logistics
-    CONCOR:"Logistics", IRFC:"Logistics", IRCTC:"Logistics",
-    ADANIPORTS:"Logistics",
-    // Power
-    NTPC:"Power", POWERGRID:"Power", TORNTPOWER:"Power",
-    CESC:"Power", ADANIPOWER:"Power",
-    // Chemicals
-    ATUL:"Chemicals", PIDILITIND:"Chemicals", NAVINFLUOR:"Chemicals",
-    // Defence
-    HAL:"Defence", BEL:"Defence", DRDO:"Defence", BHEL:"Defence",
-    // Others
-    ZOMATO:"Internet", POLICYBZR:"Internet", NYKAA:"Internet",
-    PAYTM:"Internet", DMART:"Retail", TRENT:"Retail",
-    ATHERENERG:"EV/Energy", OLECTRA:"EV/Energy",
+    "TCS":"IT",
+    "INFY":"IT",
+    "WIPRO":"IT",
+    "HCLTECH":"IT",
+    "TECHM":"IT",
+    "LTIM":"IT",
+    "MPHASIS":"IT",
+    "COFORGE":"IT",
+    "PERSISTENT":"IT",
+    "LTTS":"IT",
+    "KPITTECH":"IT",
+    "BIRLASOFT":"IT",
+    "HEXAWARE":"IT",
+    "TATAELXSI":"IT",
+    "OFSS":"IT",
+    "HDFCBANK":"Banks",
+    "ICICIBANK":"Banks",
+    "KOTAKBANK":"Banks",
+    "AXISBANK":"Banks",
+    "SBIN":"Banks",
+    "INDUSINDBK":"Banks",
+    "BANDHANBNK":"Banks",
+    "IDFCFIRSTB":"Banks",
+    "FEDERALBNK":"Banks",
+    "RBLBANK":"Banks",
+    "AUBANK":"Banks",
+    "PNB":"Banks",
+    "CANBK":"Banks",
+    "UNIONBANK":"Banks",
+    "BANKBARODA":"Banks",
+    "CUB":"Banks",
+    "INDIANB":"Banks",
+    "BAJFINANCE":"Fin Serv",
+    "BAJAJFINSV":"Fin Serv",
+    "MUTHOOTFIN":"Fin Serv",
+    "CHOLAFIN":"Fin Serv",
+    "ABCAPITAL":"Fin Serv",
+    "M_MFIN":"Fin Serv",
+    "MANAPPURAM":"Fin Serv",
+    "MOTILALOFS":"Fin Serv",
+    "ANGELONE":"Fin Serv",
+    "SHRIRAMFIN":"Fin Serv",
+    "LICHSGFIN":"Fin Serv",
+    "L_TFH":"Fin Serv",
+    "HDFCAMC":"Fin Serv",
+    "HDFCLIFE":"Fin Serv",
+    "SBILIFE":"Fin Serv",
+    "ICICIPRULI":"Fin Serv",
+    "ICICIGI":"Fin Serv",
+    "MCX":"Fin Serv",
+    "IEX":"Fin Serv",
+    "PFC":"Fin Serv",
+    "RECLTD":"Fin Serv",
+    "SUNPHARMA":"Pharma",
+    "DRREDDY":"Pharma",
+    "CIPLA":"Pharma",
+    "DIVISLAB":"Pharma",
+    "APOLLOHOSP":"Pharma",
+    "LUPIN":"Pharma",
+    "BIOCON":"Pharma",
+    "TORNTPHARM":"Pharma",
+    "GLENMARK":"Pharma",
+    "AUROPHARMA":"Pharma",
+    "ABBOTINDIA":"Pharma",
+    "SAGILITY":"Pharma",
+    "LAURUSLABS":"Pharma",
+    "SYNGENE":"Pharma",
+    "GRANULES":"Pharma",
+    "ALKEM":"Pharma",
+    "LALPATHLAB":"Pharma",
+    "METROPOLIS":"Pharma",
+    "IPCALAB":"Pharma",
+    "ZYDUSLIFE":"Pharma",
+    "TATAMOTORS":"Auto",
+    "MARUTI":"Auto",
+    "EICHERMOT":"Auto",
+    "BAJAJ-AUTO":"Auto",
+    "HEROMOTOCO":"Auto",
+    "M_M":"Auto",
+    "TVSMOTOR":"Auto",
+    "ASHOKLEY":"Auto",
+    "ESCORTS":"Auto",
+    "BOSCHLTD":"Auto Ancillary",
+    "BALKRISIND":"Auto Ancillary",
+    "MRF":"Auto Ancillary",
+    "APOLLOTYRE":"Auto Ancillary",
+    "BHARATFORG":"Auto Ancillary",
+    "MOTHERSON":"Auto Ancillary",
+    "AMARAJABAT":"Auto Ancillary",
+    "EXIDEIND":"Auto Ancillary",
+    "SONACOMS":"Auto Ancillary",
+    "TATASTEEL":"Metal",
+    "HINDALCO":"Metal",
+    "JSWSTEEL":"Metal",
+    "SAIL":"Metal",
+    "VEDL":"Metal",
+    "NMDC":"Metal",
+    "HINDZINC":"Metal",
+    "NATIONALUM":"Metal",
+    "COALINDIA":"Metal",
+    "JINDALSTEL":"Metal",
+    "RELIANCE":"Energy",
+    "BPCL":"Energy",
+    "ONGC":"Energy",
+    "IOC":"Energy",
+    "HINDPETRO":"Energy",
+    "GAIL":"Energy",
+    "PETRONET":"Energy",
+    "MGL":"Energy",
+    "IGL":"Energy",
+    "GUJGASLTD":"Energy",
+    "ATGL":"Energy",
+    "ADANIGREEN":"Energy",
+    "NTPC":"Power",
+    "POWERGRID":"Power",
+    "TATAPOWER":"Power",
+    "TORNTPOWER":"Power",
+    "CESC":"Power",
+    "ADANIPOWER":"Power",
+    "BHEL":"Power",
+    "NHPC":"Power",
+    "HINDUNILVR":"FMCG",
+    "NESTLEIND":"FMCG",
+    "BRITANNIA":"FMCG",
+    "DABUR":"FMCG",
+    "MARICO":"FMCG",
+    "GODREJCP":"FMCG",
+    "ITC":"FMCG",
+    "COLPAL":"FMCG",
+    "TATACONSUM":"FMCG",
+    "EMAMILTD":"FMCG",
+    "UBL":"FMCG",
+    "MCDOWELL-N":"FMCG",
+    "BALRAMCHIN":"FMCG",
+    "RADICO":"FMCG",
+    "LT":"Infra",
+    "ULTRACEMCO":"Infra",
+    "AMBUJACEM:":"Infra",
+    "SHREECEM":"Infra",
+    "GRASIM":"Infra",
+    "ACC":"Infra",
+    "DALBHARAT":"Infra",
+    "RAMCOCEM":"Infra",
+    "INDIAKEM":"Infra",
+    "COROMANDEL":"Infra",
+    "GMRINFRA":"Infra",
+    "IRB":"Infra",
+    "DLF":"Realty",
+    "GODREJPROP":"Realty",
+    "PRESTIGE":"Realty",
+    "PHOENIXLTD":"Realty",
+    "LODHA":"Realty",
+    "OBEROIRLTY":"Realty",
+    "BRIGADE":"Realty",
+    "SOBHA":"Realty",
+    "MAHLIFE":"Realty",
+    "IBULHSGFIN":"Realty",
+    "SIEMENS":"Capital Goods",
+    "ABB":"Capital Goods",
+    "CUMMINSIND":"Capital Goods",
+    "KAYNES":"Capital Goods",
+    "AEQUITAS":"Capital Goods",
+    "CGPOWER":"Capital Goods",
+    "DIXON":"Manufacturing",
+    "POLYCAB":"Manufacturing",
+    "HAVELLS":"Manufacturing",
+    "CROMPTON":"Manufacturing",
+    "VOLTAS":"Manufacturing",
+    "BHARTIARTL":"Telecom",
+    "IDEA":"Telecom",
+    "INDUSTOWER":"Telecom",
+    "ZEEL":"Media",
+    "PVRINOX":"Media",
+    "SUNTV":"Media",
+    "CONCOR":"Logistics",
+    "IRFC":"Logistics",
+    "IRCTC":"Logistics",
+    "ADANIPORTS":"Logistics",
+    "INDIGO":"Aviation",
+    "ATUL":"Chemicals",
+    "PIDILITIND":"Chemicals",
+    "NAVINFLUOR":"Chemicals",
+    "UPL":"Chemicals",
+    "PIIND":"Chemicals",
+    "TATACHEM":"Chemicals",
+    "DEEPAKNTR":"Chemicals",
+    "SRF":"Chemicals",
+    "AARTIIND":"Chemicals",
+    "CHAMBLFERT":"Chemicals",
+    "GNFC":"Chemicals",
+    "GUJALKALI":"Chemicals",
+    "HAL":"Defence",
+    "BEL":"Defence",
+    "DRDO":"Defence",
+    "BDL":"Defence",
+    "COCHINSHIP":"Defence",
+    "MAZDOCK":"Defence",
+    "ZOMATO":"Internet",
+    "POLICYBZR":"Internet",
+    "NYKAA":"Internet",
+    "PAYTM":"Internet",
+    "NAUKRI":"Internet",
+    "INDIAMART":"Internet",
+    "DMART":"Retail",
+    "TRENT":"Retail",
+    "ABFRL":"Retail",
+    "BATAINDIA":"Retail",
+    "JUBLFOOD":"Retail",
+    "PAGEIND":"Retail",
+    "TITAN":"Retail",
+    "DEVYANI":"Retail",
+    "ATHERENERG":"EV/Energy",
+    "OLECTRA":"EV/Energy",
+    "ASTRAL":"Materials",
   };
 
   const SECTOR_ICONS = {
     "IT":"💻", "Banks":"🏦", "Fin Serv":"📑", "Pharma":"💊", "Auto":"🚗",
-    "Metal":"⚙️", "Energy":"⚡", "FMCG":"🛒", "Infra":"🏗️", "Capital Goods":"🔧",
+    "Auto Ancillary":"⚙️", "Metal":"⚒️", "Energy":"⚡", "FMCG":"🛒", 
+    "Infra":"🏗️", "Realty":"🏙️", "Capital Goods":"🔧", "Manufacturing":"🏭",
     "Telecom":"📡", "Media":"📺", "PSU Bank":"🏛️", "Logistics":"🚚",
-    "Power":"🔋", "Chemicals":"🧪", "Defence":"🛡️", "Internet":"🌐",
-    "Retail":"🛍️", "EV/Energy":"🌱",
+    "Aviation":"✈️", "Power":"🔋", "Chemicals":"🧪", "Defence":"🛡️", 
+    "Internet":"🌐", "Retail":"🛍️", "EV/Energy":"🌱", "Materials":"🧱", "Other":"📦"
   };
 
   let _sectorFilter = "ALL";
