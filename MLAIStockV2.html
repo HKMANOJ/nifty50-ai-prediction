@@ -1043,15 +1043,21 @@
         width: 100%;
       }
 
+      table.vc-table {
+        min-width: 820px;
+        width: 100%;
+      }
+    }
+
     /* ══════════════════════════════════════════════════════════════
-       HISTORY RECALL AUDIT VIEW STYLES
+       HISTORY RECALL AUDIT VIEW STYLES (Global Desktop & Responsive)
        ══════════════════════════════════════════════════════════════ */
     .history-header-box {
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 14px;
       padding: 16px 20px;
       background: #ffffff;
       border: 1px solid var(--border);
@@ -1059,22 +1065,35 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.03);
     }
     .history-header-title {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 800;
       color: var(--text-dark);
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
     }
     .history-header-subtitle {
       font-size: 12px;
       color: var(--text-muted);
-      margin-top: 3px;
+      margin-top: 4px;
+      line-height: 1.4;
     }
     .history-kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 12px;
+      width: 100%;
+    }
+    @media (max-width: 1200px) {
+      .history-kpi-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 768px) {
+      .history-kpi-grid {
+        grid-template-columns: 1fr;
+      }
     }
     .history-kpi-card {
       background: #ffffff;
@@ -1083,14 +1102,14 @@
       padding: 14px 16px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.02);
-      position: relative;
-      overflow: hidden;
+      justify-content: center;
+      gap: 5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+      min-width: 0;
     }
     .history-kpi-card.highlight {
       background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);
-      border-color: #fde68a;
+      border: 1px solid #fde68a;
     }
     .history-kpi-title {
       font-size: 11px;
@@ -1098,17 +1117,24 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
       color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .history-kpi-value {
-      font-size: 22px;
+      font-size: 24px;
       font-weight: 900;
       color: var(--text-dark);
       line-height: 1.1;
+      white-space: nowrap;
     }
     .history-kpi-sub {
       font-size: 11px;
       font-weight: 600;
       color: #64748b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .history-filter-bar {
       display: flex;
@@ -1128,7 +1154,7 @@
       gap: 6px;
     }
     .history-filter-btn {
-      padding: 5px 12px;
+      padding: 6px 13px;
       font-size: 11.5px;
       font-weight: 700;
       border-radius: 6px;
@@ -1137,6 +1163,10 @@
       color: var(--text-muted);
       cursor: pointer;
       transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
     }
     .history-filter-btn:hover {
       background: #f1f5f9;
@@ -1146,7 +1176,7 @@
       background: #7c3aed;
       color: #ffffff;
       border-color: #6d28d9;
-      box-shadow: 0 1px 3px rgba(124, 58, 237, 0.25);
+      box-shadow: 0 1px 4px rgba(124, 58, 237, 0.3);
     }
     .history-search-box {
       display: flex;
@@ -1155,7 +1185,7 @@
       background: #f8fafc;
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 4px 10px;
+      padding: 6px 12px;
     }
     .history-search-input {
       border: none;
@@ -1163,7 +1193,7 @@
       outline: none;
       font-size: 12px;
       color: var(--text-dark);
-      width: 180px;
+      width: 220px;
     }
     .history-table-wrapper {
       background: #ffffff;
@@ -1171,9 +1201,12 @@
       border-radius: 10px;
       overflow-x: auto;
       box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+      width: 100%;
+      -webkit-overflow-scrolling: touch;
     }
     table.history-table {
       width: 100%;
+      min-width: 1280px;
       border-collapse: collapse;
       font-size: 12px;
       text-align: left;
@@ -1185,12 +1218,12 @@
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.4px;
-      padding: 10px 12px;
+      padding: 11px 14px;
       border-bottom: 2px solid #e2e8f0;
       white-space: nowrap;
     }
     table.history-table td {
-      padding: 10px 12px;
+      padding: 10px 14px;
       border-bottom: 1px solid #f1f5f9;
       vertical-align: middle;
       white-space: nowrap;
@@ -1212,68 +1245,89 @@
       background: #fef3c7;
       color: #b45309;
       border: 1px solid #fde68a;
-      padding: 2px 7px;
+      padding: 3px 8px;
       border-radius: 4px;
-      font-size: 10px;
+      font-size: 10.5px;
       font-weight: 800;
       letter-spacing: 0.3px;
+      white-space: nowrap;
     }
     .badge-bell-rang {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
       background: #fef2f2;
       color: #dc2626;
       border: 1px solid #fecaca;
-      padding: 2px 7px;
+      padding: 3px 8px;
       border-radius: 4px;
       font-size: 10.5px;
       font-weight: 800;
+      white-space: nowrap;
     }
     .badge-signal-only {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
       background: #f1f5f9;
       color: #64748b;
       border: 1px solid #e2e8f0;
-      padding: 2px 7px;
+      padding: 3px 8px;
       border-radius: 4px;
       font-size: 10.5px;
       font-weight: 600;
+      white-space: nowrap;
     }
     .badge-retest-purple {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       background: #faf5ff;
       color: #7e22ce;
       border: 1px solid #d8b4fe;
       font-size: 10.5px;
       font-weight: 800;
-      padding: 2px 6px;
+      padding: 3px 8px;
       border-radius: 4px;
+      white-space: nowrap;
     }
     .rvol-pill-high {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
       background: #fee2e2;
       color: #991b1b;
       border: 1px solid #fca5a5;
       font-weight: 800;
-      padding: 2px 6px;
+      padding: 3px 8px;
       border-radius: 4px;
+      font-size: 11px;
+      white-space: nowrap;
     }
     .rvol-pill-med {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
       background: #ede9fe;
       color: #5b21b6;
       border: 1px solid #c4b5fd;
       font-weight: 800;
-      padding: 2px 6px;
+      padding: 3px 8px;
       border-radius: 4px;
+      font-size: 11px;
+      white-space: nowrap;
     }
     .rvol-pill-norm {
+      display: inline-flex;
+      align-items: center;
       background: #f1f5f9;
       color: #475569;
       border: 1px solid #e2e8f0;
       font-weight: 600;
-      padding: 2px 6px;
+      padding: 3px 8px;
       border-radius: 4px;
+      font-size: 11px;
+      white-space: nowrap;
     }
     .range-meter-bg {
       width: 48px;
@@ -1283,7 +1337,7 @@
       overflow: hidden;
       display: inline-block;
       vertical-align: middle;
-      margin-left: 5px;
+      margin-left: 6px;
     }
     .range-meter-fill {
       height: 100%;
@@ -1295,13 +1349,14 @@
       border: 1px solid #ddd6fe;
       font-size: 11px;
       font-weight: 700;
-      padding: 3px 8px;
+      padding: 4px 10px;
       border-radius: 5px;
       cursor: pointer;
       transition: all 0.15s ease;
       display: inline-flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
+      white-space: nowrap;
     }
     .btn-chart-jump:hover {
       background: #7c3aed;
@@ -4167,20 +4222,20 @@
       const trClass = item.isTopPick ? "row-top-pick" : "";
 
       const sidePill = isCE
-        ? `<span style="background:#dcfce7; color:#166534; font-weight:800; padding:2px 7px; border-radius:4px; font-size:10px;">🟢 CE BREAKOUT</span>`
-        : `<span style="background:#fee2e2; color:#991b1b; font-weight:800; padding:2px 7px; border-radius:4px; font-size:10px;">🔴 PE BREAKDOWN</span>`;
+        ? `<span style="background:#dcfce7; color:#166534; font-weight:800; padding:3px 8px; border-radius:4px; font-size:10.5px; display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">🟢 CE BREAKOUT</span>`
+        : `<span style="background:#fee2e2; color:#991b1b; font-weight:800; padding:3px 8px; border-radius:4px; font-size:10.5px; display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">🔴 PE BREAKDOWN</span>`;
 
       const statusBadge = item.isTopPick
-        ? `<span class="badge-top-pick">⭐ ⚡ SYSTEM TOP PICK</span>`
-        : `<span class="badge-retest-purple">🎯 ${item.retestStatus || "Retest Confirmed"}</span>`;
+        ? `<span class="badge-top-pick" style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">⭐ ⚡ SYSTEM TOP PICK</span>`
+        : `<span class="badge-retest-purple" style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">🎯 ${item.retestStatus || "Retest Confirmed"}</span>`;
 
       const rvol = Number(item.rvol || 0);
       const rvolClass = rvol >= 5.0 ? "rvol-pill-high" : rvol >= 2.0 ? "rvol-pill-med" : "rvol-pill-norm";
       const rvolIcon = rvol >= 5.0 ? "🔥 " : rvol >= 2.0 ? "⚡ " : "";
 
       const bellBadge = item.bellRang
-        ? `<span class="badge-bell-rang">🔔 Rang (≥ 2.0x)</span>`
-        : `<span class="badge-signal-only" title="Institutional RVOL ${rvol.toFixed(1)}x < 2.0x audio threshold">ℹ️ Signal (Low RVOL)</span>`;
+        ? `<span class="badge-bell-rang" style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">🔔 Rang (≥ 2.0x)</span>`
+        : `<span class="badge-signal-only" style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;" title="Institutional RVOL ${rvol.toFixed(1)}x < 2.0x audio threshold">ℹ️ Signal (Low RVOL)</span>`;
 
       const rangeVal = Math.max(0, Math.min(100, Number(item.rangeHold || 0)));
       const rangeColor = isCE ? "#16a34a" : "#dc2626";
@@ -4191,50 +4246,52 @@
 
       return `
         <tr class="${trClass}">
-          <td style="text-align:center; font-weight:700; color:#334155;">
+          <td style="text-align:center; font-weight:700; color:#334155; white-space:nowrap;">
             ⏱️ ${item.time || "--"}
           </td>
-          <td>
-            <div style="display:flex; align-items:center; gap:6px;">
+          <td style="white-space:nowrap;">
+            <div style="display:flex; align-items:center; gap:8px;">
               <span style="font-weight:900; font-size:13px; color:#0f172a; cursor:pointer;" onclick="jumpToChart('${item.symbol}')">${item.symbol}</span>
-              <span style="font-size:10px; color:#64748b; background:#f1f5f9; padding:1px 6px; border-radius:4px; font-weight:600;">${item.sector || "F&O"}</span>
+              <span style="font-size:10px; color:#64748b; background:#f1f5f9; border:1px solid #e2e8f0; padding:1px 6px; border-radius:4px; font-weight:600;">${item.sector || "F&O"}</span>
             </div>
           </td>
-          <td style="text-align:center;">
+          <td style="text-align:center; white-space:nowrap;">
             ${sidePill}
           </td>
-          <td style="text-align:center;">
+          <td style="text-align:center; white-space:nowrap;">
             ${statusBadge}
           </td>
-          <td style="text-align:center;">
+          <td style="text-align:center; white-space:nowrap;">
             <span class="${rvolClass}">${rvolIcon}${rvol.toFixed(1)}x</span>
           </td>
-          <td style="text-align:center;">
-            <span style="font-weight:700; font-size:11.5px; color:#1e293b;">${rangeVal.toFixed(1)}%</span>
-            <div class="range-meter-bg">
-              <div class="range-meter-fill" style="width:${rangeVal}%; background:${rangeColor};"></div>
+          <td style="text-align:center; white-space:nowrap;">
+            <div style="display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+              <span style="font-weight:700; font-size:11.5px; color:#1e293b; min-width:38px; text-align:right;">${rangeVal.toFixed(1)}%</span>
+              <div class="range-meter-bg">
+                <div class="range-meter-fill" style="width:${rangeVal}%; background:${rangeColor};"></div>
+              </div>
             </div>
           </td>
-          <td style="font-size:11.5px; color:#334155; font-weight:600;">
+          <td style="font-size:11.5px; color:#334155; font-weight:600; white-space:nowrap;">
             ${item.setup || "--"}
           </td>
-          <td style="text-align:center;">
+          <td style="text-align:center; white-space:nowrap;">
             ${bellBadge}
           </td>
-          <td style="text-align:right; font-weight:600; color:#475569;">
+          <td style="text-align:right; font-weight:600; color:#475569; white-space:nowrap;">
             ₹${n(item.triggerPrice)}
           </td>
-          <td style="text-align:right;">
+          <td style="text-align:right; white-space:nowrap;">
             <span style="font-weight:700; color:#0f172a;">₹${n(item.currentPrice)}</span>
             <span style="font-weight:800; color:${pctColor}; margin-left:4px;">(${pctStr})</span>
           </td>
-          <td style="text-align:center;">
-            <span style="font-size:11px; font-weight:800; color:#166534; background:#dcfce7; border:1px solid #bbf7d0; padding:2px 7px; border-radius:4px;">
+          <td style="text-align:center; white-space:nowrap;">
+            <span style="font-size:10.5px; font-weight:800; color:#166534; background:#dcfce7; border:1px solid #bbf7d0; padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">
               🟢 ${item.verdict || "TARGET HIT"}
             </span>
           </td>
-          <td style="text-align:center;">
-            <button class="btn-chart-jump" onclick="jumpToChart('${item.symbol}')">
+          <td style="text-align:center; white-space:nowrap;">
+            <button class="btn-chart-jump" onclick="jumpToChart('${item.symbol}')" style="white-space:nowrap;">
               📈 Chart ➔
             </button>
           </td>
