@@ -587,10 +587,10 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
     for price in closes[1:]:
         ema9 = (price * k) + (ema9 * (1.0 - k))
 
-    # 2. Strict 5-Minute Opening Range (First Candle sets baseline)
-    first_candle = candles[0]
-    morning_high = first_candle["high"]
-    morning_low = first_candle["low"]
+    # 2. Strict Opening Range Baseline (First 3-6 candles 09:15-09:45, matching TradingView PMH/PML lines)
+    base_count = min(len(candles), 6)
+    morning_high = max(c["high"] for c in candles[:base_count])
+    morning_low = min(c["low"] for c in candles[:base_count])
 
     # 3. 5-minute Average Volume & RVOL
     valid_vols = [c["volume"] for c in candles if c["volume"] > 0]
@@ -613,7 +613,7 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             cum_vol += v
     vwap = round(cum_pv / cum_vol, 2) if cum_vol > 0 else round(latest_close, 2)
 
-    trading_candles = candles[1:]
+    trading_candles = candles[base_count:] if len(candles) > base_count else candles[1:]
     
     breakout_time = None
     is_breakout = False
@@ -626,10 +626,10 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
         vwap_dist_pct = ((live_price - vwap) / vwap) * 100.0 if vwap > 0 else 0.0
         is_overextended = vwap_dist_pct > 1.35 and activity_ratio >= 1.8
 
-        # Track Initial Breakout index
+        # Track Initial Breakout index (first candle closing cleanly above morning_high)
         initial_bo_idx = None
         for idx, c in enumerate(trading_candles):
-            if c["close"] >= morning_high * 0.999 or c["high"] >= morning_high * 1.0015:
+            if c["close"] > morning_high:
                 initial_bo_idx = idx
                 break
 
@@ -638,17 +638,18 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
         retest_confirmed_idx = None
 
         if initial_bo_idx is not None:
-            # Pullback towards PMH or EMA9
+            # Pullback towards PMH or EMA9 MUST occur in candles AFTER initial breakout
             for idx in range(initial_bo_idx + 1, len(trading_candles)):
                 c = trading_candles[idx]
-                if c["low"] <= morning_high * 1.012 or c["low"] <= ema9 * 1.004:
+                is_pullback = (c["close"] <= c["open"]) or (c["low"] <= morning_high * 1.008) or (c["low"] <= ema9 * 1.004)
+                if is_pullback and c["low"] <= morning_high * 1.015:
                     if c["close"] >= morning_low:  # guarded by PML
                         retest_pullback_idx = idx
                         break
 
-            # If pullback happened, look for solid green bounce confirmation with volume
+            # If pullback happened, confirmation MUST occur in candles AFTER the pullback candle
             if retest_pullback_idx is not None:
-                for idx in range(retest_pullback_idx, len(trading_candles)):
+                for idx in range(retest_pullback_idx + 1, len(trading_candles)):
                     c = trading_candles[idx]
                     body = abs(c["close"] - c["open"])
                     tot_range = max(0.01, c["high"] - c["low"])
@@ -657,7 +658,7 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                     has_vol = (c_vol >= avg_5m_vol * 0.65) or (activity_ratio >= 2.0)
                     if c["close"] > c["open"] and c["close"] > morning_high and c["close"] >= ema9 * 0.998 and solid_body and has_vol:
                         retest_confirmed_idx = idx
-                        break  # Lock onto the FIRST confirmed pivot!
+                        break  # Lock onto the FIRST confirmed bounce pivot!
 
         # Determine Bullish Status
         if retest_confirmed_idx is not None:
@@ -669,28 +670,33 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                 breakout_status = "Retest Confirmed"
                 retest_status = "Confirmed"
                 chart_structure = "Retest Bounce Wave"
+            elif latest_close < morning_low:
+                breakout_status = "Breakout Failed"
+                retest_status = "Failed"
+                chart_structure = "Failed Breakout"
+                is_breakout = False
             else:
                 breakout_status = "Testing Support"
                 retest_status = "Retesting"
-                chart_structure = "Fading PMH"
+                chart_structure = "Retesting PMH"
                 is_breakout = False
         elif retest_pullback_idx is not None and latest_close >= morning_low:
             breakout_status = "Retesting PMH"
             retest_status = "Retesting"
             chart_structure = "Testing Support"
             is_breakout = False
-        elif (live_price >= morning_high * 1.0015 and activity_ratio >= 2.0 and live_price >= ema9) or (latest_close >= morning_high * 0.998 and latest_close >= ema9):
-            initial_time = datetime.fromtimestamp(trading_candles[initial_bo_idx]["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p") if initial_bo_idx is not None else datetime.now(INDIA_TZ).strftime("%I:%M %p")
+        elif initial_bo_idx is not None and latest_close >= morning_high:
+            initial_time = datetime.fromtimestamp(trading_candles[initial_bo_idx]["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
             breakout_time = initial_time
             is_breakout = True
             if is_overextended:
-                breakout_status = "Breakout (Extended)"
+                breakout_status = "Breakout Spike (Extended)"
                 retest_status = "Extended"
                 chart_structure = "Extended Spike"
             else:
-                breakout_status = "Breakout"
+                breakout_status = "Breakout Spike"
                 retest_status = "Initial"
-                chart_structure = "Clean Breakout"
+                chart_structure = "Breakout Surge"
         elif latest_close >= morning_high * 0.992:
             breakout_status = "Near BO"
             retest_status = "Near"
@@ -701,10 +707,10 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
         vwap_dist_pct = ((vwap - live_price) / vwap) * 100.0 if vwap > 0 else 0.0
         is_overextended = vwap_dist_pct > 1.35 and activity_ratio >= 1.8
 
-        # Track Initial Breakdown index
+        # Track Initial Breakdown index (first candle closing cleanly below morning_low)
         initial_bd_idx = None
         for idx, c in enumerate(trading_candles):
-            if c["close"] <= morning_low * 1.001 or c["low"] <= morning_low * 0.9985:
+            if c["close"] < morning_low:
                 initial_bd_idx = idx
                 break
 
@@ -713,17 +719,18 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
         retest_confirmed_idx = None
 
         if initial_bd_idx is not None:
-            # Pullback up towards PML or EMA9
+            # Pullback up towards PML or EMA9 MUST occur in candles AFTER initial breakdown
             for idx in range(initial_bd_idx + 1, len(trading_candles)):
                 c = trading_candles[idx]
-                if c["high"] >= morning_low * 0.988 or c["high"] >= ema9 * 0.996:
+                is_pullback = (c["close"] >= c["open"]) or (c["high"] >= morning_low * 0.992) or (c["high"] >= ema9 * 0.996)
+                if is_pullback and c["high"] >= morning_low * 0.985:
                     if c["close"] <= morning_high:  # guarded by PMH
                         retest_pullback_idx = idx
                         break
 
-            # If pullback happened, look for solid red rejection confirmation with volume
+            # If pullback happened, rejection confirmation MUST occur in candles AFTER the pullback candle
             if retest_pullback_idx is not None:
-                for idx in range(retest_pullback_idx, len(trading_candles)):
+                for idx in range(retest_pullback_idx + 1, len(trading_candles)):
                     c = trading_candles[idx]
                     body = abs(c["close"] - c["open"])
                     tot_range = max(0.01, c["high"] - c["low"])
@@ -732,7 +739,7 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                     has_vol = (c_vol >= avg_5m_vol * 0.65) or (activity_ratio >= 2.0)
                     if c["close"] < c["open"] and c["close"] < morning_low and c["close"] <= ema9 * 1.002 and solid_body and has_vol:
                         retest_confirmed_idx = idx
-                        break  # Lock onto the FIRST confirmed pivot!
+                        break  # Lock onto the FIRST confirmed rejection pivot!
 
         # Determine Bearish Status
         if retest_confirmed_idx is not None:
@@ -744,28 +751,33 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                 breakout_status = "Retest Confirmed"
                 retest_status = "Confirmed"
                 chart_structure = "Retest Rejection Slide"
+            elif latest_close > morning_high:
+                breakout_status = "Breakdown Failed"
+                retest_status = "Failed"
+                chart_structure = "Failed Breakdown"
+                is_breakout = False
             else:
                 breakout_status = "Testing Resistance"
                 retest_status = "Retesting"
-                chart_structure = "Bouncing PML"
+                chart_structure = "Retesting PML"
                 is_breakout = False
         elif retest_pullback_idx is not None and latest_close <= morning_high:
             breakout_status = "Retesting PML"
             retest_status = "Retesting"
             chart_structure = "Testing Resistance"
             is_breakout = False
-        elif (live_price <= morning_low * 0.9985 and activity_ratio >= 2.0 and live_price <= ema9) or (latest_close <= morning_low * 1.002 and latest_close <= ema9):
-            initial_time = datetime.fromtimestamp(trading_candles[initial_bd_idx]["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p") if initial_bd_idx is not None else datetime.now(INDIA_TZ).strftime("%I:%M %p")
+        elif initial_bd_idx is not None and latest_close <= morning_low:
+            initial_time = datetime.fromtimestamp(trading_candles[initial_bd_idx]["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
             breakout_time = initial_time
             is_breakout = True
             if is_overextended:
-                breakout_status = "Breakdown (Extended)"
+                breakout_status = "Breakdown Spike (Extended)"
                 retest_status = "Extended"
                 chart_structure = "Extended Slide"
             else:
-                breakout_status = "Breakdown"
+                breakout_status = "Breakdown Spike"
                 retest_status = "Initial"
-                chart_structure = "Clean Breakdown"
+                chart_structure = "Breakdown Surge"
         elif latest_close <= morning_low * 1.008:
             breakout_status = "Near BD"
             retest_status = "Near"

@@ -1187,9 +1187,9 @@
           </div>
           <!-- Blank / Waiting state (default) -->
           <div id="topPickBlank" style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:6px 0; gap:4px;">
-            <div style="font-size:18px;">🔍</div>
-            <div style="font-size:11px; font-weight:700; color:#94a3b8; text-align:center; line-height:1.4;">No high-conviction<br>setup right now</div>
-            <div style="font-size:9px; color:#cbd5e1; font-weight:600; text-align:center;">Waiting for all 4 conditions</div>
+            <div style="font-size:18px;">⏳</div>
+            <div style="font-size:11px; font-weight:700; color:#475569; text-align:center; line-height:1.4;">No fresh setup (&lt; 30m)<br>active right now</div>
+            <div style="font-size:9px; color:#94a3b8; font-weight:600; text-align:center;">Disciplined Trader · Waiting for next clean pivot</div>
           </div>
           <!-- Active Trade Pick (only shown when all strict criteria are met) -->
           <div id="topPickActive" style="display:none;">
@@ -2024,6 +2024,29 @@
     const ceTrendBonus = _niftyPct >= 0.2 ? 1.5 : 1.0;
     const peTrendBonus = _niftyPct <= -0.2 ? 1.5 : 1.0;
 
+    // Freshness parser for Top Pick: Only setups within the last 30 minutes qualify
+    const currentClock = payload.market_clock_ist || new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: true });
+    const getBreakoutAgeMinutes = (boTimeStr, currentIstStr) => {
+      if (!boTimeStr || !currentIstStr) return 999;
+      const match = boTimeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+      if (!match) return 999;
+      let [ , h, m, ampm ] = match;
+      h = parseInt(h);
+      if (ampm && ampm.toUpperCase() === 'PM' && h < 12) h += 12;
+      if (ampm && ampm.toUpperCase() === 'AM' && h === 12) h = 0;
+      const boMinutes = h * 60 + parseInt(m);
+      
+      const cMatch = currentIstStr.match(/(\d+):(\d+)(?::(\d+))?\s*(AM|PM)?/i);
+      if (!cMatch) return 999;
+      let [ , ch, cm, , campm ] = cMatch;
+      ch = parseInt(ch);
+      if (campm && campm.toUpperCase() === 'PM' && ch < 12) ch += 12;
+      if (campm && campm.toUpperCase() === 'AM' && ch === 12) ch = 0;
+      const currentMinutes = ch * 60 + parseInt(cm);
+      const diff = currentMinutes - boMinutes;
+      return diff >= 0 ? diff : 999;
+    };
+
     // 2. Helper to find the absolute strongest candidate in a list using Weighted Score
     const getStrongestPick = (list, isPE, trendBonus) => {
       let bestPick = null;
@@ -2036,7 +2059,18 @@
         const gate3 = isPE ? (x.setup || "").toLowerCase().includes("short buildup") : (x.setup || "").toLowerCase().includes("long buildup");
         const gate4 = isPE ? (x.range_position_percent || 100) <= 15 : (x.range_position_percent || 0) >= 85;
 
-        if (gate1 && gate2 && gate3 && gate4) {
+        // Gate 5: Freshness Window (Max 30 minutes from breakout_time)
+        // Disqualify stale setups from 1-2 hours ago (e.g. 11:30 AM at 1:09 PM)
+        const boAge = getBreakoutAgeMinutes(x.breakout_time, currentClock);
+        const gate5 = boAge >= 0 && boAge <= 30;
+
+        // Gate 6: Exhaustion Guard (Do not chase at extreme bottom 4% or top 96%)
+        const gate6 = isPE ? ((x.range_position_percent || 0) >= 4.0) : ((x.range_position_percent || 100) <= 96.0);
+
+        // Gate 7: Overextension Check (Must not be an unconfirmed spike)
+        const gate7 = (x.retest_status !== "Extended") && !(x.five_min_status || "").includes("Extended");
+
+        if (gate1 && gate2 && gate3 && gate4 && gate5 && gate6 && gate7) {
           // Calculate Raw Strength: (Relative Volume) * (Range Momentum)
           const rvol = x.vc_ranking || 0;
           const rangeStrength = isPE ? (100 - (x.range_position_percent || 100)) : (x.range_position_percent || 0);
@@ -2132,12 +2166,12 @@
     } else {
       pickBlank.style.display = "flex";
       pickActive.style.display = "none";
-      pickCard.style.background = "#ffffff";
+      pickCard.style.background = "#f8fafc";
       pickCard.style.borderColor = "#e2e8f0";
-      pickLabel.style.color = "#64748b";
-      pickBadge.textContent = "SCANNING...";
-      pickBadge.style.background = "#f1f5f9";
-      pickBadge.style.color = "#64748b";
+      pickLabel.style.color = "#475569";
+      pickBadge.textContent = "PATIENT TRADER";
+      pickBadge.style.background = "#e2e8f0";
+      pickBadge.style.color = "#334155";
     }
 
     // Dynamic Summary Stats
