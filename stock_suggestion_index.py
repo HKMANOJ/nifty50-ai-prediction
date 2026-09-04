@@ -636,160 +636,194 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
 
     trading_candles = candles[orb_count:] if len(candles) > orb_count else candles[1:]
 
-    breakout_time = None
-    breakout_idx = None
-    is_breakout = False
-    breakout_status = "Consolidating"
-    chart_structure = "Base Building"
-    retest_status = "Initial"
+    morning_event = None
+    afternoon_event = None
+    last_wave_idx = -999
+
+    for idx, c in enumerate(trading_candles):
+        actual_idx = orb_count + idx
+        dt = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ)
+        t_str = dt.strftime("%I:%M %p")
+        time_minutes = dt.hour * 60 + dt.minute
+
+        # Intraday breakout entries must occur before 02:45 PM
+        if time_minutes > (14 * 60 + 45):
+            continue
+
+        prior_vols = [x["volume"] for x in candles[max(0, actual_idx - 20):actual_idx] if x["volume"] > 0]
+        r_avg = sum(prior_vols) / len(prior_vols) if prior_vols else avg_5m_vol
+        c_rvol = c.get("volume", 0) / r_avg if r_avg > 0 else 1.0
+        solid = is_solid_directional_candle(c, is_bullish=(side == "bullish"))
+        if not solid:
+            continue
+
+        if side == "bullish":
+            # A. Morning 15m ORB Breakout (09:30 AM - 10:15 AM)
+            is_orb = (c["close"] > orb_high) and (c_rvol >= 1.2 or activity_ratio >= 2.5)
+
+            # B. Mid-day / Afternoon Dynamic Consolidation Box
+            box_len = min(12, max(6, actual_idx - max(0, last_wave_idx)))
+            box_slice = candles[max(0, actual_idx - box_len):actual_idx]
+            box_h = max(x["high"] for x in box_slice) if box_slice else orb_high
+            box_l = min(x["low"] for x in box_slice) if box_slice else orb_low
+            box_rng = ((box_h - box_l) / box_l) * 100.0 if box_l > 0 else 10.0
+            prev_dh = max(x["high"] for x in candles[:actual_idx])
+            is_box = (actual_idx >= 8) and (c["close"] > box_h) and (box_rng < 2.5 or c["close"] > prev_dh) and (c_rvol >= 1.3 or c.get("volume", 0) > avg_5m_vol * 1.5)
+
+            if is_orb and morning_event is None and actual_idx <= 12:
+                morning_event = {
+                    "idx": idx,
+                    "actual_idx": actual_idx,
+                    "time": t_str,
+                    "price": c["close"],
+                    "rvol": c_rvol,
+                    "volume": c.get("volume", 0),
+                    "type": "⚡ Fresh Breakout",
+                }
+                last_wave_idx = actual_idx
+            elif is_box:
+                is_afternoon_session = (time_minutes >= 12 * 60)
+                if (actual_idx - last_wave_idx >= 6):
+                    if is_afternoon_session or not afternoon_event:
+                        afternoon_event = {
+                            "idx": idx,
+                            "actual_idx": actual_idx,
+                            "time": t_str,
+                            "price": c["close"],
+                            "rvol": c_rvol,
+                            "volume": c.get("volume", 0),
+                            "type": "⚡ Afternoon Breakout",
+                        }
+                        last_wave_idx = actual_idx
+                elif afternoon_event and (actual_idx - afternoon_event["actual_idx"] <= 3):
+                    if c_rvol > afternoon_event["rvol"]:
+                        afternoon_event["rvol"] = c_rvol
+
+        else:  # Bearish
+            # A. Morning 15m ORB Breakdown (09:30 AM - 10:15 AM)
+            is_orb = (c["close"] < orb_low) and (c_rvol >= 1.2 or activity_ratio >= 2.5)
+
+            # B. Mid-day / Afternoon Dynamic Consolidation Box
+            box_len = min(12, max(6, actual_idx - max(0, last_wave_idx)))
+            box_slice = candles[max(0, actual_idx - box_len):actual_idx]
+            box_h = max(x["high"] for x in box_slice) if box_slice else orb_high
+            box_l = min(x["low"] for x in box_slice) if box_slice else orb_low
+            box_rng = ((box_h - box_l) / box_l) * 100.0 if box_l > 0 else 10.0
+            prev_dl = min(x["low"] for x in candles[:actual_idx])
+            is_box = (actual_idx >= 8) and (c["close"] < box_l) and (box_rng < 2.5 or c["close"] < prev_dl) and (c_rvol >= 1.3 or c.get("volume", 0) > avg_5m_vol * 1.5)
+
+            if is_orb and morning_event is None and actual_idx <= 12:
+                morning_event = {
+                    "idx": idx,
+                    "actual_idx": actual_idx,
+                    "time": t_str,
+                    "price": c["close"],
+                    "rvol": c_rvol,
+                    "volume": c.get("volume", 0),
+                    "type": "⚡ Fresh Breakdown",
+                }
+                last_wave_idx = actual_idx
+            elif is_box:
+                is_afternoon_session = (time_minutes >= 12 * 60)
+                if (actual_idx - last_wave_idx >= 6):
+                    if is_afternoon_session or not afternoon_event:
+                        afternoon_event = {
+                            "idx": idx,
+                            "actual_idx": actual_idx,
+                            "time": t_str,
+                            "price": c["close"],
+                            "rvol": c_rvol,
+                            "volume": c.get("volume", 0),
+                            "type": "⚡ Afternoon Breakdown",
+                        }
+                        last_wave_idx = actual_idx
+                elif afternoon_event and (actual_idx - afternoon_event["actual_idx"] <= 3):
+                    if c_rvol > afternoon_event["rvol"]:
+                        afternoon_event["rvol"] = c_rvol
+
+    active_event = afternoon_event or morning_event
+    if not active_event:
+        is_near = (latest_close >= orb_high * 0.992) if side == "bullish" else (latest_close <= orb_low * 1.008)
+        return {
+            "is_breakout": False,
+            "status": ("Near BO" if side == "bullish" else "Near BD") if is_near else "Consolidating",
+            "breakout_time": None,
+            "rvol_5m": 1.0,
+            "ema_trend": "bullish" if latest_close >= ema9 else "bearish",
+            "chart_structure": ("Testing Resistance" if side == "bullish" else "Testing Support") if is_near else "Base Building",
+            "is_failed_trend": False,
+            "vwap": vwap,
+            "retest_status": "Near" if is_near else "Initial",
+        }
+
+    # Evaluate Retest or Trend Failure after the active breakout
+    breakout_status = active_event["type"]
+    retest_status = "Fresh"
+    chart_structure = "Breakout Surge" if side == "bullish" else "Breakdown Slide"
+    is_breakout = True
     is_failed_trend = False
+    ref_price = active_event["price"]
+    breakout_time = active_event["time"]
 
+    for idx in range(active_event["idx"] + 1, len(trading_candles)):
+        c = trading_candles[idx]
+        prior_vols = [x["volume"] for x in candles[max(0, orb_count + idx - 20):orb_count + idx] if x["volume"] > 0]
+        r_avg = sum(prior_vols) / len(prior_vols) if prior_vols else avg_5m_vol
+        c_rvol = c.get("volume", 0) / r_avg if r_avg > 0 else 1.0
+
+        if side == "bullish":
+            is_pullback = (c["low"] <= ref_price * 1.006) or (c["low"] <= ema9 * 1.004)
+            if is_pullback and c["close"] > c["open"] and c["close"] >= ref_price * 0.998 and is_solid_directional_candle(c, is_bullish=True) and c_rvol >= 0.75:
+                breakout_status = "Retest Confirmed"
+                retest_status = "Confirmed"
+                chart_structure = "Retest Bounce Wave"
+                break
+        else:
+            is_pullback = (c["high"] >= ref_price * 0.994) or (c["high"] >= ema9 * 0.996)
+            if is_pullback and c["close"] < c["open"] and c["close"] <= ref_price * 1.002 and is_solid_directional_candle(c, is_bullish=False) and c_rvol >= 0.75:
+                breakout_status = "Retest Confirmed"
+                retest_status = "Confirmed"
+                chart_structure = "Retest Rejection Slide"
+                break
+
+    # Stop loss check
     if side == "bullish":
-        # Scan for Initial 15m ORB Breakout or Afternoon Dynamic Box Breakout
-        for idx, c in enumerate(trading_candles):
-            actual_candle_idx = orb_count + idx
-            prior_vols = [x["volume"] for x in candles[max(0, actual_candle_idx - 20):actual_candle_idx] if x["volume"] > 0]
-            r_avg = sum(prior_vols) / len(prior_vols) if prior_vols else avg_5m_vol
-            c_rvol = c.get("volume", 0) / r_avg if r_avg > 0 else 1.0
-
-            # A. Morning 15m ORB Breakout (09:30 AM - 10:30 AM)
-            is_orb_break = (c["close"] > orb_high) and is_solid_directional_candle(c, is_bullish=True) and (c_rvol >= 1.2 or activity_ratio >= 2.5)
-
-            # B. Mid-day / Afternoon Dynamic Consolidation Box (after 10:30 AM)
-            is_box_break = False
-            if actual_candle_idx >= 15:
-                box_slice = candles[max(0, actual_candle_idx - 12):actual_candle_idx]
-                box_h = max(x["high"] for x in box_slice)
-                box_l = min(x["low"] for x in box_slice)
-                box_range_pct = ((box_h - box_l) / box_l) * 100.0 if box_l > 0 else 10.0
-                if (box_range_pct < 2.2 or c["close"] > day_high) and c["close"] > box_h and is_solid_directional_candle(c, is_bullish=True) and (c_rvol >= 1.3 or c.get("volume", 0) > avg_5m_vol * 1.5):
-                    is_box_break = True
-
-            if is_orb_break or is_box_break:
-                breakout_idx = idx
-                breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
-                breakout_status = "⚡ Fresh Breakout"
-                retest_status = "Fresh"
-                chart_structure = "Breakout Surge"
-                is_breakout = True
-                break  # Lock onto the first valid clean breakout pivot!
-
-        # If breakout occurred, check for retest confirmation or stop loss
-        if breakout_idx is not None:
-            for idx in range(breakout_idx + 1, len(trading_candles)):
-                c = trading_candles[idx]
-                prior_vols = [x["volume"] for x in candles[max(0, orb_count + idx - 20):orb_count + idx] if x["volume"] > 0]
-                r_avg = sum(prior_vols) / len(prior_vols) if prior_vols else avg_5m_vol
-                c_rvol = c.get("volume", 0) / r_avg if r_avg > 0 else 1.0
-                
-                # Pullback towards ORB High or EMA9
-                is_pullback = (c["low"] <= orb_high * 1.008) or (c["low"] <= ema9 * 1.004)
-                # Bounce confirmation: solid green candle holding above ORB High
-                if is_pullback and c["close"] > c["open"] and c["close"] >= orb_high and is_solid_directional_candle(c, is_bullish=True) and (c_rvol >= 1.0 or c_rvol >= 0.75):
-                    breakout_status = "Retest Confirmed"
-                    retest_status = "Confirmed"
-                    chart_structure = "Retest Bounce Wave"
-                    breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
-                    break
-
-            # If latest close falls back below Stop Loss (ORB Low), failed!
-            if latest_close < orb_low:
-                breakout_status = "Breakout Failed"
-                retest_status = "Failed"
-                chart_structure = "Failed Breakout"
-                is_breakout = False
-                is_failed_trend = True
-            elif latest_close >= orb_high * 0.995:
-                is_breakout = True
-            else:
-                breakout_status = "Testing Support"
-                retest_status = "Retesting"
-                chart_structure = "Testing Support"
-                is_breakout = False
-
-        elif latest_close >= orb_high * 0.992:
-            breakout_status = "Near BO"
-            retest_status = "Near"
-            chart_structure = "Testing Resistance"
-
-    else:  # Bearish
-        # Scan for Initial 15m ORB Breakdown or Afternoon Dynamic Box Breakdown
-        for idx, c in enumerate(trading_candles):
-            actual_candle_idx = orb_count + idx
-            prior_vols = [x["volume"] for x in candles[max(0, actual_candle_idx - 20):actual_candle_idx] if x["volume"] > 0]
-            r_avg = sum(prior_vols) / len(prior_vols) if prior_vols else avg_5m_vol
-            c_rvol = c.get("volume", 0) / r_avg if r_avg > 0 else 1.0
-
-            # A. Morning 15m ORB Breakdown (09:30 AM - 10:30 AM)
-            is_orb_break = (c["close"] < orb_low) and is_solid_directional_candle(c, is_bullish=False) and (c_rvol >= 1.2 or activity_ratio >= 2.5)
-
-            # B. Mid-day / Afternoon Dynamic Consolidation Box (after 10:30 AM)
-            is_box_break = False
-            if actual_candle_idx >= 15:
-                box_slice = candles[max(0, actual_candle_idx - 12):actual_candle_idx]
-                box_h = max(x["high"] for x in box_slice)
-                box_l = min(x["low"] for x in box_slice)
-                box_range_pct = ((box_h - box_l) / box_l) * 100.0 if box_l > 0 else 10.0
-                if (box_range_pct < 2.2 or c["close"] < day_low) and c["close"] < box_l and is_solid_directional_candle(c, is_bullish=False) and (c_rvol >= 1.3 or c.get("volume", 0) > avg_5m_vol * 1.5):
-                    is_box_break = True
-
-            if is_orb_break or is_box_break:
-                breakout_idx = idx
-                breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
-                breakout_status = "⚡ Fresh Breakdown"
-                retest_status = "Fresh"
-                chart_structure = "Breakdown Surge"
-                is_breakout = True
-                break  # Lock onto the first valid clean breakdown pivot!
-
-        # If breakdown occurred, check for retest confirmation or stop loss
-        if breakout_idx is not None:
-            for idx in range(breakout_idx + 1, len(trading_candles)):
-                c = trading_candles[idx]
-                prior_vols = [x["volume"] for x in candles[max(0, orb_count + idx - 20):orb_count + idx] if x["volume"] > 0]
-                r_avg = sum(prior_vols) / len(prior_vols) if prior_vols else avg_5m_vol
-                c_rvol = c.get("volume", 0) / r_avg if r_avg > 0 else 1.0
-                
-                # Pullback towards ORB Low or EMA9
-                is_pullback = (c["high"] >= orb_low * 0.992) or (c["high"] >= ema9 * 0.996)
-                # Rejection confirmation: solid red candle closing below ORB Low
-                if is_pullback and c["close"] < c["open"] and c["close"] <= orb_low and is_solid_directional_candle(c, is_bullish=False) and (c_rvol >= 1.0 or c_rvol >= 0.75):
-                    breakout_status = "Retest Confirmed"
-                    retest_status = "Confirmed"
-                    chart_structure = "Retest Rejection Slide"
-                    breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
-                    break
-
-            # If latest close rises back above Stop Loss (ORB High), failed!
-            if latest_close > orb_high:
-                breakout_status = "Breakdown Failed"
-                retest_status = "Failed"
-                chart_structure = "Failed Breakdown"
-                is_breakout = False
-                is_failed_trend = True
-            elif latest_close <= orb_low * 1.005:
-                is_breakout = True
-            else:
-                breakout_status = "Testing Resistance"
-                retest_status = "Retesting"
-                chart_structure = "Testing Resistance"
-                is_breakout = False
-
-        elif latest_close <= orb_low * 1.008:
-            breakout_status = "Near BD"
-            retest_status = "Near"
+        if latest_close < orb_low or latest_close < ref_price * 0.985:
+            breakout_status = "Breakout Failed"
+            retest_status = "Failed"
+            chart_structure = "Failed Breakout"
+            is_breakout = False
+            is_failed_trend = True
+        elif latest_close < ref_price * 0.995:
+            breakout_status = "Testing Support"
+            retest_status = "Retesting"
             chart_structure = "Testing Support"
+            is_breakout = False
+    else:
+        if latest_close > orb_high or latest_close > ref_price * 1.015:
+            breakout_status = "Breakdown Failed"
+            retest_status = "Failed"
+            chart_structure = "Failed Breakdown"
+            is_breakout = False
+            is_failed_trend = True
+        elif latest_close > ref_price * 1.005:
+            breakout_status = "Testing Resistance"
+            retest_status = "Retesting"
+            chart_structure = "Testing Resistance"
+            is_breakout = False
 
     return {
         "is_breakout": is_breakout,
         "status": breakout_status,
         "breakout_time": breakout_time,
-        "rvol_5m": round(latest_rvol, 2),
+        "rvol_5m": round(active_event["rvol"], 2),
         "ema_trend": "bullish" if latest_close >= ema9 else "bearish",
         "chart_structure": chart_structure,
         "is_failed_trend": is_failed_trend,
         "vwap": vwap,
         "retest_status": retest_status,
+        "morning_breakout_time": morning_event["time"] if morning_event else None,
+        "afternoon_breakout_time": afternoon_event["time"] if afternoon_event else None,
     }
 
 
@@ -1008,7 +1042,7 @@ def assess_one_side_rally(
     tags.append(note)
 
     score_int = int(round(max(0, min(100, score))))
-    is_priority = score_int >= 75 and (range_pos is None or range_pos >= 0.60 if side == "bullish" else range_pos <= 0.40) and activity_ratio >= 1.1
+    is_priority = score_int >= 75 and (range_pos is None or range_pos >= 0.55 if side == "bullish" else range_pos <= 0.45) and (activity_ratio >= 0.8 or score_int >= 85)
     one_side = score_int >= MIN_ONE_SIDE_SCORE and not blockers
     status = "Priority Rally" if (one_side and is_priority) else "Rally Watch" if one_side else "Filtered"
     rally_type = "One-side bullish rally" if side == "bullish" else "One-side bearish slide"
@@ -1206,7 +1240,7 @@ def build_suggestions(
                 move_from_open_percent=rally["move_from_open_percent"],
                 index_context=rally["index_context"],
                 quality_tags=quality_tags,
-                status=rally["status"] or status_from_score(rally_score, setup),
+                status="Priority Rally" if (is_breakout and rally_score >= 75) else (rally["status"] or status_from_score(rally_score, setup)),
                 reason=" | ".join(reason_parts),
                 vc_ranking=vc_ranking,
                 mp_score=mp_score,

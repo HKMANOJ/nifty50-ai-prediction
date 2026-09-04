@@ -1997,10 +1997,15 @@
     list.forEach(x => {
       // Only suppress alert if explicitly marked Extended without being Fresh
       const isExt = (x.retest_status === "Extended");
-      const isFresh = (x.retest_status === "Fresh") || (x.five_min_status || "").includes("Fresh");
-      const hasVol = ((x.vc_ranking || 0) >= 1.8) || ((x.rvol_5m || 0) >= 1.2);
+      const isFresh = (x.retest_status === "Fresh") || 
+                      (x.five_min_status || "").includes("Fresh") || 
+                      (x.five_min_status || "").includes("Afternoon") || 
+                      (x.five_min_status || "").includes("Breakout") || 
+                      (x.five_min_status || "").includes("Breakdown");
+      const hasVol = ((x.vc_ranking || 0) >= 1.5) || ((x.rvol_5m || 0) >= 1.2);
+      const isEligibleStatus = (x.status === "Priority Rally" || x.status === "Rally Watch" || (x.score || 0) >= 70);
 
-      if (x.is_breakout && x.status === "Priority Rally" && hasVol && (!isExt || isFresh)) {
+      if (x.is_breakout && isEligibleStatus && hasVol && (!isExt || isFresh)) {
         // Enforce strict 15-minute time window
         if (!isInitialLoad && !isRecentBreakout(x.breakout_time, currentIstStr)) {
           return; // Skip stale alerts completely
@@ -2033,14 +2038,28 @@
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
     const isRetest = (x.retest_status === "Confirmed") || (x.five_min_status || "").includes("Retest Confirmed");
-    const isFresh = (x.retest_status === "Fresh") || (x.five_min_status || "").includes("Fresh");
-    const subTitle = isFresh ? (isPE ? "⚡ FRESH DIRECTIONAL BREAKDOWN" : "⚡ FRESH DIRECTIONAL BREAKOUT") : (isRetest ? "🎯 RETEST CONFIRMED (Pullback Entry)" : "BREAKOUT CONFIRMED");
-    const subColor = isFresh ? (isPE ? "#dc2626" : "#16a34a") : (isRetest ? "#7e22ce" : "#2563eb");
+    const isAfternoon = (x.five_min_status || "").includes("Afternoon");
+    const isFresh = (x.retest_status === "Fresh") || (x.five_min_status || "").includes("Fresh") || isAfternoon;
+    
+    let subTitle = "BREAKOUT CONFIRMED";
+    let subColor = "#2563eb";
+    if (isAfternoon) {
+      subTitle = isPE ? "⚡ AFTERNOON SURGE BREAKDOWN" : "⚡ AFTERNOON SURGE BREAKOUT";
+      subColor = "#eab308";
+    } else if (isFresh) {
+      subTitle = isPE ? "⚡ FRESH DIRECTIONAL BREAKDOWN" : "⚡ FRESH DIRECTIONAL BREAKOUT";
+      subColor = isPE ? "#dc2626" : "#16a34a";
+    } else if (isRetest) {
+      subTitle = "🎯 RETEST CONFIRMED (Pullback Entry)";
+      subColor = "#7e22ce";
+    }
+
+    const rvolDisplay = (x.rvol_5m ? `${x.rvol_5m.toFixed(1)}x` : (x.vc_ranking ? `${x.vc_ranking.toFixed(1)}x` : "--"));
     toast.innerHTML = `
       <div>
         <div class="toast-title ${type}">🚨 ${x.symbol} - ${typeName}</div>
         <div style="font-size:10px; font-weight:800; color:${subColor}; margin:2px 0;">${subTitle}</div>
-        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})<br/>Volume: ${(x.vc_ranking||0).toFixed(1)}x · VWAP: ₹${x.vwap || '--'}</div>
+        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})<br/>5m RVOL: ${rvolDisplay} · VWAP: ₹${x.vwap || '--'}</div>
       </div>
       <button class="toast-close">✖</button>
     `;
