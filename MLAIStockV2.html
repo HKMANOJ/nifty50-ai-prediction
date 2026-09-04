@@ -970,26 +970,55 @@
       }
     }
 
-    /* Mobile Phones (under 640px) */
-    @media (max-width: 640px) {
+    /* Mobile Phones & Small Tablets (under 768px) */
+    @media (max-width: 768px) {
       .top-navbar {
         padding: 8px 12px;
-        flex-wrap: wrap;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
         gap: 8px;
+        position: sticky;
+        top: 0;
+        z-index: 50;
+      }
+
+      .top-navbar-row1 {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
       }
 
       .navbar-status {
         width: 100%;
-        justify-content: space-between;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+        flex-wrap: nowrap;
+      }
+
+      .navbar-status::-webkit-scrollbar {
+        display: none;
+      }
+
+      .navbar-status > * {
+        flex-shrink: 0;
+        white-space: nowrap;
       }
 
       .navbar-ticker {
-        gap: 8px;
+        gap: 6px;
       }
 
       .ticker-chip {
-        font-size: 11px;
-        padding: 4px 8px;
+        font-size: 10.5px;
+        padding: 3px 6px;
       }
 
       .metrics-row {
@@ -999,6 +1028,7 @@
 
       .chart-container {
         height: 320px;
+        width: 100%;
       }
 
       .chart-panel-header {
@@ -1007,13 +1037,15 @@
         gap: 8px;
       }
 
-      .table-card-body {
+      .table-wrapper {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+        width: 100%;
       }
 
-      .scanner-table {
-        min-width: 780px;
+      table.vc-table {
+        min-width: 820px;
+        width: 100%;
       }
     }
   </style>
@@ -1082,37 +1114,39 @@
   <main class="main-canvas">
     <!-- Top Navbar Bar -->
     <header class="top-navbar">
-      <div style="display:flex; align-items:center; gap:12px;">
-        <button class="mobile-nav-toggle" id="mobileNavToggle" title="Open Menu">
-          <span class="bar"></span>
-          <span class="bar"></span>
-          <span class="bar"></span>
-        </button>
-        <div class="navbar-ticker">
-          <div class="ticker-chip up">
-            <span>NIFTY 50</span>
-            <span class="val" id="niftyVal">--</span>
-          </div>
-          <div class="ticker-chip up">
-            <span>BANK NIFTY</span>
-            <span class="val" id="bankVal">--</span>
+      <div class="top-navbar-row1">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button class="mobile-nav-toggle" id="mobileNavToggle" title="Open Menu">
+            <span class="bar"></span>
+            <span class="bar"></span>
+            <span class="bar"></span>
+          </button>
+          <div class="navbar-ticker">
+            <div class="ticker-chip up">
+              <span>NIFTY 50</span>
+              <span class="val" id="niftyVal">--</span>
+            </div>
+            <div class="ticker-chip up">
+              <span>BANK NIFTY</span>
+              <span class="val" id="bankVal">--</span>
+            </div>
           </div>
         </div>
+        <button class="refresh-pill-btn" id="refreshBtn" type="button">⚡ Refresh Live</button>
       </div>
 
       <div class="navbar-status">
-        <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px;" title="Real-Time WebSocket Push Engine (0ms Latency)">
-          <span id="wsStatusDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#16a34a;"></span>
-          <span id="wsStatusText">WS: Connecting...</span>
-        </span>
-        <span id="autoScanBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:inline-flex; align-items:center; gap:6px;" title="Background Engine automatically rescans 200+ NSE F&O stocks every 5 minutes during market hours">
+        <button id="soundToggleBtn" style="background:#f1f5f9; color:#64748b; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #e2e8f0; cursor:pointer; display:inline-flex; align-items:center; flex-shrink:0;">🔕 Alerts OFF</button>
+        <span id="autoScanBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:inline-flex; align-items:center; gap:6px; flex-shrink:0;" title="Background Engine automatically rescans 200+ NSE F&O stocks every 5 minutes during market hours">
           <span id="autoScanDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#2563eb;"></span>
-          <span id="autoScanText">Auto-Scan: 5m Active</span>
+          <span id="autoScanText">Auto: 5m Active</span>
         </span>
-        <button id="soundToggleBtn" style="background:#f1f5f9; color:#64748b; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #e2e8f0; cursor:pointer; display:inline-flex; align-items:center;">🔕 Alerts OFF</button>
-        <span class="status-badge live" id="liveStatusBadge">● Live Real-Time Data</span>
-        <span style="font-size:12px; color:var(--text-muted); font-family:var(--font-mono);" id="marketClock">Clock --</span>
-        <button class="refresh-pill-btn" id="refreshBtn" type="button">⚡ Refresh Live</button>
+        <span class="status-badge live" id="liveStatusBadge" style="flex-shrink:0;">● Live Real-Time Data</span>
+        <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px; flex-shrink:0;" title="Real-Time WebSocket Push Engine (0ms Latency)">
+          <span id="wsStatusDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#16a34a;"></span>
+          <span id="wsStatusText">WS: Push Live</span>
+        </span>
+        <span style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); flex-shrink:0;" id="marketClock">Clock --</span>
       </div>
     </header>
 
@@ -1391,16 +1425,62 @@
   const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8001" : "";
   const refreshBtn = document.getElementById("refreshBtn");
   
+    let _currentBullish = [];
+  let _currentBearish = [];
+  let _activeTab = "bullish";
+  let _soundAlertsEnabled = false;
+  let _initialDataLoaded = false;
+  const _alertedBreakouts = new Set();
+
+  /* ── Universal Web Audio Engine (Unlocked for iOS Safari & Android Mobile) ── */
+  let _globalAudioCtx = null;
+  let _audioUnlocked = false;
+
+  function getAudioContext() {
+    if (!_globalAudioCtx) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        _globalAudioCtx = new AudioContextClass();
+      }
+    }
+    return _globalAudioCtx;
+  }
+
+  function unlockAudioEngine() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+    if (!_audioUnlocked) {
+      try {
+        // Play 1-sample silent buffer to unlock iOS hardware audio pipeline
+        const buffer = ctx.createBuffer(1, 1, 22050);
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(ctx.destination);
+        src.start(0);
+        _audioUnlocked = true;
+      } catch (e) {}
+    }
+  }
+
+  // Pre-unlock on any user interaction on mobile
+  ["touchstart", "touchend", "click"].forEach(evt => {
+    document.addEventListener(evt, unlockAudioEngine, { passive: true });
+  });
+
   const soundToggleBtn = document.getElementById("soundToggleBtn");
   if (soundToggleBtn) {
     soundToggleBtn.addEventListener("click", () => {
+      unlockAudioEngine();
       _soundAlertsEnabled = !_soundAlertsEnabled;
       if (_soundAlertsEnabled) {
         soundToggleBtn.innerHTML = "🔔 Alerts ON";
         soundToggleBtn.style.background = "#dbeafe";
         soundToggleBtn.style.color = "#1d4ed8";
         soundToggleBtn.style.borderColor = "#bfdbfe";
-        playAlertDing(); // Test sound
+        playAlertDing(); // Instant test ding so user confirms speaker is on
       } else {
         soundToggleBtn.innerHTML = "🔕 Alerts OFF";
         soundToggleBtn.style.background = "#f1f5f9";
@@ -1410,37 +1490,49 @@
     });
   }
 
-  
-  let _currentBullish = [];
-  let _currentBearish = [];
-  let _activeTab = "bullish";
-  let _soundAlertsEnabled = false;
-  let _initialDataLoaded = false;
-  const _alertedBreakouts = new Set();
-
   function playAlertDing() {
     if (!_soundAlertsEnabled) return;
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = "sine"; osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(1, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
-      
-      setTimeout(() => {
-        const osc2 = ctx.createOscillator(); const gain2 = ctx.createGain();
-        osc2.connect(gain2); gain2.connect(ctx.destination);
-        osc2.type = "sine"; osc2.frequency.setValueAtTime(1108.73, ctx.currentTime);
-        gain2.gain.setValueAtTime(1, ctx.currentTime);
-        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-        osc2.start(ctx.currentTime); osc2.stop(ctx.currentTime + 0.5);
-      }, 150);
-    } catch(e) { console.error("Audio error", e); }
-  }
+    unlockAudioEngine();
+    const ctx = getAudioContext();
+    if (!ctx) return;
 
+    const executeDing = () => {
+      try {
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = "sine"; osc.frequency.setValueAtTime(880, now);
+        gain.gain.setValueAtTime(0.85, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+        osc.start(now); osc.stop(now + 0.45);
+        
+        setTimeout(() => {
+          try {
+            const now2 = ctx.currentTime;
+            const osc2 = ctx.createOscillator(); const gain2 = ctx.createGain();
+            osc2.connect(gain2); gain2.connect(ctx.destination);
+            osc2.type = "sine"; osc2.frequency.setValueAtTime(1174.66, now2);
+            gain2.gain.setValueAtTime(0.95, now2);
+            gain2.gain.exponentialRampToValueAtTime(0.0001, now2 + 0.55);
+            osc2.start(now2); osc2.stop(now2 + 0.55);
+          } catch (e) {}
+        }, 110);
+
+        if (navigator.vibrate) {
+          navigator.vibrate([150, 80, 150]);
+        }
+      } catch (err) {
+        console.warn("Audio playback error:", err);
+      }
+    };
+
+    if (ctx.state === "suspended") {
+      ctx.resume().then(executeDing).catch(executeDing);
+    } else {
+      executeDing();
+    }
+  }
 
   function isRecentBreakout(boTimeStr, currentIstStr) {
     if (!boTimeStr || !currentIstStr) return false;
@@ -1672,6 +1764,16 @@
 
       if (_candleSeries && _tvChart) {
         _candleSeries.setData(data.candles);
+        
+        // Reset scale and autoscale properly for new symbol on mobile
+        _tvChart.timeScale().resetTimeScale();
+        _tvChart.priceScale('right').applyOptions({ autoScale: true });
+        _tvChart.timeScale().fitContent();
+
+        const cContainer = document.getElementById("tvCandleContainer");
+        if (cContainer && cContainer.clientWidth > 50) {
+          _tvChart.applyOptions({ width: cContainer.clientWidth });
+        }
 
         // Add PMH (Prior Day High) & PML (Prior Day Low) blue price lines
         if (_pmhLine) {
