@@ -839,8 +839,8 @@
     .bo-status-pill.bd { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
     .bo-status-pill.near { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
     .bo-status-pill.wait { background: #f1f5f9; color: var(--text-muted); }
-    .bo-status-pill.retest { background: #f0fdfa; color: #0f766e; border: 1px solid #2dd4bf; font-weight:900; box-shadow: 0 0 6px rgba(20, 184, 166, 0.25); }
-    .bo-status-pill.retest-bd { background: #f0fdfa; color: #0f766e; border: 1px solid #2dd4bf; font-weight:900; box-shadow: 0 0 6px rgba(20, 184, 166, 0.25); }
+    .bo-status-pill.retest { background: #f5f3ff; color: #6d28d9; border: 1.5px solid #a855f7; font-weight:900; box-shadow: 0 0 6px rgba(168, 85, 247, 0.25); }
+    .bo-status-pill.retest-bd { background: #f5f3ff; color: #6d28d9; border: 1.5px solid #a855f7; font-weight:900; box-shadow: 0 0 6px rgba(168, 85, 247, 0.25); }
     .bo-status-pill.extended { background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; }
     .bo-status-pill.pullback { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
 
@@ -1586,7 +1586,7 @@
     toast.className = `toast ${type}`;
     const isRetest = (x.retest_status === "Confirmed") || (x.five_min_status || "").includes("Retest Confirmed");
     const subTitle = isRetest ? "🎯 RETEST CONFIRMED (Sniper Entry)" : "BREAKOUT CONFIRMED";
-    const subColor = isRetest ? "#0f766e" : "#2563eb";
+    const subColor = isRetest ? "#6d28d9" : "#2563eb";
     toast.innerHTML = `
       <div>
         <div class="toast-title ${type}">🚨 ${x.symbol} - ${typeName}</div>
