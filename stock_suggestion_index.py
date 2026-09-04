@@ -646,17 +646,23 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                         retest_pullback_idx = idx
                         break
 
-            # If pullback happened, look for green bounce / retest confirmation
+            # If pullback happened, look for solid green bounce confirmation with volume
             if retest_pullback_idx is not None:
                 for idx in range(retest_pullback_idx, len(trading_candles)):
                     c = trading_candles[idx]
-                    if c["close"] > c["open"] and c["close"] >= morning_high * 0.999 and c["close"] >= ema9 * 0.998:
+                    body = abs(c["close"] - c["open"])
+                    tot_range = max(0.01, c["high"] - c["low"])
+                    solid_body = (body >= tot_range * 0.35)
+                    c_vol = c.get("volume", 0)
+                    has_vol = (c_vol >= avg_5m_vol * 0.65) or (activity_ratio >= 2.0)
+                    if c["close"] > c["open"] and c["close"] > morning_high and c["close"] >= ema9 * 0.998 and solid_body and has_vol:
                         retest_confirmed_idx = idx
                         break  # Lock onto the FIRST confirmed pivot!
 
         # Determine Bullish Status
         if retest_confirmed_idx is not None:
-            if latest_close >= morning_high * 0.996:
+            # Strictly holding above PMH and strictly above VWAP
+            if latest_close >= morning_high and (vwap is None or live_price >= vwap * 0.998):
                 conf_candle = trading_candles[retest_confirmed_idx]
                 breakout_time = datetime.fromtimestamp(conf_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 is_breakout = True
@@ -715,17 +721,23 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                         retest_pullback_idx = idx
                         break
 
-            # If pullback happened, look for red rejection / retest confirmation
+            # If pullback happened, look for solid red rejection confirmation with volume
             if retest_pullback_idx is not None:
                 for idx in range(retest_pullback_idx, len(trading_candles)):
                     c = trading_candles[idx]
-                    if c["close"] < c["open"] and c["close"] <= morning_low * 1.002 and c["close"] <= ema9 * 1.002:
+                    body = abs(c["close"] - c["open"])
+                    tot_range = max(0.01, c["high"] - c["low"])
+                    solid_body = (body >= tot_range * 0.35)
+                    c_vol = c.get("volume", 0)
+                    has_vol = (c_vol >= avg_5m_vol * 0.65) or (activity_ratio >= 2.0)
+                    if c["close"] < c["open"] and c["close"] < morning_low and c["close"] <= ema9 * 1.002 and solid_body and has_vol:
                         retest_confirmed_idx = idx
                         break  # Lock onto the FIRST confirmed pivot!
 
         # Determine Bearish Status
         if retest_confirmed_idx is not None:
-            if latest_close <= morning_low * 1.004:
+            # Strictly holding below PML and strictly below VWAP
+            if latest_close <= morning_low and (vwap is None or live_price <= vwap * 1.002):
                 conf_candle = trading_candles[retest_confirmed_idx]
                 breakout_time = datetime.fromtimestamp(conf_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 is_breakout = True
@@ -1072,12 +1084,25 @@ def build_suggestions(
     if candidate_symbols:
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(candidate_symbols), 8)) as executor:
             future_to_sym = {executor.submit(fetch_5m_candles_for_symbol, sym): sym for sym in candidate_symbols}
-            for future in concurrent.futures.as_completed(future_to_sym, timeout=5.0):
-                sym = future_to_sym[future]
-                try:
-                    candles_by_symbol[sym] = future.result()
-                except Exception:
-                    candles_by_symbol[sym] = []
+            try:
+                for future in concurrent.futures.as_completed(future_to_sym, timeout=12.0):
+                    sym = future_to_sym[future]
+                    try:
+                        candles_by_symbol[sym] = future.result()
+                    except Exception:
+                        candles_by_symbol[sym] = []
+            except Exception:
+                pass  # Gracefully handle any slow timeouts without crashing
+
+            for future, sym in future_to_sym.items():
+                if sym not in candles_by_symbol:
+                    if future.done() and not future.cancelled():
+                        try:
+                            candles_by_symbol[sym] = future.result()
+                        except Exception:
+                            candles_by_symbol[sym] = []
+                    else:
+                        candles_by_symbol[sym] = []
 
     suggestions: list[Suggestion] = []
     for row in matched_rows:
