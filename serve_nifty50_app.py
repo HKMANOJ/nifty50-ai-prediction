@@ -61,15 +61,15 @@ def is_ist_market_hours(check_dt: datetime | None = None) -> bool:
 IN_MEMORY_STOCK_SUGGESTIONS: dict[str, Any] | None = None
 LAST_AUTO_SCAN_INFO: dict[str, Any] = {
     "enabled": True,
-    "interval_seconds": 300,
+    "interval_seconds": 60,
     "last_run_ist": None,
     "last_duration_seconds": None,
     "status": "idle",
     "next_run_ist": None,
 }
 
-def start_background_auto_scanner(interval_seconds: int = 300) -> None:
-    """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 5 min during market hours."""
+def start_background_auto_scanner(interval_seconds: int = 60) -> None:
+    """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 60s during market hours."""
     def _loop() -> None:
         time.sleep(5)  # Grace period on boot
         while True:
@@ -919,8 +919,8 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(json.dumps({"ok": True, "url": f"http://{args.host}:{args.port}/MLAIStockV2.html"}, indent=2))
     
-    # Launch autonomous 5-minute background auto-scanner
-    start_background_auto_scanner(interval_seconds=300)
+    # Launch autonomous 60-second background auto-scanner
+    start_background_auto_scanner(interval_seconds=60)
 
     # Launch Real-Time WebSocket Push Server on port 8765
     try:

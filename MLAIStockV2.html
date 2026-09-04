@@ -1995,9 +1995,12 @@
 
   function checkAndTriggerAlerts(list, isPE, isInitialLoad, currentIstStr) {
     list.forEach(x => {
-      // Suppress alert on overextended spikes (wait for retest!)
-      const isExt = (x.retest_status === "Extended") || (x.five_min_status || "").includes("Extended");
-      if (x.is_breakout && x.status === "Priority Rally" && (x.vc_ranking || 0) >= 2.0 && !isExt) {
+      // Only suppress alert if explicitly marked Extended without being Fresh
+      const isExt = (x.retest_status === "Extended");
+      const isFresh = (x.retest_status === "Fresh") || (x.five_min_status || "").includes("Fresh");
+      const hasVol = ((x.vc_ranking || 0) >= 1.8) || ((x.rvol_5m || 0) >= 1.2);
+
+      if (x.is_breakout && x.status === "Priority Rally" && hasVol && (!isExt || isFresh)) {
         // Enforce strict 15-minute time window
         if (!isInitialLoad && !isRecentBreakout(x.breakout_time, currentIstStr)) {
           return; // Skip stale alerts completely
@@ -2030,8 +2033,9 @@
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
     const isRetest = (x.retest_status === "Confirmed") || (x.five_min_status || "").includes("Retest Confirmed");
-    const subTitle = isRetest ? "🎯 RETEST CONFIRMED (Sniper Entry)" : "BREAKOUT CONFIRMED";
-    const subColor = isRetest ? "#7e22ce" : "#2563eb";
+    const isFresh = (x.retest_status === "Fresh") || (x.five_min_status || "").includes("Fresh");
+    const subTitle = isFresh ? (isPE ? "⚡ FRESH DIRECTIONAL BREAKDOWN" : "⚡ FRESH DIRECTIONAL BREAKOUT") : (isRetest ? "🎯 RETEST CONFIRMED (Pullback Entry)" : "BREAKOUT CONFIRMED");
+    const subColor = isFresh ? (isPE ? "#dc2626" : "#16a34a") : (isRetest ? "#7e22ce" : "#2563eb");
     toast.innerHTML = `
       <div>
         <div class="toast-title ${type}">🚨 ${x.symbol} - ${typeName}</div>
@@ -2414,7 +2418,7 @@
     if (scanText) {
       if (isMarketHours()) {
         const lastT = scanInfo.last_run_ist ? scanInfo.last_run_ist.replace(" IST", "") : (payload.market_clock_ist || "");
-        scanText.textContent = lastT ? `Auto-Scan: 5m (Last: ${lastT})` : "Auto-Scan: 5m Active";
+        scanText.textContent = lastT ? `Auto-Scan: 60s (Last: ${lastT})` : "Auto-Scan: 60s Active";
         if (scanBadge) {
           scanBadge.style.background = "#eff6ff";
           scanBadge.style.color = "#1d4ed8";
