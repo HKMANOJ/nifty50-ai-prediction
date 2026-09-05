@@ -1417,7 +1417,7 @@
       <div class="menu-item" id="navHistory" data-view="history">
         <span class="icon">📜</span>
         <span class="menu-label">History Recall</span>
-        <span class="badge-pill" id="navHistoryBadge" style="margin-left:auto; background:#7c3aed; color:#fff; font-size:10px; font-weight:800; padding:2px 7px; border-radius:10px;">10</span>
+        <span class="badge-pill" id="navHistoryBadge" style="margin-left:auto; background:#7c3aed; color:#fff; font-size:10px; font-weight:800; padding:2px 7px; border-radius:10px;">0</span>
       </div>
     </nav>
 
@@ -1574,7 +1574,7 @@
           <div style="margin-top:6px;">
             <button onclick="switchView('history')" style="background:#f5f3ff; color:#7c3aed; border:1px solid #ddd6fe; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:5px; cursor:pointer; display:inline-flex; align-items:center; gap:4px; width:100%; justify-content:center;">
               <span>📜 History Recall</span>
-              <span id="sentimentCardHistoryBadge" style="background:#7c3aed; color:#fff; font-size:9px; padding:0px 5px; border-radius:10px;">10</span>
+              <span id="sentimentCardHistoryBadge" style="background:#7c3aed; color:#fff; font-size:9px; padding:0px 5px; border-radius:10px;">0</span>
               <span>➔</span>
             </button>
           </div>
@@ -1756,15 +1756,18 @@
           <div class="history-header-title">
             <span>📜 Bell Alerts & System Top Picks Recall</span>
             <span style="font-size:11px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; padding:2px 8px; border-radius:12px; font-weight:800;">AUDITED BELL LOG</span>
-            <span style="font-size:11px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; padding:2px 8px; border-radius:12px; font-weight:800;">100% PROFIT RECORD</span>
+            <span id="historyAuditBadge" style="font-size:11px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:2px 8px; border-radius:12px; font-weight:800;">REAL-TIME OUTCOME AUDIT</span>
           </div>
           <div class="history-header-subtitle">
-            Chronological audit of stocks where the breakout alert bell rang (RVOL ≥ 2.0x) and crowned ⚡ System Top Picks.
+            Chronological audit of stocks where the breakout alert bell rang and crowned ⚡ System Top Picks with audited trade outcomes.
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <button class="btn-chart-jump" onclick="switchView('dashboard')" style="background:#f1f5f9; color:#475569; border-color:#e2e8f0;">
             <span>⚡ Back to Scanner</span>
+          </button>
+          <button class="btn-chart-jump" onclick="exportHistoryAuditCSV()" style="background:#059669; color:#ffffff; border-color:#047857;">
+            <span>📥 Export Audit (CSV)</span>
           </button>
           <button class="btn-chart-jump" onclick="refreshHistoryData()" style="background:#7c3aed; color:#ffffff; border-color:#6d28d9;">
             <span>🔄 Refresh History</span>
@@ -1776,31 +1779,31 @@
       <div class="history-kpi-grid">
         <div class="history-kpi-card">
           <div class="history-kpi-title">🔔 Bell Alerts Logged</div>
-          <div class="history-kpi-value" id="kpiTotalSignals">10</div>
-          <div class="history-kpi-sub" id="kpiSignalBreakdown">4 CE Calls · 6 PE Puts</div>
+          <div class="history-kpi-value" id="kpiTotalSignals">0</div>
+          <div class="history-kpi-sub" id="kpiSignalBreakdown">0 CE Calls · 0 PE Puts</div>
         </div>
 
         <div class="history-kpi-card highlight">
           <div class="history-kpi-title" style="color:#b45309;">⚡ Crowned Top Picks</div>
-          <div class="history-kpi-value" style="color:#b45309;" id="kpiTopPicks">3</div>
-          <div class="history-kpi-sub" style="color:#b45309; font-weight:700;">RELIANCE · POLYCAB · ATHER</div>
+          <div class="history-kpi-value" style="color:#b45309;" id="kpiTopPicks">0</div>
+          <div class="history-kpi-sub" id="kpiTopPicksNames" style="color:#b45309; font-weight:700;">--</div>
         </div>
 
         <div class="history-kpi-card">
           <div class="history-kpi-title">Audited Accuracy</div>
-          <div class="history-kpi-value" style="color:#16a34a;" id="kpiWinRate">100%</div>
-          <div class="history-kpi-sub" style="color:#16a34a; font-weight:700;">10 / 10 In Profit / Target Hit</div>
+          <div class="history-kpi-value" style="color:#16a34a;" id="kpiWinRate">--</div>
+          <div class="history-kpi-sub" id="kpiWinRateSub" style="color:#16a34a; font-weight:700;">-- / -- In Profit</div>
         </div>
 
         <div class="history-kpi-card">
           <div class="history-kpi-title">Peak Alert RVOL</div>
-          <div class="history-kpi-value" style="color:#7c3aed;" id="kpiPeakRvol">14.02x</div>
-          <div class="history-kpi-sub">POLYCAB Institutional Breakout</div>
+          <div class="history-kpi-value" style="color:#7c3aed;" id="kpiPeakRvol">--</div>
+          <div class="history-kpi-sub" id="kpiPeakRvolSym">Highest Intraday Candle</div>
         </div>
 
         <div class="history-kpi-card">
           <div class="history-kpi-title">Average Alert RVOL</div>
-          <div class="history-kpi-value" style="color:#2563eb;" id="kpiBellRang">4.6x</div>
+          <div class="history-kpi-value" style="color:#2563eb;" id="kpiBellRang">--</div>
           <div class="history-kpi-sub">Heavy Institutional Conviction</div>
         </div>
       </div>
@@ -1808,10 +1811,10 @@
       <!-- Filter Controls & Search Bar -->
       <div class="history-filter-bar">
         <div class="history-filter-group">
-          <button class="history-filter-btn active" data-filter="all" onclick="filterHistory('all', this)">🔔 All Bell Alerts (<span id="btnCntAll">10</span>)</button>
-          <button class="history-filter-btn" data-filter="toppick" onclick="filterHistory('toppick', this)">⭐ ⚡ System Top Picks (<span id="btnCntTop">3</span>)</button>
-          <button class="history-filter-btn" data-filter="ce" onclick="filterHistory('ce', this)">🟢 CE Calls (<span id="btnCntCe">4</span>)</button>
-          <button class="history-filter-btn" data-filter="pe" onclick="filterHistory('pe', this)">🔴 PE Puts (<span id="btnCntPe">6</span>)</button>
+          <button class="history-filter-btn active" data-filter="all" onclick="filterHistory('all', this)">🔔 All Bell Alerts (<span id="btnCntAll">0</span>)</button>
+          <button class="history-filter-btn" data-filter="toppick" onclick="filterHistory('toppick', this)">⭐ ⚡ System Top Picks (<span id="btnCntTop">0</span>)</button>
+          <button class="history-filter-btn" data-filter="ce" onclick="filterHistory('ce', this)">🟢 CE Calls (<span id="btnCntCe">0</span>)</button>
+          <button class="history-filter-btn" data-filter="pe" onclick="filterHistory('pe', this)">🔴 PE Puts (<span id="btnCntPe">0</span>)</button>
         </div>
 
         <div class="history-search-box">
@@ -1999,10 +2002,12 @@
       const isExt = (x.retest_status === "Extended");
       const isFresh = (x.retest_status === "Fresh") || 
                       (x.five_min_status || "").includes("Fresh") || 
+                      (x.five_min_status || "").includes("Trigger") || 
                       (x.five_min_status || "").includes("Afternoon") || 
                       (x.five_min_status || "").includes("Breakout") || 
                       (x.five_min_status || "").includes("Breakdown");
-      const hasVol = ((x.vc_ranking || 0) >= 1.5) || ((x.rvol_5m || 0) >= 1.2);
+      // Strict 5m candle RVOL gate: individual 5m candle volume must be >= 1.4x
+      const hasVol = (x.rvol_5m || 0) >= 1.4;
       const isEligibleStatus = (x.status === "Priority Rally" || x.status === "Rally Watch" || (x.score || 0) >= 70);
 
       if (x.is_breakout && isEligibleStatus && hasVol && (!isExt || isFresh)) {
@@ -2039,7 +2044,7 @@
     toast.className = `toast ${type}`;
     const isRetest = (x.retest_status === "Confirmed") || (x.five_min_status || "").includes("Retest Confirmed");
     const isAfternoon = (x.five_min_status || "").includes("Afternoon");
-    const isFresh = (x.retest_status === "Fresh") || (x.five_min_status || "").includes("Fresh") || isAfternoon;
+    const isFresh = (x.retest_status === "Fresh") || (x.five_min_status || "").includes("Fresh") || (x.five_min_status || "").includes("Trigger") || isAfternoon;
     
     let subTitle = "BREAKOUT CONFIRMED";
     let subColor = "#2563eb";
@@ -2055,11 +2060,14 @@
     }
 
     const rvolDisplay = (x.rvol_5m ? `${x.rvol_5m.toFixed(1)}x` : (x.vc_ranking ? `${x.vc_ranking.toFixed(1)}x` : "--"));
+    const entryStr = x.entry ? `₹${x.entry}` : (x.ltp ? `₹${x.ltp}` : "--");
+    const slStr = x.stop_loss ? `₹${x.stop_loss}` : "--";
+    const tgtStr = x.target ? `₹${x.target}` : "--";
     toast.innerHTML = `
       <div>
         <div class="toast-title ${type}">🚨 ${x.symbol} - ${typeName}</div>
         <div style="font-size:10px; font-weight:800; color:${subColor}; margin:2px 0;">${subTitle}</div>
-        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})<br/>5m RVOL: ${rvolDisplay} · VWAP: ₹${x.vwap || '--'}</div>
+        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>5m RVOL: ${rvolDisplay} · VWAP: ₹${x.vwap || '--'}</div>
       </div>
       <button class="toast-close">✖</button>
     `;
@@ -2069,8 +2077,6 @@
   let _selectedSymbol = "MUTHOOTFIN";
   let _tvChart = null;
   let _candleSeries = null;
-  let _volumeSeries = null;
-  let _emaSeries = null;
 
   /* Formatters */
   const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
@@ -2403,6 +2409,10 @@
       _initialDataLoaded = true;
     }
 
+    if (typeof updateHistoryWithLatestPrices === "function") {
+      updateHistoryWithLatestPrices([...(payload.bullish || []), ...(payload.bearish || [])]);
+    }
+
     _currentBullish = (payload.bullish || []).sort((a, b) => (b.percent_change ?? 0) - (a.percent_change ?? 0));
     _currentBearish = (payload.bearish || []).sort((a, b) => (a.percent_change ?? 0) - (b.percent_change ?? 0));
 
@@ -2599,14 +2609,15 @@
         document.getElementById("topPickSym").textContent = finalTopPick.symbol;
         document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
         document.getElementById("topPickTime").textContent = finalTopPick.breakout_time || "--";
-        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}`;
+        const topPickRvol = Number(finalTopPick.rvol_5m || finalTopPick.rvol || finalTopPick.vc_ranking || 0);
+        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${topPickRvol.toFixed(1)}x · ${trendStr}`;
         
         if (pickCriteria) {
           pickCriteria.innerHTML = [
             ["📉 Breakdown",                                      "#ffe4e6", "#be123c"],
-            [`📉 RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x`,   "#ffe4e6", "#be123c"],
+            [`📉 RVOL ${topPickRvol.toFixed(1)}x`,                "#ffe4e6", "#be123c"],
             ["📉 Short Buildup",                                  "#ffe4e6", "#be123c"],
-            [`📉 Range ${finalTopPick.range_position_percent}%`,      "#ffe4e6", "#be123c"],
+            [`📉 Range ${finalTopPick.range_position_percent}%`,  "#ffe4e6", "#be123c"],
           ].map(([txt, bg, col]) => `<span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${bg};color:${col}">${txt}</span>`).join("");
         }
       } else {
@@ -2620,14 +2631,15 @@
         document.getElementById("topPickSym").textContent = finalTopPick.symbol;
         document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
         document.getElementById("topPickTime").textContent = finalTopPick.breakout_time || "--";
-        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}`;
+        const topPickRvolCe = Number(finalTopPick.rvol_5m || finalTopPick.rvol || finalTopPick.vc_ranking || 0);
+        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${topPickRvolCe.toFixed(1)}x · ${trendStr}`;
         
         if (pickCriteria) {
           pickCriteria.innerHTML = [
             ["📈 Breakout",                                      "#dcfce7", "#166534"],
-            [`📈 RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x`,   "#dcfce7", "#166534"],
+            [`📈 RVOL ${topPickRvolCe.toFixed(1)}x`,              "#dcfce7", "#166534"],
             ["📈 Long Buildup",                                  "#dcfce7", "#166534"],
-            [`📈 Range ${finalTopPick.range_position_percent}%`,      "#dcfce7", "#166534"],
+            [`📈 Range ${finalTopPick.range_position_percent}%`,  "#dcfce7", "#166534"],
           ].map(([txt, bg, col]) => `<span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${bg};color:${col}">${txt}</span>`).join("");
         }
       }
@@ -3568,242 +3580,175 @@
   // HISTORY RECALL AUDIT ENGINE (BELL ALERTS & SYSTEM TOP PICKS ONLY)
   // ═══════════════════════════════════════════════════════════════════
 
-  const DEFAULT_HISTORY_RECALL_AUDIT = [
-    // ── Bullish CE Bell Alerts ──
-    {
-      time: "10:15 AM",
-      symbol: "HAL",
-      sector: "Defense / Aerospace",
-      side: "CE",
-      setup: "Long buildup (+1.8% OI)",
-      rvol: 2.40,
-      rangeHold: 77.0,
-      triggerPrice: 4890.00,
-      currentPrice: 4937.00,
-      percentChange: 3.00,
-      retestStatus: "Retest Confirmed",
-      isTopPick: false,
-      topPickReason: "",
-      bellRang: true,
-      verdict: "TARGET HIT (+3.00%)"
-    },
-    {
-      time: "10:30 AM",
-      symbol: "RELIANCE",
-      sector: "Energy / Conglomerate",
-      side: "CE",
-      setup: "Long buildup (+12.4% OI)",
-      rvol: 3.60,
-      rangeHold: 83.7,
-      triggerPrice: 1326.00,
-      currentPrice: 1334.00,
-      percentChange: 2.07,
-      retestStatus: "Retest Confirmed",
-      isTopPick: true,
-      topPickReason: "⭐ CE SYSTEM TOP PICK",
-      bellRang: true,
-      verdict: "TARGET HIT (+2.07%)"
-    },
-    {
-      time: "10:15 AM",
-      symbol: "SWIGGY",
-      sector: "Consumer Tech",
-      side: "CE",
-      setup: "Long buildup (+8.2% OI)",
-      rvol: 2.20,
-      rangeHold: 69.6,
-      triggerPrice: 272.00,
-      currentPrice: 282.00,
-      percentChange: 3.66,
-      retestStatus: "Retest Confirmed",
-      isTopPick: false,
-      topPickReason: "",
-      bellRang: true,
-      verdict: "TARGET HIT (+3.66%)"
-    },
-    {
-      time: "10:20 AM",
-      symbol: "PAYTM",
-      sector: "Fintech",
-      side: "CE",
-      setup: "Long buildup (+15.1% OI)",
-      rvol: 2.10,
-      rangeHold: 59.5,
-      triggerPrice: 1635.00,
-      currentPrice: 1686.20,
-      percentChange: 3.29,
-      retestStatus: "Retest Confirmed",
-      isTopPick: false,
-      topPickReason: "",
-      bellRang: true,
-      verdict: "TARGET HIT (+3.29% Target Hit)"
-    },
-
-    // ── Bearish PE Bell Alerts ──
-    {
-      time: "12:55 PM",
-      symbol: "POLYCAB",
-      sector: "Cables / Electricals",
-      side: "PE",
-      setup: "Short buildup (+63.1% OI Spurt)",
-      rvol: 14.02,
-      rangeHold: 13.6,
-      triggerPrice: 8350.00,
-      currentPrice: 8261.00,
-      percentChange: -5.94,
-      retestStatus: "Retest Confirmed",
-      isTopPick: true,
-      topPickReason: "⭐ PE SYSTEM TOP PICK",
-      bellRang: true,
-      verdict: "TARGET HIT (-5.94% Max Breakdown)"
-    },
-    {
-      time: "12:35 PM",
-      symbol: "ATHERENERG",
-      sector: "Auto / EV",
-      side: "PE",
-      setup: "Short buildup (+11.2% OI)",
-      rvol: 8.54,
-      rangeHold: 25.1,
-      triggerPrice: 1630.00,
-      currentPrice: 1568.30,
-      percentChange: -4.31,
-      retestStatus: "Retest Confirmed",
-      isTopPick: true,
-      topPickReason: "⭐ PE SYSTEM TOP PICK",
-      bellRang: true,
-      verdict: "TARGET HIT (-4.31% Clean Win)"
-    },
-    {
-      time: "10:00 AM",
-      symbol: "DIXON",
-      sector: "Electronics / EMS",
-      side: "PE",
-      setup: "Short buildup (+8.7% OI)",
-      rvol: 5.92,
-      rangeHold: 40.2,
-      triggerPrice: 14350.00,
-      currentPrice: 14228.00,
-      percentChange: -1.50,
-      retestStatus: "Retest Confirmed",
-      isTopPick: false,
-      topPickReason: "",
-      bellRang: true,
-      verdict: "TARGET HIT (-1.50%)"
-    },
-    {
-      time: "12:15 PM",
-      symbol: "HAVELLS",
-      sector: "Consumer Durables",
-      side: "PE",
-      setup: "Short buildup (+29.4% OI Spurt)",
-      rvol: 3.27,
-      rangeHold: 7.1,
-      triggerPrice: 1178.00,
-      currentPrice: 1151.70,
-      percentChange: -4.02,
-      retestStatus: "Retest Confirmed",
-      isTopPick: false,
-      topPickReason: "",
-      bellRang: true,
-      verdict: "TARGET HIT (-4.02%)"
-    },
-    {
-      time: "01:50 PM",
-      symbol: "SUZLON",
-      sector: "Renewable Energy",
-      side: "PE",
-      setup: "Short buildup (+14.3% OI)",
-      rvol: 2.30,
-      rangeHold: 6.7,
-      triggerPrice: 45.80,
-      currentPrice: 45.12,
-      percentChange: -1.98,
-      retestStatus: "Retest Confirmed",
-      isTopPick: false,
-      topPickReason: "",
-      bellRang: true,
-      verdict: "TARGET HIT (-1.98%)"
-    },
-    {
-      time: "01:15 PM",
-      symbol: "HCLTECH",
-      sector: "IT",
-      side: "PE",
-      setup: "Short buildup (+6.2% OI)",
-      rvol: 2.09,
-      rangeHold: 6.5,
-      triggerPrice: 1315.00,
-      currentPrice: 1299.70,
-      percentChange: -1.46,
-      retestStatus: "Retest Confirmed",
-      isTopPick: false,
-      topPickReason: "",
-      bellRang: true,
-      verdict: "TARGET HIT (-1.46%)"
-    }
-  ];
+  const DEFAULT_HISTORY_RECALL_AUDIT = [];
 
   let _historyFilter = "all"; // "all" | "toppick" | "ce" | "pe"
   let _historySearch = "";
 
+  const HISTORY_STORAGE_KEY = "mlai_bell_alerts_history_v3";
+
   function getHistoryList() {
     try {
-      const saved = localStorage.getItem("mlai_bell_alerts_history_v2");
+      // Automatically purge legacy hardcoded fake demo rows
+      localStorage.removeItem("mlai_bell_alerts_history_v2");
+      localStorage.removeItem("mlai_bell_alerts_history_v1");
+
+      const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {}
-    localStorage.setItem("mlai_bell_alerts_history_v2", JSON.stringify(DEFAULT_HISTORY_RECALL_AUDIT));
-    return DEFAULT_HISTORY_RECALL_AUDIT.slice();
+    return [];
   }
 
   function saveHistoryList(list) {
     try {
-      localStorage.setItem("mlai_bell_alerts_history_v2", JSON.stringify(list));
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(list || []));
     } catch (e) {}
+  }
+
+  function refreshHistoryData() {
+    try {
+      localStorage.removeItem(HISTORY_STORAGE_KEY);
+      localStorage.removeItem("mlai_bell_alerts_history_v2");
+    } catch (e) {}
+    renderHistoryRecall();
+  }
+
+  function exportHistoryAuditCSV() {
+    const list = getHistoryList();
+    if (!list || list.length === 0) {
+      alert("No bell alerts recorded yet today to export.");
+      return;
+    }
+    const todayStr = new Date().toISOString().split("T")[0];
+    let csv = "Time,Symbol,Sector,Side,Setup,5m_RVOL,Entry_Price,Current_Price,Stop_Loss,Target,Trade_Return_Pct,Verdict,Is_Top_Pick\n";
+    list.forEach(item => {
+      const v = computeVerdict(item);
+      const entry = Number(item.triggerPrice || item.entry || 0);
+      const cur = Number(item.currentPrice || item.ltp || entry);
+      let tradeMove = 0;
+      if (entry > 0) {
+        tradeMove = item.side === "CE" ? ((cur - entry) / entry) * 100 : ((entry - cur) / entry) * 100;
+      }
+      const cleanSetup = (item.setup || "").replace(/,/g, " ");
+      csv += `"${item.time || ''}","${item.symbol}","${item.sector || ''}","${item.side}","${cleanSetup}",${Number(item.rvol || 0).toFixed(2)},${entry.toFixed(2)},${cur.toFixed(2)},${Number(item.stop_loss || 0).toFixed(2)},${Number(item.target || 0).toFixed(2)},${tradeMove.toFixed(2)}%,"${v.status}",${item.isTopPick ? "YES" : "NO"}\n`;
+    });
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `breakout_accuracy_audit_${todayStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function computeVerdict(item) {
+    const isPE = item.side === "PE";
+    const entry = Number(item.triggerPrice || item.entry || 0);
+    const cur = Number(item.currentPrice || item.ltp || entry);
+    const sl = Number(item.stop_loss || 0);
+    const tgt = Number(item.target || 0);
+
+    if (entry <= 0) {
+      return { status: "ACTIVE", text: "ACTIVE", isWin: false, isLoss: false };
+    }
+
+    // Move percent relative to entry
+    const rawMovePct = ((cur - entry) / entry) * 100;
+    // Favorable move: positive means profit for both CE and PE
+    const favorablePct = isPE ? -rawMovePct : rawMovePct;
+
+    // 1. Structural Stop Loss & Target Checks
+    if (isPE) {
+      if (sl > 0 && cur >= sl) {
+        return { status: "STOPPED OUT", text: `STOPPED OUT (+${rawMovePct.toFixed(2)}%)`, isWin: false, isLoss: true };
+      }
+      if (tgt > 0 && cur <= tgt) {
+        return { status: "TARGET HIT", text: `TARGET HIT (${rawMovePct.toFixed(2)}%)`, isWin: true, isLoss: false };
+      }
+    } else {
+      if (sl > 0 && cur <= sl) {
+        return { status: "STOPPED OUT", text: `STOPPED OUT (${rawMovePct.toFixed(2)}%)`, isWin: false, isLoss: true };
+      }
+      if (tgt > 0 && cur >= tgt) {
+        return { status: "TARGET HIT", text: `TARGET HIT (+${rawMovePct.toFixed(2)}%)`, isWin: true, isLoss: false };
+      }
+    }
+
+    // 2. Movement Threshold Heuristics (if structural levels not yet hit)
+    if (favorablePct >= 1.5) {
+      return { status: "TARGET HIT", text: `TARGET HIT (${favorablePct >= 0 ? "+" : ""}${favorablePct.toFixed(2)}%)`, isWin: true, isLoss: false };
+    } else if (favorablePct > 0.15) {
+      return { status: "IN PROFIT", text: `IN PROFIT (${favorablePct >= 0 ? "+" : ""}${favorablePct.toFixed(2)}%)`, isWin: true, isLoss: false };
+    } else if (favorablePct <= -0.75) {
+      return { status: "STOPPED OUT", text: `STOPPED OUT (${favorablePct.toFixed(2)}%)`, isWin: false, isLoss: true };
+    } else {
+      return { status: "RETESTING", text: `RETESTING (${favorablePct >= 0 ? "+" : ""}${favorablePct.toFixed(2)}%)`, isWin: false, isLoss: false };
+    }
   }
 
   function logBreakoutToHistory(stock, isPE, bellRang = false) {
     if (!stock || !stock.symbol) return;
-    
-    // Strict Gate: ONLY stocks where the alert bell rang (RVOL >= 2.0x) or crowned System Top Pick qualify!
-    const rvol = stock.vc_ranking || 0;
-    const isTopPick = (stock.symbol === "RELIANCE" || stock.symbol === "POLYCAB" || stock.symbol === "ATHERENERG");
-    if (!bellRang && rvol < 2.0 && !isTopPick) {
-      return; // Do NOT log low-volume non-bell breakouts!
+
+    // Real 5-minute candle RVOL
+    const rvol = Number(stock.rvol_5m || stock.rvol || stock.vc_ranking || 0);
+
+    // Dynamic Top Pick determination without hardcoded symbols
+    const isTopPick = (Number(stock.score || 0) >= 80) || 
+                      (stock.rank > 0 && stock.rank <= 2) || 
+                      (stock.status === "Priority Rally");
+
+    // Gate: Must have had alert bell rang, or RVOL >= 1.4x, or be crowned Top Pick
+    if (!bellRang && rvol < 1.4 && !isTopPick) {
+      return; // Do NOT log sub-threshold noise
     }
 
     const list = getHistoryList();
     const sym = stock.symbol.toUpperCase();
     const existingIdx = list.findIndex(x => x.symbol === sym);
-    
+
+    const triggerP = Number(stock.entry || stock.ltp || 0);
+    const curP = Number(stock.ltp || stock.entry || 0);
+    const slP = Number(stock.stop_loss || 0);
+    const tgtP = Number(stock.target || 0);
+
     const itemData = {
       time: stock.breakout_time || new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
       symbol: sym,
-      sector: SECTOR_MAP[sym] || "F&O",
+      sector: stock.sector || (typeof SECTOR_MAP !== "undefined" && SECTOR_MAP[sym]) || "F&O",
       side: isPE ? "PE" : "CE",
       setup: stock.setup || (isPE ? "Short buildup" : "Long buildup"),
       rvol: rvol,
       rangeHold: stock.range_position_percent ?? (isPE ? 10 : 90),
-      triggerPrice: stock.ltp || 0,
-      currentPrice: stock.ltp || 0,
-      percentChange: stock.percent_change || 0,
+      triggerPrice: triggerP,
+      currentPrice: curP,
+      stop_loss: slP,
+      target: tgtP,
+      percentChange: Number(stock.percent_change || 0),
       retestStatus: stock.retest_status || stock.five_min_status || "Retest Confirmed",
       isTopPick: isTopPick,
       topPickReason: isTopPick ? `⭐ ${isPE ? 'PE' : 'CE'} SYSTEM TOP PICK` : "",
-      bellRang: true,
-      verdict: isPE ? (stock.percent_change <= -1.5 ? "TARGET HIT" : "IN PROFIT") : (stock.percent_change >= 1.5 ? "TARGET HIT" : "IN PROFIT")
+      bellRang: Boolean(bellRang || rvol >= 1.4)
     };
 
     if (existingIdx >= 0) {
-      list[existingIdx].currentPrice = itemData.currentPrice;
+      list[existingIdx].currentPrice = curP;
       list[existingIdx].percentChange = itemData.percentChange;
       if (itemData.rvol > (list[existingIdx].rvol || 0)) list[existingIdx].rvol = itemData.rvol;
+      if (isTopPick) {
+        list[existingIdx].isTopPick = true;
+        list[existingIdx].topPickReason = itemData.topPickReason;
+      }
+      if (slP > 0) list[existingIdx].stop_loss = slP;
+      if (tgtP > 0) list[existingIdx].target = tgtP;
     } else {
       list.unshift(itemData);
     }
+
     saveHistoryList(list);
     updateHistoryNavBadges();
   }
@@ -3817,6 +3762,40 @@
       list[idx].topPickReason = `⭐ ${isPE ? 'PE' : 'CE'} SYSTEM TOP PICK`;
       saveHistoryList(list);
       updateHistoryNavBadges();
+      renderHistoryRecall();
+    }
+  }
+
+  function updateHistoryWithLatestPrices(stockList) {
+    if (!Array.isArray(stockList) || stockList.length === 0) return;
+    const list = getHistoryList();
+    if (list.length === 0) return;
+
+    let updated = false;
+    const map = new Map();
+    stockList.forEach(s => {
+      if (s && s.symbol) map.set(s.symbol.toUpperCase(), s);
+    });
+
+    list.forEach(item => {
+      const live = map.get(item.symbol.toUpperCase());
+      if (live) {
+        const newLtp = Number(live.ltp || live.entry || 0);
+        if (newLtp > 0 && newLtp !== item.currentPrice) {
+          item.currentPrice = newLtp;
+          item.percentChange = Number(live.percent_change ?? item.percentChange);
+          const r = Number(live.rvol_5m || live.rvol || 0);
+          if (r > (item.rvol || 0)) item.rvol = r;
+          if (live.stop_loss) item.stop_loss = Number(live.stop_loss);
+          if (live.target) item.target = Number(live.target);
+          updated = true;
+        }
+      }
+    });
+
+    if (updated) {
+      saveHistoryList(list);
+      renderHistoryRecall();
     }
   }
 
@@ -3848,11 +3827,6 @@
     }, 150);
   }
 
-  function refreshHistoryData() {
-    localStorage.removeItem("mlai_bell_alerts_history_v2");
-    renderHistoryRecall();
-  }
-
   function updateHistoryNavBadges() {
     const list = getHistoryList();
     const total = list.length;
@@ -3868,30 +3842,88 @@
 
     const list = getHistoryList();
 
-    // 1. Calculate and update KPI summary metrics
+    // 1. Calculate outcomes dynamically
+    let wins = 0;
+    let losses = 0;
+    let active = 0;
+
+    list.forEach(item => {
+      item._v = computeVerdict(item);
+      if (item._v.isWin) wins++;
+      else if (item._v.isLoss) losses++;
+      else active++;
+    });
+
     const total = list.length;
     const ceCount = list.filter(x => x.side === "CE").length;
     const peCount = list.filter(x => x.side === "PE").length;
     const topPickCount = list.filter(x => x.isTopPick).length;
-    const peakRvol = list.reduce((max, x) => Math.max(max, Number(x.rvol || 0)), 0);
-    const sumRvol = list.reduce((sum, x) => sum + Number(x.rvol || 0), 0);
+
+    let peakRvolItem = null;
+    let sumRvol = 0;
+    list.forEach(x => {
+      const r = Number(x.rvol || 0);
+      sumRvol += r;
+      if (!peakRvolItem || r > Number(peakRvolItem.rvol || 0)) {
+        peakRvolItem = x;
+      }
+    });
     const avgRvol = total > 0 ? (sumRvol / total) : 0;
 
+    const evaluated = wins + losses;
+    const winRate = evaluated > 0 ? Math.round((wins / evaluated) * 100) : null;
+
+    // 2. Update KPI summary cards
     const elTotal = document.getElementById("kpiTotalSignals");
     const elBreakdown = document.getElementById("kpiSignalBreakdown");
     const elTopPicks = document.getElementById("kpiTopPicks");
+    const elTopPicksNames = document.getElementById("kpiTopPicksNames");
     const elWinRate = document.getElementById("kpiWinRate");
+    const elWinRateSub = document.getElementById("kpiWinRateSub");
     const elPeakRvol = document.getElementById("kpiPeakRvol");
+    const elPeakRvolSym = document.getElementById("kpiPeakRvolSym");
     const elBellRang = document.getElementById("kpiBellRang");
 
     if (elTotal) elTotal.textContent = total;
     if (elBreakdown) elBreakdown.textContent = `${ceCount} CE Calls · ${peCount} PE Puts`;
     if (elTopPicks) elTopPicks.textContent = topPickCount;
-    if (elWinRate) elWinRate.textContent = "100%";
-    if (elPeakRvol) elPeakRvol.textContent = `${peakRvol.toFixed(2)}x`;
-    if (elBellRang) elBellRang.textContent = `${avgRvol.toFixed(1)}x`;
+    if (elTopPicksNames) {
+      const topPickSyms = list.filter(x => x.isTopPick).map(x => x.symbol);
+      elTopPicksNames.textContent = topPickSyms.length > 0 ? topPickSyms.join(" · ") : "None crowned yet";
+    }
 
-    // Update filter counts
+    if (elWinRate) {
+      if (winRate !== null) {
+        elWinRate.textContent = `${winRate}%`;
+        elWinRate.style.color = winRate >= 70 ? "#16a34a" : winRate >= 50 ? "#d97706" : "#dc2626";
+      } else {
+        elWinRate.textContent = "--";
+        elWinRate.style.color = "#64748b";
+      }
+    }
+
+    if (elWinRateSub) {
+      if (total === 0) {
+        elWinRateSub.textContent = "No alerts logged today";
+      } else if (evaluated === 0) {
+        elWinRateSub.textContent = `${total} Alerts Active / Retesting`;
+      } else {
+        elWinRateSub.textContent = `${wins} Win / ${losses} Loss (${wins}/${total} Profitable)`;
+      }
+    }
+
+    if (elPeakRvol) {
+      elPeakRvol.textContent = peakRvolItem ? `${Number(peakRvolItem.rvol).toFixed(2)}x` : "--";
+    }
+    if (elPeakRvolSym) {
+      elPeakRvolSym.textContent = peakRvolItem ? `Highest: ${peakRvolItem.symbol}` : "Highest Intraday Candle";
+    }
+
+    if (elBellRang) {
+      elBellRang.textContent = total > 0 ? `${avgRvol.toFixed(1)}x` : "--";
+    }
+
+    // Update filter buttons counts
     const btnAll = document.getElementById("btnCntAll");
     const btnTop = document.getElementById("btnCntTop");
     const btnCe = document.getElementById("btnCntCe");
@@ -3903,7 +3935,7 @@
 
     updateHistoryNavBadges();
 
-    // 2. Filter data
+    // 3. Filter data
     let filtered = list.filter(x => {
       if (_historyFilter === "toppick" && !x.isTopPick) return false;
       if (_historyFilter === "ce" && x.side !== "CE") return false;
@@ -3919,15 +3951,17 @@
     if (filtered.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="12" style="text-align:center; padding:36px; color:#64748b; font-size:13px;">
-            No bell alert signals found matching the current filter.
+          <td colspan="12" style="text-align:center; padding:48px 20px; color:#64748b; font-size:13px;">
+            ${total === 0 
+              ? "🔔 No bell alert signals logged yet today. Real alerts will appear here as institutional volume breaks out." 
+              : "No bell alert signals match the selected filter."}
           </td>
         </tr>
       `;
       return;
     }
 
-    // 3. Render Table Rows
+    // 4. Render Table Rows
     tbody.innerHTML = filtered.map(item => {
       const isCE = item.side === "CE";
       const trClass = item.isTopPick ? "row-top-pick" : "";
@@ -3950,8 +3984,40 @@
       const rangeColor = isCE ? "#16a34a" : "#dc2626";
 
       const pctVal = Number(item.percentChange || 0);
-      const pctColor = isCE ? (pctVal >= 0 ? "#16a34a" : "#dc2626") : (pctVal <= 0 ? "#16a34a" : "#dc2626");
-      const pctStr = `${pctVal >= 0 ? "+" : ""}${pctVal.toFixed(2)}%`;
+
+      // Trade PnL relative to entry
+      const entry = Number(item.triggerPrice || item.entry || 0);
+      const cur = Number(item.currentPrice || item.ltp || entry);
+      let tradeMove = 0;
+      if (entry > 0) {
+        tradeMove = isCE ? ((cur - entry) / entry) * 100 : ((entry - cur) / entry) * 100;
+      }
+      const tradeCol = tradeMove >= 0 ? "#16a34a" : "#dc2626";
+      const tradeStr = `${tradeMove >= 0 ? "+" : ""}${tradeMove.toFixed(2)}%`;
+
+      // Honest Verdict styling
+      const v = item._v || computeVerdict(item);
+      let verdictBg = "#dcfce7";
+      let verdictCol = "#166534";
+      let verdictBorder = "#bbf7d0";
+      let verdictIcon = "🟢";
+
+      if (v.status === "STOPPED OUT") {
+        verdictBg = "#fee2e2";
+        verdictCol = "#991b1b";
+        verdictBorder = "#fecaca";
+        verdictIcon = "🔴";
+      } else if (v.status === "RETESTING" || v.status === "ACTIVE") {
+        verdictBg = "#fef3c7";
+        verdictCol = "#92400e";
+        verdictBorder = "#fde68a";
+        verdictIcon = "🟡";
+      } else if (v.status === "IN PROFIT") {
+        verdictBg = "#ecfdf5";
+        verdictCol = "#047857";
+        verdictBorder = "#a7f3d0";
+        verdictIcon = "🟢";
+      }
 
       return `
         <tr class="${trClass}">
@@ -3991,12 +4057,14 @@
             ₹${n(item.triggerPrice)}
           </td>
           <td style="text-align:right; white-space:nowrap;">
-            <span style="font-weight:700; color:#0f172a;">₹${n(item.currentPrice)}</span>
-            <span style="font-weight:800; color:${pctColor}; margin-left:4px;">(${pctStr})</span>
+            <div style="display:flex; flex-direction:column; align-items:flex-end;">
+              <span style="font-weight:700; color:#0f172a;">₹${n(item.currentPrice)}</span>
+              <span style="font-size:10px; font-weight:800; color:${tradeCol};">${tradeStr} trade</span>
+            </div>
           </td>
           <td style="text-align:center; white-space:nowrap;">
-            <span style="font-size:10.5px; font-weight:800; color:#166534; background:#dcfce7; border:1px solid #bbf7d0; padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">
-              🟢 ${item.verdict || "TARGET HIT"}
+            <span style="font-size:10.5px; font-weight:800; color:${verdictCol}; background:${verdictBg}; border:1px solid ${verdictBorder}; padding:3px 8px; border-radius:4px; display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">
+              ${verdictIcon} ${v.text}
             </span>
           </td>
           <td style="text-align:center; white-space:nowrap;">

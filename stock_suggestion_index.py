@@ -19,10 +19,11 @@ import tempfile
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
+from breakout_engine import analyze_breakout as run_breakout_engine, BreakoutConfig
 
 
 ROOT = Path(__file__).resolve().parent
@@ -505,69 +506,219 @@ def pct_from_open(row: dict[str, Any]) -> float | None:
     return ((ltp - open_price) / open_price) * 100
 
 
-def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
-    """Fetches real-time 5-minute OHLCV candles for an NSE stock."""
-    yahoo_sym = f"{symbol}.NS"
-    url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range=5d"
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json, text/plain, */*",
-            "Referer": f"https://finance.yahoo.com/quote/{yahoo_sym}/chart",
-        },
-    )
+def _load_candles_from_file(symbol: str) -> list[dict[str, Any]]:
+    sym = symbol.strip().upper()
+    candle_file = ROOT / "inputs" / "candles" / f"{sym}.json"
+    if not candle_file.exists():
+        candle_file = ROOT / "inputs" / "candles" / f"{sym}_5m.json"
+    if not candle_file.exists():
+        return []
     try:
-        with urllib.request.urlopen(req, timeout=8.0) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            result = (data.get("chart") or {}).get("result")
-            if not result:
-                return []
-            quote = result[0]
+        d = json.loads(candle_file.read_text(encoding="utf-8"))
+        res = (d.get("chart") or {}).get("result", [])
+        if res:
+            quote = res[0]
             timestamps = quote.get("timestamp") or []
-            indicators = quote.get("indicators", {})
-            quote_data = (indicators.get("quote") or [{}])[0]
+            quote_data = (quote.get("indicators", {}).get("quote") or [{}])[0]
             opens = quote_data.get("open") or []
             highs = quote_data.get("high") or []
             lows = quote_data.get("low") or []
             closes = quote_data.get("close") or []
             volumes = quote_data.get("volume") or []
-            all_candles: list[dict[str, Any]] = []
+            candles = []
             for i, ts in enumerate(timestamps):
-                if i < len(opens) and i < len(highs) and i < len(lows) and i < len(closes):
-                    o, h, l, c = opens[i], highs[i], lows[i], closes[i]
-                    v = volumes[i] if i < len(volumes) else 0
-                    if None not in (o, h, l, c):
-                        all_candles.append({
-                            "timestamp": int(ts),
-                            "open": float(o),
-                            "high": float(h),
-                            "low": float(l),
-                            "close": float(c),
-                            "volume": float(v or 0),
-                        })
-            if not all_candles:
-                return []
-            
-            if full_range:
-                return all_candles
-
-            # Isolate the latest trading session candles (same date as latest timestamp)
-            from datetime import datetime as dt_cls
-            latest_dt = dt_cls.fromtimestamp(all_candles[-1]["timestamp"], tz=INDIA_TZ).date()
-            day_candles = [
-                c for c in all_candles
-                if dt_cls.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == latest_dt
-            ]
-            return day_candles if day_candles else all_candles[-75:]
+                if i < len(opens) and opens[i] is not None and closes[i] is not None:
+                    candles.append({
+                        "timestamp": int(ts),
+                        "open": round(float(opens[i]), 2),
+                        "high": round(float(highs[i]), 2),
+                        "low": round(float(lows[i]), 2),
+                        "close": round(float(closes[i]), 2),
+                        "volume": float(volumes[i] or 0),
+                    })
+            if candles:
+                return candles
+        bars = d.get("series", {}).get("5m", [])
+        if bars:
+            return bars
     except Exception as e:
-        print(f"fetch_5m_candles_for_symbol error for {symbol}: {type(e)} {e}")
+        print(f"Error reading disk candle file for {symbol}: {e}")
+    return []
+
+
+def _generate_synthetic_candles_for_symbol(symbol: str) -> list[dict[str, Any]]:
+    stock_info = None
+    snapshot_path = ROOT / "inputs" / "stock_suggestion_index.latest.json"
+    if snapshot_path.exists():
+        try:
+            snap = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            for s in snap.get("bullish", []) + snap.get("bearish", []):
+                if s.get("symbol", "").upper() == symbol.upper():
+                    stock_info = s
+                    break
+        except Exception:
+            pass
+
+    ltp = float(stock_info.get("ltp") or 100.0) if stock_info else 100.0
+    pct_chg = float(stock_info.get("percent_change") or 0.0) if stock_info else 0.0
+    total_vol = float(stock_info.get("volume") or 250000.0) if stock_info else 250000.0
+
+    now = datetime.now(INDIA_TZ)
+    cur = now
+    if cur.weekday() == 5:
+        cur = cur - timedelta(days=1)
+    elif cur.weekday() == 6:
+        cur = cur - timedelta(days=2)
+    base_date = cur.date()
+
+    open_p = ltp / (1.0 + (pct_chg / 100.0)) if pct_chg != -100 else ltp
+    vol_per_bar = max(100.0, total_vol / 75.0)
+
+    import random
+    rng = random.Random(hash(symbol) % 100000)
+
+    bars = []
+    for d_offset in range(4, -1, -1):
+        day_date = base_date - timedelta(days=d_offset)
+        if day_date.weekday() >= 5:
+            continue
+        day_start_p = open_p * (1.0 + (d_offset * -0.005))
+        day_end_p = open_p if d_offset > 0 else ltp
+        d_step = (day_end_p - day_start_p) / 75.0
+        cur_p = day_start_p
+
+        for i in range(75):
+            hour = 9 + (15 + i * 5) // 60
+            minute = (15 + i * 5) % 60
+            bar_dt = datetime(day_date.year, day_date.month, day_date.day, hour, minute, tzinfo=INDIA_TZ)
+            ts = int(bar_dt.timestamp())
+            noise = (rng.random() - 0.49) * (ltp * 0.003)
+            b_open = round(cur_p, 2)
+            cur_p += d_step + noise
+            b_close = round(cur_p, 2)
+            spread = abs(rng.random() * ltp * 0.002)
+            b_high = round(max(b_open, b_close) + spread, 2)
+            b_low = round(min(b_open, b_close) - spread, 2)
+            b_vol = int(vol_per_bar * (0.5 + rng.random() * 1.0))
+            bars.append({
+                "timestamp": ts,
+                "open": b_open,
+                "high": b_high,
+                "low": b_low,
+                "close": b_close,
+                "volume": b_vol,
+            })
+    if bars:
+        bars[-1]["close"] = round(ltp, 2)
+    return bars
+
+
+def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
+    """Fetches real-time 5-minute OHLCV candles for an NSE stock with disk cache & synthetic fallback."""
+    sym = symbol.strip().upper()
+
+    # 1. First check if disk cache exists
+    disk_candles = _load_candles_from_file(sym)
+
+    # 2. Try live network fetch from Yahoo Finance (if available)
+    live_candles = []
+    try:
+        yahoo_sym = f"{sym}.NS"
+        url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range=5d"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "application/json, text/plain, */*",
+                "Referer": f"https://finance.yahoo.com/quote/{yahoo_sym}/chart",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            result = (data.get("chart") or {}).get("result")
+            if result:
+                quote = result[0]
+                timestamps = quote.get("timestamp") or []
+                indicators = quote.get("indicators", {})
+                quote_data = (indicators.get("quote") or [{}])[0]
+                opens = quote_data.get("open") or []
+                highs = quote_data.get("high") or []
+                lows = quote_data.get("low") or []
+                closes = quote_data.get("close") or []
+                volumes = quote_data.get("volume") or []
+                for i, ts in enumerate(timestamps):
+                    if i < len(opens) and opens[i] is not None and closes[i] is not None:
+                        live_candles.append({
+                            "timestamp": int(ts),
+                            "open": round(float(opens[i]), 2),
+                            "high": round(float(highs[i]), 2),
+                            "low": round(float(lows[i]), 2),
+                            "close": round(float(closes[i]), 2),
+                            "volume": float(volumes[i] or 0),
+                        })
+                # Cache to disk for offline / weekend use
+                if live_candles:
+                    cache_file = ROOT / "inputs" / "candles" / f"{sym}.json"
+                    cache_file.parent.mkdir(parents=True, exist_ok=True)
+                    cache_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    candles = live_candles or disk_candles
+    if not candles:
+        # Fallback: try deployed AWS server for authentic market candles
+        try:
+            aws_url = f"http://3.108.195.198/api/stock_candles?symbol={urllib.parse.quote(sym)}"
+            req_aws = urllib.request.Request(aws_url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req_aws, timeout=3.0) as aws_resp:
+                aws_data = json.loads(aws_resp.read().decode("utf-8"))
+                if aws_data.get("ok") and aws_data.get("candles"):
+                    candles = [
+                        {
+                            "timestamp": int(c["time"]),
+                            "open": round(float(c["open"]), 2),
+                            "high": round(float(c["high"]), 2),
+                            "low": round(float(c["low"]), 2),
+                            "close": round(float(c["close"]), 2),
+                            "volume": float(c.get("value") or 0),
+                        }
+                        for c in aws_data["candles"]
+                    ]
+        except Exception:
+            pass
+
+    if not candles:
         return []
+
+    # Sort and deduplicate timestamps
+    seen_ts = set()
+    clean_candles = []
+    for c in sorted(candles, key=lambda x: x["timestamp"]):
+        ts = int(c["timestamp"])
+        if ts not in seen_ts:
+            seen_ts.add(ts)
+            clean_candles.append(c)
+
+    if full_range:
+        return clean_candles
+
+    # Isolate the latest trading session candles
+    latest_dt = datetime.fromtimestamp(clean_candles[-1]["timestamp"], tz=INDIA_TZ).date()
+    day_candles = [
+        c for c in clean_candles
+        if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == latest_dt
+    ]
+    return day_candles if day_candles else clean_candles[-75:]
 
 
 def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any], activity_ratio: float) -> dict[str, Any]:
-    """Analyzes 5-minute candles using 15m ORB, dynamic afternoon consolidation boxes,
-    solid body ratio (rejecting wick traps), and rolling RVOL confirmation."""
+    """Analyzes 5-minute candles using Point-in-Time BreakoutEngine:
+    - Hybrid Opening Range (09:15 body + 09:20-09:30 wicks) filtering freak auction wicks
+    - Strict candle-specific RVOL confirmation >= 1.5x (eliminating daily bleed)
+    - Anti-exhaustion gate (> 3.5x ATR from open)
+    - Structural swing-pivot stop loss (minimum 0.6% floor)
+    - Dynamic consolidation box detection
+    """
     if len(candles) < 2:
         return {
             "is_breakout": False,
@@ -579,252 +730,24 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             "vwap": None,
             "retest_status": "Setting Range",
             "is_failed_trend": False,
+            "entry": None,
+            "stop": None,
+            "stop_loss": None,
+            "target": None,
+            "level": None,
+            "level_kind": None,
+            "morning_breakout_time": None,
+            "afternoon_breakout_time": None,
+            "event": None,
         }
 
-    # 1. 9-period EMA on 5-minute closes
-    closes = [c["close"] for c in candles]
-    k = 2.0 / (9 + 1)
-    ema9 = closes[0]
-    for price in closes[1:]:
-        ema9 = (price * k) + (ema9 * (1.0 - k))
-
-    # 2. Strict 15-Minute Opening Range Baseline (First 3 candles: 09:15 - 09:30 AM)
-    orb_count = min(len(candles), 3)
-    orb_high = max(c["high"] for c in candles[:orb_count])
-    orb_low = min(c["low"] for c in candles[:orb_count])
-    day_high = max(c["high"] for c in candles)
-    day_low = min(c["low"] for c in candles)
-
-    # 3. Full-day & Rolling 5-minute RVOL
-    valid_vols = [c["volume"] for c in candles if c["volume"] > 0]
-    avg_5m_vol = sum(valid_vols) / len(valid_vols) if valid_vols else 1.0
-
-    latest = candles[-1]
-    latest_close = latest["close"]
-    latest_vol = latest["volume"]
-    # Rolling 20-candle average for latest candle (avoiding closing auction distortion)
-    recent_vols = [x["volume"] for x in candles[-21:-1] if x["volume"] > 0]
-    rolling_vol_ref = sum(recent_vols) / len(recent_vols) if recent_vols else avg_5m_vol
-    latest_rvol = latest_vol / rolling_vol_ref if rolling_vol_ref > 0 else 1.0
-    live_price = row.get("ltp", latest_close)
-
-    # 4. Intraday Cumulative VWAP
-    cum_pv = 0.0
-    cum_vol = 0.0
-    for c in candles:
-        v = c.get("volume", 0)
-        if v > 0:
-            typ = (c["high"] + c["low"] + c["close"]) / 3.0
-            cum_pv += typ * v
-            cum_vol += v
-    vwap = round(cum_pv / cum_vol, 2) if cum_vol > 0 else round(latest_close, 2)
-
-    # Helper for solid body ratio: body / total range
-    # Strictly eliminates fakeout wick traps (e.g. hammers/pinbars like POLYCAB at 11:10 AM)
-    def is_solid_directional_candle(c: dict[str, Any], is_bullish: bool) -> bool:
-        tot_range = max(0.01, c["high"] - c["low"])
-        body = abs(c["close"] - c["open"])
-        body_ratio = body / tot_range
-        # Must have body >= 40% of total candle range
-        if body_ratio < 0.40:
-            return False
-        # For bullish, close must be green; for bearish, close must be red
-        if is_bullish:
-            return c["close"] > c["open"] and (c["close"] - c["low"]) >= tot_range * 0.45
-        else:
-            return c["close"] < c["open"] and (c["high"] - c["close"]) >= tot_range * 0.45
-
-    trading_candles = candles[orb_count:] if len(candles) > orb_count else candles[1:]
-
-    morning_event = None
-    afternoon_event = None
-    last_wave_idx = -999
-
-    for idx, c in enumerate(trading_candles):
-        actual_idx = orb_count + idx
-        dt = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ)
-        t_str = dt.strftime("%I:%M %p")
-        time_minutes = dt.hour * 60 + dt.minute
-
-        # Intraday breakout entries must occur before 02:45 PM
-        if time_minutes > (14 * 60 + 45):
-            continue
-
-        prior_vols = [x["volume"] for x in candles[max(0, actual_idx - 20):actual_idx] if x["volume"] > 0]
-        r_avg = sum(prior_vols) / len(prior_vols) if prior_vols else avg_5m_vol
-        c_rvol = c.get("volume", 0) / r_avg if r_avg > 0 else 1.0
-        solid = is_solid_directional_candle(c, is_bullish=(side == "bullish"))
-        if not solid:
-            continue
-
-        if side == "bullish":
-            # A. Morning 15m ORB Breakout (09:30 AM - 10:15 AM)
-            is_orb = (c["close"] > orb_high) and (c_rvol >= 1.2 or activity_ratio >= 2.5)
-
-            # B. Mid-day / Afternoon Dynamic Consolidation Box
-            box_len = min(12, max(6, actual_idx - max(0, last_wave_idx)))
-            box_slice = candles[max(0, actual_idx - box_len):actual_idx]
-            box_h = max(x["high"] for x in box_slice) if box_slice else orb_high
-            box_l = min(x["low"] for x in box_slice) if box_slice else orb_low
-            box_rng = ((box_h - box_l) / box_l) * 100.0 if box_l > 0 else 10.0
-            prev_dh = max(x["high"] for x in candles[:actual_idx])
-            is_box = (actual_idx >= 8) and (c["close"] > box_h) and (box_rng < 2.5 or c["close"] > prev_dh) and (c_rvol >= 1.3 or c.get("volume", 0) > avg_5m_vol * 1.5)
-
-            if is_orb and morning_event is None and actual_idx <= 12:
-                morning_event = {
-                    "idx": idx,
-                    "actual_idx": actual_idx,
-                    "time": t_str,
-                    "price": c["close"],
-                    "rvol": c_rvol,
-                    "volume": c.get("volume", 0),
-                    "type": "⚡ Fresh Breakout",
-                }
-                last_wave_idx = actual_idx
-            elif is_box:
-                is_afternoon_session = (time_minutes >= 12 * 60)
-                if (actual_idx - last_wave_idx >= 6):
-                    if is_afternoon_session or not afternoon_event:
-                        afternoon_event = {
-                            "idx": idx,
-                            "actual_idx": actual_idx,
-                            "time": t_str,
-                            "price": c["close"],
-                            "rvol": c_rvol,
-                            "volume": c.get("volume", 0),
-                            "type": "⚡ Afternoon Breakout",
-                        }
-                        last_wave_idx = actual_idx
-                elif afternoon_event and (actual_idx - afternoon_event["actual_idx"] <= 3):
-                    if c_rvol > afternoon_event["rvol"]:
-                        afternoon_event["rvol"] = c_rvol
-
-        else:  # Bearish
-            # A. Morning 15m ORB Breakdown (09:30 AM - 10:15 AM)
-            is_orb = (c["close"] < orb_low) and (c_rvol >= 1.2 or activity_ratio >= 2.5)
-
-            # B. Mid-day / Afternoon Dynamic Consolidation Box
-            box_len = min(12, max(6, actual_idx - max(0, last_wave_idx)))
-            box_slice = candles[max(0, actual_idx - box_len):actual_idx]
-            box_h = max(x["high"] for x in box_slice) if box_slice else orb_high
-            box_l = min(x["low"] for x in box_slice) if box_slice else orb_low
-            box_rng = ((box_h - box_l) / box_l) * 100.0 if box_l > 0 else 10.0
-            prev_dl = min(x["low"] for x in candles[:actual_idx])
-            is_box = (actual_idx >= 8) and (c["close"] < box_l) and (box_rng < 2.5 or c["close"] < prev_dl) and (c_rvol >= 1.3 or c.get("volume", 0) > avg_5m_vol * 1.5)
-
-            if is_orb and morning_event is None and actual_idx <= 12:
-                morning_event = {
-                    "idx": idx,
-                    "actual_idx": actual_idx,
-                    "time": t_str,
-                    "price": c["close"],
-                    "rvol": c_rvol,
-                    "volume": c.get("volume", 0),
-                    "type": "⚡ Fresh Breakdown",
-                }
-                last_wave_idx = actual_idx
-            elif is_box:
-                is_afternoon_session = (time_minutes >= 12 * 60)
-                if (actual_idx - last_wave_idx >= 6):
-                    if is_afternoon_session or not afternoon_event:
-                        afternoon_event = {
-                            "idx": idx,
-                            "actual_idx": actual_idx,
-                            "time": t_str,
-                            "price": c["close"],
-                            "rvol": c_rvol,
-                            "volume": c.get("volume", 0),
-                            "type": "⚡ Afternoon Breakdown",
-                        }
-                        last_wave_idx = actual_idx
-                elif afternoon_event and (actual_idx - afternoon_event["actual_idx"] <= 3):
-                    if c_rvol > afternoon_event["rvol"]:
-                        afternoon_event["rvol"] = c_rvol
-
-    active_event = afternoon_event or morning_event
-    if not active_event:
-        is_near = (latest_close >= orb_high * 0.992) if side == "bullish" else (latest_close <= orb_low * 1.008)
-        return {
-            "is_breakout": False,
-            "status": ("Near BO" if side == "bullish" else "Near BD") if is_near else "Consolidating",
-            "breakout_time": None,
-            "rvol_5m": 1.0,
-            "ema_trend": "bullish" if latest_close >= ema9 else "bearish",
-            "chart_structure": ("Testing Resistance" if side == "bullish" else "Testing Support") if is_near else "Base Building",
-            "is_failed_trend": False,
-            "vwap": vwap,
-            "retest_status": "Near" if is_near else "Initial",
-        }
-
-    # Evaluate Retest or Trend Failure after the active breakout
-    breakout_status = active_event["type"]
-    retest_status = "Fresh"
-    chart_structure = "Breakout Surge" if side == "bullish" else "Breakdown Slide"
-    is_breakout = True
-    is_failed_trend = False
-    ref_price = active_event["price"]
-    breakout_time = active_event["time"]
-
-    for idx in range(active_event["idx"] + 1, len(trading_candles)):
-        c = trading_candles[idx]
-        prior_vols = [x["volume"] for x in candles[max(0, orb_count + idx - 20):orb_count + idx] if x["volume"] > 0]
-        r_avg = sum(prior_vols) / len(prior_vols) if prior_vols else avg_5m_vol
-        c_rvol = c.get("volume", 0) / r_avg if r_avg > 0 else 1.0
-
-        if side == "bullish":
-            is_pullback = (c["low"] <= ref_price * 1.006) or (c["low"] <= ema9 * 1.004)
-            if is_pullback and c["close"] > c["open"] and c["close"] >= ref_price * 0.998 and is_solid_directional_candle(c, is_bullish=True) and c_rvol >= 0.75:
-                breakout_status = "Retest Confirmed"
-                retest_status = "Confirmed"
-                chart_structure = "Retest Bounce Wave"
-                break
-        else:
-            is_pullback = (c["high"] >= ref_price * 0.994) or (c["high"] >= ema9 * 0.996)
-            if is_pullback and c["close"] < c["open"] and c["close"] <= ref_price * 1.002 and is_solid_directional_candle(c, is_bullish=False) and c_rvol >= 0.75:
-                breakout_status = "Retest Confirmed"
-                retest_status = "Confirmed"
-                chart_structure = "Retest Rejection Slide"
-                break
-
-    # Stop loss check
-    if side == "bullish":
-        if latest_close < orb_low or latest_close < ref_price * 0.985:
-            breakout_status = "Breakout Failed"
-            retest_status = "Failed"
-            chart_structure = "Failed Breakout"
-            is_breakout = False
-            is_failed_trend = True
-        elif latest_close < ref_price * 0.995:
-            breakout_status = "Testing Support"
-            retest_status = "Retesting"
-            chart_structure = "Testing Support"
-            is_breakout = False
-    else:
-        if latest_close > orb_high or latest_close > ref_price * 1.015:
-            breakout_status = "Breakdown Failed"
-            retest_status = "Failed"
-            chart_structure = "Failed Breakdown"
-            is_breakout = False
-            is_failed_trend = True
-        elif latest_close > ref_price * 1.005:
-            breakout_status = "Testing Resistance"
-            retest_status = "Retesting"
-            chart_structure = "Testing Resistance"
-            is_breakout = False
-
-    return {
-        "is_breakout": is_breakout,
-        "status": breakout_status,
-        "breakout_time": breakout_time,
-        "rvol_5m": round(active_event["rvol"], 2),
-        "ema_trend": "bullish" if latest_close >= ema9 else "bearish",
-        "chart_structure": chart_structure,
-        "is_failed_trend": is_failed_trend,
-        "vwap": vwap,
-        "retest_status": retest_status,
-        "morning_breakout_time": morning_event["time"] if morning_event else None,
-        "afternoon_breakout_time": afternoon_event["time"] if afternoon_event else None,
-    }
+    symbol = row.get("symbol", "")
+    res = run_breakout_engine(candles, side=side, symbol=symbol)
+    res.setdefault("rvol_5m", res.get("rvol") or 1.0)
+    res.setdefault("stop_loss", res.get("stop"))
+    res.setdefault("morning_breakout_time", res.get("breakout_time"))
+    res.setdefault("afternoon_breakout_time", None)
+    return res
 
 
 def index_context_note(row: dict[str, Any], side: str, index_context: dict[str, dict[str, Any]]) -> tuple[str, int]:
@@ -1072,17 +995,19 @@ def build_trade_levels(row: dict[str, Any], *, side: str) -> tuple[float | None,
     if side == "bullish":
         entry = round((high if high is not None else ltp) + buffer, 2)
         base_stop = low if low is not None else min(open_price or ltp, ltp - buffer)
-        risk = max(entry - base_stop, max(ltp * 0.004, 3.0))
+        # Cap risk between 0.6% and 1.2%
+        risk = max(min(entry - base_stop, ltp * 0.012), max(ltp * 0.006, 2.0))
         stop = round(entry - risk, 2)
         target = round(entry + (risk * 1.7), 2)
-        plan = "Buy only if price breaks above the morning high and holds above it."
+        plan = f"Buy breakout above ₹{entry} | SL ₹{stop} ({(risk/entry*100):.2f}%) | Tgt ₹{target}"
     else:
         entry = round((low if low is not None else ltp) - buffer, 2)
         base_stop = high if high is not None else max(open_price or ltp, ltp + buffer)
-        risk = max(base_stop - entry, max(ltp * 0.004, 3.0))
+        # Cap risk between 0.6% and 1.2%
+        risk = max(min(base_stop - entry, ltp * 0.012), max(ltp * 0.006, 2.0))
         stop = round(entry + risk, 2)
         target = round(entry - (risk * 1.7), 2)
-        plan = "Sell only if price breaks below the morning low and holds below it."
+        plan = f"Sell breakdown below ₹{entry} | SL ₹{stop} ({(risk/entry*100):.2f}%) | Tgt ₹{target}"
     return entry, stop, target, plan
 
 
@@ -1186,7 +1111,15 @@ def build_suggestions(
         elif "near" in five_min_status.lower():
             quality_tags.insert(0, "Near 5m Breakout")
 
-        entry, stop, target, plan = build_trade_levels(row, side=side)
+        if bo_info.get("entry") and bo_info.get("stop"):
+            entry = bo_info["entry"]
+            stop = bo_info["stop"]
+            target = bo_info.get("target") or round(entry + (1.7 * abs(entry - stop) if side == "bullish" else -1.7 * abs(entry - stop)), 2)
+            risk_pct = round(abs(entry - stop) / entry * 100, 2)
+            lvl_name = bo_info.get("level_kind") or "Breakout"
+            plan = f"{side.capitalize()} {lvl_name} @ ₹{entry} | SL ₹{stop} ({risk_pct}%) | Tgt ₹{target}"
+        else:
+            entry, stop, target, plan = build_trade_levels(row, side=side)
         oi_change_percent = oi.get("oi_change_percent")
         oi_change = oi.get("oi_change")
         display_volume = row.get("volume") or oi.get("volume_contracts")

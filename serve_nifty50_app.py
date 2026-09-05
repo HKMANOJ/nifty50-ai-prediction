@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from scan_clock import next_bar_close
+
 
 ROOT = Path(__file__).resolve().parent
 
@@ -114,9 +116,11 @@ def start_background_auto_scanner(interval_seconds: int = 60) -> None:
                     else:
                         print("[AUTO-SCANNER] Skipping interval: manual refresh or lock is currently active.")
 
-                    next_run = get_ist_now() + timedelta(seconds=interval_seconds)
-                    LAST_AUTO_SCAN_INFO["next_run_ist"] = next_run.strftime("%I:%M:%S %p IST")
-                    time.sleep(interval_seconds)
+                    now = get_ist_now()
+                    target_time = next_bar_close(now, interval_minutes=5, offset_seconds=4)
+                    sleep_gap = max(5.0, (target_time - get_ist_now()).total_seconds())
+                    LAST_AUTO_SCAN_INFO["next_run_ist"] = target_time.strftime("%I:%M:%S %p IST")
+                    time.sleep(sleep_gap)
                 else:
                     LAST_AUTO_SCAN_INFO["status"] = "market_closed"
                     time.sleep(30)
@@ -484,6 +488,17 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
         today_str = now_ist.date().isoformat()
 
+        # If market is closed or weekend, serve cached snapshot (do not attempt live refresh against closed NSE)
+        if not is_ist_market_hours(now_ist):
+            if STOCK_SUGGESTION_SNAPSHOT.exists():
+                try:
+                    payload = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
+                    payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
+                    self._send_json(HTTPStatus.OK, payload)
+                    return
+                except Exception:
+                    pass
+
         global IN_MEMORY_STOCK_SUGGESTIONS
         
         # 1. Try In-Memory Cache First (Light Speed)
@@ -500,9 +515,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         if payload:
             try:
                 snapshot_date = payload.get("session_date")
-                # Attach live auto-scanner telemetry
                 payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
-                # If snapshot is from previous date or marked failed, auto-refresh live
                 if payload.get("ok") and snapshot_date == today_str:
                     self._send_json(HTTPStatus.OK, payload)
                     return
