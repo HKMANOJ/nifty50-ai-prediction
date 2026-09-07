@@ -7,3 +7,4 @@ __pycache__/
 .vercel/
 node_modules/
 Claude outputs/
+_unused/

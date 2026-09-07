@@ -1757,6 +1757,7 @@
             <span>📜 Bell Alerts & System Top Picks Recall</span>
             <span style="font-size:11px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; padding:2px 8px; border-radius:12px; font-weight:800;">AUDITED BELL LOG</span>
             <span id="historyAuditBadge" style="font-size:11px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:2px 8px; border-radius:12px; font-weight:800;">REAL-TIME OUTCOME AUDIT</span>
+            <span id="historyDateBadge" style="font-size:11px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; padding:2px 8px; border-radius:12px; font-weight:800;">📅 TODAY ONLY</span>
           </div>
           <div class="history-header-subtitle">
             Chronological audit of stocks where the breakout alert bell rang and crowned ⚡ System Top Picks with audited trade outcomes.
@@ -1828,7 +1829,8 @@
         <table class="history-table">
           <thead>
             <tr>
-              <th style="text-align:center;">Bell Time</th>
+              <th style="text-align:center; width:55px; cursor:pointer;" onclick="toggleHistorySortOrder()" title="Click to toggle sort order">SL NO <span id="sortSlnoIcon">▲</span></th>
+              <th style="text-align:center; cursor:pointer; width:95px;" onclick="toggleHistorySortOrder()" title="Click to toggle chronological sort">Bell Time <span id="sortTimeIcon">▲</span></th>
               <th>Stock Symbol</th>
               <th style="text-align:center;">Direction</th>
               <th style="text-align:center;">System Status</th>
@@ -1996,8 +1998,30 @@
     return diff >= 0 && diff <= 15; // 15-minute strict cutoff
   }
 
+  // F&O Symbols with Market Lot Size > 1500 (Strictly eliminated from alerts & trading)
+  const HIGH_LOT_SYMBOLS = new Set([
+    "IDEA", "YESBANK", "SUZLON", "SAGILITY", "IDFCFIRSTB", "PNB", "GMRAIRPORT", "NHPC", "NMDC", 
+    "CANBK", "NBCC", "MAHABANK", "INOXWIND", "MOTHERSON", "IRFC", "BANKINDIA", "ASHOKLEY", "IOC", 
+    "VMM", "SAIL", "IREDA", "UNIONBANK", "IEX", "BANDHANBNK", "ADANIPOWER", "GAIL", "RBLBANK", 
+    "NYKAA", "ABCAPITAL", "MANAPPURAM", "WIPRO", "BANKBARODA", "TATASTEEL", "BHEL", "ANGELONE", 
+    "BIOCON", "FEDERALBNK", "ETERNAL", "JIOFIN", "ONGC", "LTF", "CROMPTON", "DELHIVERY", 
+    "HINDPETRO", "KOTAKBANK", "BPCL", "RVNL", "PETRONET", "POWERGRID", "NATIONALUM", "SWIGGY", 
+    "ITC", "INDUSTOWER", "TMPV", "RECLTD"
+  ]);
+
+  function isHighLotSymbol(sym, lotSize) {
+    if (lotSize && Number(lotSize) > 1500) return true;
+    if (sym && HIGH_LOT_SYMBOLS.has(String(sym).toUpperCase())) return true;
+    return false;
+  }
+
   function checkAndTriggerAlerts(list, isPE, isInitialLoad, currentIstStr) {
     list.forEach(x => {
+      // Strictly eliminate stocks with lot size > 1500
+      if (isHighLotSymbol(x.symbol, x.lot_size)) return;
+      // No new entries or bell rings after 2:45 PM (14:45 IST)
+      if (x.breakout_time && parseTimeToMinutes(x.breakout_time) > 14 * 60 + 45) return;
+      if (currentIstStr && parseTimeToMinutes(currentIstStr) > 14 * 60 + 45) return;
       // Only suppress alert if explicitly marked Extended without being Fresh
       const isExt = (x.retest_status === "Extended");
       const isFresh = (x.retest_status === "Fresh") || 
@@ -2067,7 +2091,7 @@
       <div>
         <div class="toast-title ${type}">🚨 ${x.symbol} - ${typeName}</div>
         <div style="font-size:10px; font-weight:800; color:${subColor}; margin:2px 0;">${subTitle}</div>
-        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>5m RVOL: ${rvolDisplay} · VWAP: ₹${x.vwap || '--'}</div>
+        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})${x.lot_size ? ` · Lot: ${x.lot_size.toLocaleString()}` : ''}<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>5m RVOL: ${rvolDisplay} · VWAP: ₹${x.vwap || '--'}</div>
       </div>
       <button class="toast-close">✖</button>
     `;
@@ -2314,7 +2338,7 @@
           <div class="item-left">
             <span class="item-rank">${idx + 1}</span>
             <div class="item-names">
-              <span class="item-symbol">${row.symbol}</span>
+              <span class="item-symbol">${row.symbol}${row.lot_size ? ` <span style="font-size:9px; color:var(--text-muted); font-weight:700;">[${row.lot_size}]</span>` : ''}</span>
               <span class="item-setup-tag">${row.setup || "OI Confirmed"}</span>
             </div>
           </div>
@@ -2366,7 +2390,7 @@
           <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">${idx + 1}</td>
           <td>
             <div class="stock-col">
-              <span class="sym">${row.symbol}</span>
+              <span class="sym">${row.symbol}${row.lot_size ? ` <span style="font-size:9.5px; font-weight:700; color:#4f46e5; background:rgba(99,102,241,0.12); padding:1px 5px; border-radius:4px; border:1px solid rgba(99,102,241,0.25); vertical-align:middle;">Lot ${row.lot_size.toLocaleString()}</span>` : ''}</span>
               <span class="sub">${row.setup || "F&O Active"}</span>
             </div>
           </td>
@@ -2401,7 +2425,14 @@
 
   /* ── Master Render Function ── */
   function renderAll(payload) {
-    if (!payload || !payload.ok) return;
+    if (!payload) return;
+    if (!payload.ok && (!Array.isArray(payload.bullish) || payload.bullish.length === 0)) {
+      const list = document.getElementById("stockScrollList");
+      if (list && list.innerHTML.includes("Loading")) {
+        list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">Connecting to live market feeds...<br><button onclick="loadData({refresh:true})" style="margin-top:8px;padding:4px 10px;border-radius:6px;background:#2563eb;color:#fff;border:none;cursor:pointer;font-size:11px;">⚡ Retry Now</button></div>`;
+      }
+      return;
+    }
     if (typeof checkAndTriggerAlerts === "function") {
       const isInitialLoad = !_initialDataLoaded;
       checkAndTriggerAlerts(payload.bullish || [], false, isInitialLoad, payload.market_clock_ist);
@@ -2736,6 +2767,9 @@
   document.addEventListener("DOMContentLoaded", () => {
     initChart();
     loadData();
+    if (typeof syncHistoryAuditFromServer === "function") {
+      syncHistoryAuditFromServer();
+    }
   });
   /* ── Live Real-Time Ticking Clock (Every Second) ── */
   function updateLiveClock() {
@@ -3037,6 +3071,9 @@
     } else if (targetView === "history") {
       document.getElementById("navHistory")?.classList.add("active");
       renderHistoryRecall();
+      if (typeof syncHistoryAuditFromServer === "function") {
+        syncHistoryAuditFromServer();
+      }
     } else {
       document.getElementById("navDashboard")?.classList.add("active");
     }
@@ -3585,18 +3622,51 @@
   let _historyFilter = "all"; // "all" | "toppick" | "ce" | "pe"
   let _historySearch = "";
 
-  const HISTORY_STORAGE_KEY = "mlai_bell_alerts_history_v3";
+  function getTodaySessionDate() {
+    try {
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(now);
+    } catch (e) {
+      return new Date().toISOString().split("T")[0];
+    }
+  }
+
+  function getTodayHistoryStorageKey() {
+    return `mlai_bell_alerts_history_${getTodaySessionDate()}`;
+  }
 
   function getHistoryList() {
     try {
-      // Automatically purge legacy hardcoded fake demo rows
+      const todayDate = getTodaySessionDate();
+      const todayKey = getTodayHistoryStorageKey();
+
+      // Automatically purge legacy and past days' history keys from localStorage
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("mlai_bell_alerts_history_") && k !== todayKey) {
+          localStorage.removeItem(k);
+        }
+      }
+      localStorage.removeItem("mlai_bell_alerts_history_v3");
       localStorage.removeItem("mlai_bell_alerts_history_v2");
       localStorage.removeItem("mlai_bell_alerts_history_v1");
 
-      const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
+      const saved = localStorage.getItem(todayKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          // Strictly filter so only today's records with lot size <= 1500 AND time <= 14:45 are returned
+          const valid = parsed.filter(item => 
+            (!item.date || item.date === todayDate) && 
+            !isHighLotSymbol(item.symbol, item.lot_size) &&
+            (!item.time || parseTimeToMinutes(item.time) <= 14 * 60 + 45)
+          );
+          if (valid.length !== parsed.length) {
+            localStorage.setItem(todayKey, JSON.stringify(valid));
+          }
+          return valid;
+        }
       }
     } catch (e) {}
     return [];
@@ -3604,16 +3674,162 @@
 
   function saveHistoryList(list) {
     try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(list || []));
+      const todayKey = getTodayHistoryStorageKey();
+      const todayDate = getTodaySessionDate();
+      const cleanList = (list || []).map(item => ({
+        ...item,
+        date: item.date || todayDate
+      }));
+      localStorage.setItem(todayKey, JSON.stringify(cleanList));
     } catch (e) {}
+  }
+
+  let _historySortAsc = true;
+
+  function toggleHistorySortOrder() {
+    _historySortAsc = !_historySortAsc;
+    const slnoIcon = document.getElementById("sortSlnoIcon");
+    const timeIcon = document.getElementById("sortTimeIcon");
+    const arrow = _historySortAsc ? "▲" : "▼";
+    if (slnoIcon) slnoIcon.textContent = arrow;
+    if (timeIcon) timeIcon.textContent = arrow;
+    renderHistoryRecall();
+  }
+
+  function normalizeTimeStr(t) {
+    if (!t) return "";
+    const s = String(t).trim();
+    const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([APap][Mm]))?/);
+    if (!m) return s;
+    let h = parseInt(m[1], 10);
+    const min = m[2];
+    const ampm = m[4] ? m[4].toUpperCase() : null;
+    if (ampm === "PM" && h < 12) h += 12;
+    if (ampm === "AM" && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${min}`;
+  }
+
+  function parseTimeToMinutes(t) {
+    if (!t) return 0;
+    const s = String(t).trim();
+    const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([APap][Mm]))?/);
+    if (!m) return 0;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const ampm = m[4] ? m[4].toUpperCase() : null;
+    if (ampm === "PM" && h < 12) h += 12;
+    if (ampm === "AM" && h === 12) h = 0;
+    return h * 60 + min;
+  }
+
+  async function syncHistoryAuditFromServer() {
+    try {
+      const todayDate = getTodaySessionDate();
+      const resp = await fetch(`${API_BASE}/api/breakout_audit?date=${todayDate}`);
+      if (!resp.ok) return;
+      const json = await resp.json();
+      if (!json || !json.ok || !json.data || !Array.isArray(json.data.alerts)) return;
+
+      const serverAudit = json.data;
+      const serverAlerts = serverAudit.alerts;
+
+      window._serverAuditStats = {
+        total: serverAudit.total_alerts || serverAlerts.length,
+        wins: serverAudit.wins,
+        losses: serverAudit.losses,
+        retesting: serverAudit.retesting,
+        winRatePct: serverAudit.win_rate_pct,
+        netR: serverAudit.net_r,
+        peakRvol: serverAudit.peak_rvol
+      };
+
+      const alertMap = new Map();
+
+      // Populate verified candle audit items from backend
+      serverAlerts.forEach(a => {
+        const normTime = normalizeTimeStr(a.time);
+        if (parseTimeToMinutes(normTime) > 14 * 60 + 45) return; // Drop after 2:45 PM
+        if (isHighLotSymbol(a.symbol, a.lot_size)) return;
+        const key = `${a.symbol.toUpperCase()}_${normTime}_${a.side || 'CE'}`;
+        const isPE = a.side === "PE";
+        const maxGain = Number(a.max_gain_pct || 0);
+        const entryPrice = Number(a.entry || 0);
+        let peakPrice = entryPrice;
+        if (entryPrice > 0) {
+          peakPrice = isPE ? entryPrice * (1 - maxGain / 100) : entryPrice * (1 + maxGain / 100);
+        }
+        const isTopPick = (Number(a.rvol || 0) >= 4.0) || (a.r_return && Number(a.r_return) >= 1.5);
+        const signalKind = a.kind === "RETEST" ? "Retest Confirmed" : "Breakout Confirmed";
+        alertMap.set(key, {
+          date: a.date || todayDate,
+          time: normTime,
+          symbol: a.symbol,
+          lot_size: Number(a.lot_size || 0),
+          sector: (typeof SECTOR_MAP !== "undefined" && SECTOR_MAP[a.symbol]) || "F&O",
+          side: a.side,
+          setup: a.kind || (isPE ? "Short breakdown" : "Long breakout"),
+          rvol: Number(a.rvol || 1.5),
+          rangeHold: isPE ? 10 : 90,
+          triggerPrice: entryPrice,
+          currentPrice: peakPrice,
+          peakPrice: peakPrice,
+          stop_loss: Number(a.stop || 0),
+          target: Number(a.target || 0),
+          maxGainPct: maxGain,
+          drawdownPct: Number(a.max_drawdown_pct || 0),
+          percentChange: (isPE ? -1 : 1) * maxGain,
+          systemStatus: signalKind,
+          retestStatus: signalKind,
+          verdict: a.verdict,
+          isWin: a.is_win,
+          isLoss: a.is_loss,
+          rReturn: a.verdict === "RETESTING" ? 0.0 : a.r_return,
+          isTopPick: isTopPick,
+          topPickReason: isTopPick ? `⭐ ${a.side} SYSTEM TOP PICK` : "",
+          bellRang: true
+        });
+      });
+
+      // Preserve genuine live items from today with rvol >= 1.4 that are not duplicates
+      const existingList = getHistoryList();
+      existingList.forEach(item => {
+        if (!item || !item.symbol) return;
+        const normTime = normalizeTimeStr(item.time);
+        if (parseTimeToMinutes(normTime) > 14 * 60 + 45) return; // Drop after 2:45 PM
+        if (isHighLotSymbol(item.symbol, item.lot_size)) return;
+        const key = `${item.symbol.toUpperCase()}_${normTime}_${item.side || 'CE'}`;
+        if (!alertMap.has(key)) {
+          if ((Number(item.rvol || 0) >= 1.4 || item.isTopPick) && (!item.date || item.date === todayDate)) {
+            alertMap.set(key, { ...item, time: normTime });
+          }
+        }
+      });
+
+      const cleanList = Array.from(alertMap.values()).filter(item => 
+        (!item.time || parseTimeToMinutes(item.time) <= 14 * 60 + 45) &&
+        !isHighLotSymbol(item.symbol, item.lot_size)
+      );
+      saveHistoryList(cleanList);
+      renderHistoryRecall();
+    } catch (e) {
+      console.warn("History audit sync error:", e);
+    }
   }
 
   function refreshHistoryData() {
     try {
-      localStorage.removeItem(HISTORY_STORAGE_KEY);
+      const todayKey = getTodayHistoryStorageKey();
+      localStorage.removeItem(todayKey);
+      localStorage.removeItem("mlai_bell_alerts_history_v3");
       localStorage.removeItem("mlai_bell_alerts_history_v2");
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("mlai_bell_alerts_history_")) {
+          localStorage.removeItem(k);
+        }
+      }
     } catch (e) {}
-    renderHistoryRecall();
+    syncHistoryAuditFromServer().then(() => renderHistoryRecall());
   }
 
   function exportHistoryAuditCSV() {
@@ -3622,18 +3838,19 @@
       alert("No bell alerts recorded yet today to export.");
       return;
     }
-    const todayStr = new Date().toISOString().split("T")[0];
-    let csv = "Time,Symbol,Sector,Side,Setup,5m_RVOL,Entry_Price,Current_Price,Stop_Loss,Target,Trade_Return_Pct,Verdict,Is_Top_Pick\n";
-    list.forEach(item => {
+    const todayStr = getTodaySessionDate();
+    let csv = "SL_NO,Time,Symbol,Sector,Side,Setup,5m_RVOL,Entry_Price,Current_Peak_Price,Stop_Loss,Target,Trade_Return_Pct,Verdict,Is_Top_Pick\n";
+    const sorted = [...list].sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time));
+    sorted.forEach((item, idx) => {
       const v = computeVerdict(item);
       const entry = Number(item.triggerPrice || item.entry || 0);
-      const cur = Number(item.currentPrice || item.ltp || entry);
-      let tradeMove = 0;
-      if (entry > 0) {
+      const cur = Number(item.peakPrice || item.currentPrice || item.ltp || entry);
+      let tradeMove = Number(item.maxGainPct || 0);
+      if (!tradeMove && entry > 0) {
         tradeMove = item.side === "CE" ? ((cur - entry) / entry) * 100 : ((entry - cur) / entry) * 100;
       }
       const cleanSetup = (item.setup || "").replace(/,/g, " ");
-      csv += `"${item.time || ''}","${item.symbol}","${item.sector || ''}","${item.side}","${cleanSetup}",${Number(item.rvol || 0).toFixed(2)},${entry.toFixed(2)},${cur.toFixed(2)},${Number(item.stop_loss || 0).toFixed(2)},${Number(item.target || 0).toFixed(2)},${tradeMove.toFixed(2)}%,"${v.status}",${item.isTopPick ? "YES" : "NO"}\n`;
+      csv += `${idx + 1},"${item.time || ''}","${item.symbol}","${item.sector || ''}","${item.side}","${cleanSetup}",${Number(item.rvol || 0).toFixed(2)},${entry.toFixed(2)},${cur.toFixed(2)},${Number(item.stop_loss || 0).toFixed(2)},${Number(item.target || 0).toFixed(2)},${tradeMove.toFixed(2)}%,"${v.status}",${item.isTopPick ? "YES" : "NO"}\n`;
     });
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -3647,6 +3864,26 @@
   }
 
   function computeVerdict(item) {
+    // 1. If item has an audited verdict from candle verification, respect it!
+    if (item.verdict) {
+      const vUpper = String(item.verdict).toUpperCase();
+      const isWin = (item.isWin !== undefined) ? Boolean(item.isWin) : (vUpper === "TARGET HIT" || vUpper === "IN PROFIT");
+      const isLoss = (item.isLoss !== undefined) ? Boolean(item.isLoss) : (vUpper === "STOPPED OUT");
+      
+      const move = Number(item.maxGainPct || item.max_gain_pct || 0);
+      let text = vUpper;
+      if (vUpper === "TARGET HIT" || vUpper === "IN PROFIT") {
+        text = `${vUpper} (+${move.toFixed(2)}%)`;
+      } else if (vUpper === "STOPPED OUT") {
+        const dd = Math.abs(Number(item.drawdownPct || item.max_drawdown_pct || 0.7));
+        text = `STOPPED OUT (-${dd.toFixed(2)}%)`;
+      } else {
+        text = `RETESTING (${move > 0 ? "+" : ""}${move.toFixed(2)}%)`;
+      }
+      return { status: vUpper, text: text, isWin: isWin, isLoss: isLoss };
+    }
+
+    // 2. Otherwise live calculation based on LTP vs Entry & Target/Stop
     const isPE = item.side === "PE";
     const entry = Number(item.triggerPrice || item.entry || 0);
     const cur = Number(item.currentPrice || item.ltp || entry);
@@ -3657,33 +3894,29 @@
       return { status: "ACTIVE", text: "ACTIVE", isWin: false, isLoss: false };
     }
 
-    // Move percent relative to entry
     const rawMovePct = ((cur - entry) / entry) * 100;
-    // Favorable move: positive means profit for both CE and PE
     const favorablePct = isPE ? -rawMovePct : rawMovePct;
 
-    // 1. Structural Stop Loss & Target Checks
     if (isPE) {
       if (sl > 0 && cur >= sl) {
-        return { status: "STOPPED OUT", text: `STOPPED OUT (+${rawMovePct.toFixed(2)}%)`, isWin: false, isLoss: true };
+        return { status: "STOPPED OUT", text: `STOPPED OUT (-${Math.abs(rawMovePct).toFixed(2)}%)`, isWin: false, isLoss: true };
       }
       if (tgt > 0 && cur <= tgt) {
-        return { status: "TARGET HIT", text: `TARGET HIT (${rawMovePct.toFixed(2)}%)`, isWin: true, isLoss: false };
+        return { status: "TARGET HIT", text: `TARGET HIT (+${Math.abs(rawMovePct).toFixed(2)}%)`, isWin: true, isLoss: false };
       }
     } else {
       if (sl > 0 && cur <= sl) {
-        return { status: "STOPPED OUT", text: `STOPPED OUT (${rawMovePct.toFixed(2)}%)`, isWin: false, isLoss: true };
+        return { status: "STOPPED OUT", text: `STOPPED OUT (-${Math.abs(rawMovePct).toFixed(2)}%)`, isWin: false, isLoss: true };
       }
       if (tgt > 0 && cur >= tgt) {
-        return { status: "TARGET HIT", text: `TARGET HIT (+${rawMovePct.toFixed(2)}%)`, isWin: true, isLoss: false };
+        return { status: "TARGET HIT", text: `TARGET HIT (+${Math.abs(rawMovePct).toFixed(2)}%)`, isWin: true, isLoss: false };
       }
     }
 
-    // 2. Movement Threshold Heuristics (if structural levels not yet hit)
     if (favorablePct >= 1.5) {
-      return { status: "TARGET HIT", text: `TARGET HIT (${favorablePct >= 0 ? "+" : ""}${favorablePct.toFixed(2)}%)`, isWin: true, isLoss: false };
+      return { status: "TARGET HIT", text: `TARGET HIT (+${favorablePct.toFixed(2)}%)`, isWin: true, isLoss: false };
     } else if (favorablePct > 0.15) {
-      return { status: "IN PROFIT", text: `IN PROFIT (${favorablePct >= 0 ? "+" : ""}${favorablePct.toFixed(2)}%)`, isWin: true, isLoss: false };
+      return { status: "IN PROFIT", text: `IN PROFIT (+${favorablePct.toFixed(2)}%)`, isWin: true, isLoss: false };
     } else if (favorablePct <= -0.75) {
       return { status: "STOPPED OUT", text: `STOPPED OUT (${favorablePct.toFixed(2)}%)`, isWin: false, isLoss: true };
     } else {
@@ -3693,23 +3926,26 @@
 
   function logBreakoutToHistory(stock, isPE, bellRang = false) {
     if (!stock || !stock.symbol) return;
+    if (isHighLotSymbol(stock.symbol, stock.lot_size)) return;
 
-    // Real 5-minute candle RVOL
     const rvol = Number(stock.rvol_5m || stock.rvol || stock.vc_ranking || 0);
-
-    // Dynamic Top Pick determination without hardcoded symbols
     const isTopPick = (Number(stock.score || 0) >= 80) || 
                       (stock.rank > 0 && stock.rank <= 2) || 
                       (stock.status === "Priority Rally");
 
-    // Gate: Must have had alert bell rang, or RVOL >= 1.4x, or be crowned Top Pick
     if (!bellRang && rvol < 1.4 && !isTopPick) {
-      return; // Do NOT log sub-threshold noise
+      return;
     }
 
     const list = getHistoryList();
     const sym = stock.symbol.toUpperCase();
-    const existingIdx = list.findIndex(x => x.symbol === sym);
+    const side = isPE ? "PE" : "CE";
+    const alertTime = normalizeTimeStr(stock.breakout_time || new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }));
+    if (parseTimeToMinutes(alertTime) > 14 * 60 + 45) return; // Strict 2:45 PM cutoff
+    const todayDate = getTodaySessionDate();
+
+    // Check if symbol & side already exists in today's list
+    const existingIdx = list.findIndex(x => x.symbol === sym && x.side === side && (x.time === alertTime || !x.verdict || x.verdict === "RETESTING"));
 
     const triggerP = Number(stock.entry || stock.ltp || 0);
     const curP = Number(stock.ltp || stock.entry || 0);
@@ -3717,10 +3953,12 @@
     const tgtP = Number(stock.target || 0);
 
     const itemData = {
-      time: stock.breakout_time || new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
+      date: todayDate,
+      time: alertTime,
       symbol: sym,
+      lot_size: Number(stock.lot_size || 0),
       sector: stock.sector || (typeof SECTOR_MAP !== "undefined" && SECTOR_MAP[sym]) || "F&O",
-      side: isPE ? "PE" : "CE",
+      side: side,
       setup: stock.setup || (isPE ? "Short buildup" : "Long buildup"),
       rvol: rvol,
       rangeHold: stock.range_position_percent ?? (isPE ? 10 : 90),
@@ -3731,7 +3969,7 @@
       percentChange: Number(stock.percent_change || 0),
       retestStatus: stock.retest_status || stock.five_min_status || "Retest Confirmed",
       isTopPick: isTopPick,
-      topPickReason: isTopPick ? `⭐ ${isPE ? 'PE' : 'CE'} SYSTEM TOP PICK` : "",
+      topPickReason: isTopPick ? `⭐ ${side} SYSTEM TOP PICK` : "",
       bellRang: Boolean(bellRang || rvol >= 1.4)
     };
 
@@ -3746,7 +3984,7 @@
       if (slP > 0) list[existingIdx].stop_loss = slP;
       if (tgtP > 0) list[existingIdx].target = tgtP;
     } else {
-      list.unshift(itemData);
+      list.push(itemData);
     }
 
     saveHistoryList(list);
@@ -3842,6 +4080,11 @@
 
     const list = getHistoryList();
 
+    const dateBadge = document.getElementById("historyDateBadge");
+    if (dateBadge) {
+      dateBadge.textContent = `📅 TODAY ONLY: ${getTodaySessionDate()}`;
+    }
+
     // 1. Calculate outcomes dynamically
     let wins = 0;
     let losses = 0;
@@ -3870,6 +4113,13 @@
     });
     const avgRvol = total > 0 ? (sumRvol / total) : 0;
 
+    // Use backend verified audit stats if present and aligned
+    if (window._serverAuditStats && (total === window._serverAuditStats.total || total === 0)) {
+      wins = window._serverAuditStats.wins;
+      losses = window._serverAuditStats.losses;
+      active = window._serverAuditStats.retesting;
+    }
+
     const evaluated = wins + losses;
     const winRate = evaluated > 0 ? Math.round((wins / evaluated) * 100) : null;
 
@@ -3895,7 +4145,7 @@
     if (elWinRate) {
       if (winRate !== null) {
         elWinRate.textContent = `${winRate}%`;
-        elWinRate.style.color = winRate >= 70 ? "#16a34a" : winRate >= 50 ? "#d97706" : "#dc2626";
+        elWinRate.style.color = winRate >= 60 ? "#16a34a" : winRate >= 45 ? "#d97706" : "#dc2626";
       } else {
         elWinRate.textContent = "--";
         elWinRate.style.color = "#64748b";
@@ -3908,7 +4158,7 @@
       } else if (evaluated === 0) {
         elWinRateSub.textContent = `${total} Alerts Active / Retesting`;
       } else {
-        elWinRateSub.textContent = `${wins} Win / ${losses} Loss (${wins}/${total} Profitable)`;
+        elWinRateSub.textContent = `${wins} Win / ${losses} Loss (${wins}/${total} Profitable · ${active} Retesting)`;
       }
     }
 
@@ -3937,6 +4187,8 @@
 
     // 3. Filter data
     let filtered = list.filter(x => {
+      if (parseTimeToMinutes(x.time) > 14 * 60 + 45) return false;
+      if (isHighLotSymbol(x.symbol, x.lot_size)) return false;
       if (_historyFilter === "toppick" && !x.isTopPick) return false;
       if (_historyFilter === "ce" && x.side !== "CE") return false;
       if (_historyFilter === "pe" && x.side !== "PE") return false;
@@ -3948,10 +4200,20 @@
       return true;
     });
 
+    // 4. Strict Chronological / Bell Time Sorting
+    filtered.sort((a, b) => {
+      const ta = parseTimeToMinutes(a.time);
+      const tb = parseTimeToMinutes(b.time);
+      if (ta !== tb) {
+        return _historySortAsc ? ta - tb : tb - ta;
+      }
+      return (a.symbol || "").localeCompare(b.symbol || "");
+    });
+
     if (filtered.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="12" style="text-align:center; padding:48px 20px; color:#64748b; font-size:13px;">
+          <td colspan="13" style="text-align:center; padding:48px 20px; color:#64748b; font-size:13px;">
             ${total === 0 
               ? "🔔 No bell alert signals logged yet today. Real alerts will appear here as institutional volume breaks out." 
               : "No bell alert signals match the selected filter."}
@@ -3961,8 +4223,8 @@
       return;
     }
 
-    // 4. Render Table Rows
-    tbody.innerHTML = filtered.map(item => {
+    // 5. Render Table Rows with SL NO
+    tbody.innerHTML = filtered.map((item, idx) => {
       const isCE = item.side === "CE";
       const trClass = item.isTopPick ? "row-top-pick" : "";
 
@@ -3972,31 +4234,45 @@
 
       const statusBadge = item.isTopPick
         ? `<span class="badge-top-pick" style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">⭐ ⚡ SYSTEM TOP PICK</span>`
-        : `<span class="badge-retest-purple" style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">🎯 ${item.retestStatus || "Retest Confirmed"}</span>`;
+        : `<span class="badge-retest-purple" style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">⚡ ${item.systemStatus || item.retestStatus || "Breakout Confirmed"}</span>`;
 
       const rvol = Number(item.rvol || 0);
       const rvolClass = rvol >= 5.0 ? "rvol-pill-high" : rvol >= 2.0 ? "rvol-pill-med" : "rvol-pill-norm";
       const rvolIcon = rvol >= 5.0 ? "🔥 " : rvol >= 2.0 ? "⚡ " : "";
 
-      const bellBadge = `<span class="badge-bell-rang" style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">🔔 Audio Ding Fired</span>`;
+      const bellBadge = `<span class="badge-bell-rang" style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">🔔 Breakout Ding Fired</span>`;
 
       const rangeVal = Math.max(0, Math.min(100, Number(item.rangeHold || 0)));
       const rangeColor = isCE ? "#16a34a" : "#dc2626";
 
-      const pctVal = Number(item.percentChange || 0);
-
-      // Trade PnL relative to entry
+      // Trade PnL / Peak Move
       const entry = Number(item.triggerPrice || item.entry || 0);
-      const cur = Number(item.currentPrice || item.ltp || entry);
-      let tradeMove = 0;
-      if (entry > 0) {
-        tradeMove = isCE ? ((cur - entry) / entry) * 100 : ((entry - cur) / entry) * 100;
-      }
-      const tradeCol = tradeMove >= 0 ? "#16a34a" : "#dc2626";
-      const tradeStr = `${tradeMove >= 0 ? "+" : ""}${tradeMove.toFixed(2)}%`;
-
-      // Honest Verdict styling
+      const peak = Number(item.peakPrice || item.currentPrice || item.ltp || entry);
       const v = item._v || computeVerdict(item);
+      
+      let tradeMove = 0;
+      let moveLabel = "move";
+      let tradeCol = "#64748b";
+
+      if (v.status === "TARGET HIT" || v.status === "IN PROFIT") {
+        tradeMove = Number(item.maxGainPct || 0);
+        if (!tradeMove && entry > 0) {
+          tradeMove = isCE ? ((peak - entry) / entry) * 100 : ((entry - peak) / entry) * 100;
+        }
+        moveLabel = "peak";
+        tradeCol = "#16a34a";
+      } else if (v.status === "STOPPED OUT") {
+        tradeMove = -Math.abs(Number(item.drawdownPct || 0.7));
+        moveLabel = "exit";
+        tradeCol = "#dc2626";
+      } else {
+        // Retesting trades: return should be zero!
+        tradeMove = 0.00;
+        moveLabel = "retest";
+        tradeCol = "#d97706";
+      }
+      const tradeStr = `${tradeMove >= 0 ? "+" : ""}${tradeMove.toFixed(2)}% ${moveLabel}`;
+
       let verdictBg = "#dcfce7";
       let verdictCol = "#166534";
       let verdictBorder = "#bbf7d0";
@@ -4021,12 +4297,16 @@
 
       return `
         <tr class="${trClass}">
+          <td style="text-align:center; font-weight:800; color:#64748b; font-size:12px; white-space:nowrap;">
+            ${idx + 1}
+          </td>
           <td style="text-align:center; font-weight:700; color:#334155; white-space:nowrap;">
             ⏱️ ${item.time || "--"}
           </td>
           <td style="white-space:nowrap;">
             <div style="display:flex; align-items:center; gap:8px;">
               <span style="font-weight:900; font-size:13px; color:#0f172a; cursor:pointer;" onclick="jumpToChart('${item.symbol}')">${item.symbol}</span>
+              ${item.lot_size ? `<span style="font-size:9.5px; color:#4f46e5; background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.25); padding:1px 5px; border-radius:4px; font-weight:700;">Lot ${item.lot_size.toLocaleString()}</span>` : ''}
               <span style="font-size:10px; color:#64748b; background:#f1f5f9; border:1px solid #e2e8f0; padding:1px 6px; border-radius:4px; font-weight:600;">${item.sector || "F&O"}</span>
             </div>
           </td>
@@ -4058,8 +4338,8 @@
           </td>
           <td style="text-align:right; white-space:nowrap;">
             <div style="display:flex; flex-direction:column; align-items:flex-end;">
-              <span style="font-weight:700; color:#0f172a;">₹${n(item.currentPrice)}</span>
-              <span style="font-size:10px; font-weight:800; color:${tradeCol};">${tradeStr} trade</span>
+              <span style="font-weight:700; color:#0f172a;">₹${n(peak)}</span>
+              <span style="font-size:10px; font-weight:800; color:${tradeCol};">${tradeStr}</span>
             </div>
           </td>
           <td style="text-align:center; white-space:nowrap;">

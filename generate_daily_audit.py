@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candles-dir", default=str(ROOT / "inputs" / "candles"), help="Path to candles directory")
     parser.add_argument("--date", default=None, help="Market date YYYY-MM-DD (default: latest in files)")
     parser.add_argument("--out-dir", default=str(ROOT / "reports"), help="Output directory for reports")
+    parser.add_argument("--max-lot", type=int, default=1500, help="Maximum allowed F&O contract lot size (default: 1500)")
     return parser.parse_args()
 
 
@@ -209,6 +210,9 @@ def audit_symbol(sym: str, raw_bars: list[dict], target_date: str | None = None)
                     r_return = (entry - last_p) / risk
                     verdict = "IN PROFIT" if r_return > 0.1 else ("STOPPED OUT" if r_return <= -0.8 else "RETESTING")
 
+                if verdict == "RETESTING":
+                    r_return = 0.0
+
             max_gain_pct = abs(mfe_price - entry) / entry * 100
             max_drawdown_pct = abs(mae_price - entry) / entry * 100
 
@@ -253,8 +257,11 @@ def main():
 
     all_alerts = []
     eval_date = args.date
+    from stock_suggestion_index import get_fo_lot_size
 
     for sym, raw_bars in sym_data.items():
+        if args.max_lot and get_fo_lot_size(sym) > args.max_lot:
+            continue
         res = audit_symbol(sym, raw_bars, target_date=eval_date)
         all_alerts.extend(res)
 

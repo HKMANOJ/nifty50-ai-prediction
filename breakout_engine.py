@@ -85,6 +85,11 @@ class BreakoutConfig:
     max_extension_pct: float = 0.05  # anti-exhaustion gate: blocks moves already extended > 5.0% from open
     target_r: float = 1.7
 
+    # No NEW breaks armed after this clock time. A signal at 15:10 leaves
+    # 20 minutes for a 1.5R move; SAIL 2026-09-07 15:10 is the example.
+    # Set to None to disable. Existing setups still resolve normally.
+    no_new_entries_after: str | None = "14:45"
+
     # ── execution model ──────────────────────────────────────────────────
     # "retest_limit" (default) is the measured rule: after a break, the NEXT
     # bar must close still holding the level AND trade back to it, and you are
@@ -296,6 +301,9 @@ class BreakoutEngine:
 
     # ── break detection ─────────────────────────────────────────────────────
     def _try_break(self, bar: dict, i: int, a: float) -> dict | None:
+        cutoff = self.cfg.no_new_entries_after
+        if cutoff and bar.get("t") and bar["t"] > cutoff:
+            return None            # too late in the session to arm a new break
         if not self._solid(bar):
             return None
         # Anti-exhaustion gate: block moves already extended > max_extension_pct from open

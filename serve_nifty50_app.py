@@ -92,10 +92,10 @@ def start_background_auto_scanner(interval_seconds: int = 60) -> None:
                             dur = round(time.time() - scan_start, 1)
                             is_ok = payload.get("ok", False)
                             
-                            # Cache in memory and disk
-                            IN_MEMORY_STOCK_SUGGESTIONS = payload
-                            STOCK_SUGGESTION_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
-                            STOCK_SUGGESTION_SNAPSHOT.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                            if is_ok or not STOCK_SUGGESTION_SNAPSHOT.exists():
+                                IN_MEMORY_STOCK_SUGGESTIONS = payload
+                                STOCK_SUGGESTION_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+                                STOCK_SUGGESTION_SNAPSHOT.write_text(json.dumps(payload, indent=2), encoding="utf-8")
                             
                             LAST_AUTO_SCAN_INFO["last_run_ist"] = get_ist_now().strftime("%I:%M:%S %p IST")
                             LAST_AUTO_SCAN_INFO["last_duration_seconds"] = dur
@@ -275,6 +275,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             self._serve_index_live()
             return
 
+        if parsed_path.path == "/api/breakout_audit":
+            self._serve_breakout_audit(parse_qs(parsed_path.query))
+            return
+
         super().do_GET()
 
     def _serve_index_live(self) -> None:
@@ -326,6 +330,32 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     pass
 
         self._send_json(HTTPStatus.OK, {"ok": True, "index_context": result})
+
+    def _serve_breakout_audit(self, query: dict[str, list[str]]) -> None:
+        """Serve audited breakout records from reports/breakout_audit_YYYY-MM-DD.json."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+        today_iso = now_ist.date().isoformat()
+        target_date = (query.get("date") or [today_iso])[0]
+        if target_date in ("today", "", None):
+            target_date = today_iso
+
+        report_file = ROOT / "reports" / f"breakout_audit_{target_date}.json"
+        if not report_file.exists() and target_date == today_iso:
+            candle_python = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
+            run_command([candle_python, str(ROOT / "generate_daily_audit.py"), "--date", target_date], timeout=30)
+
+        if report_file.exists():
+            try:
+                data = json.loads(report_file.read_text(encoding="utf-8"))
+                self._send_json(HTTPStatus.OK, {"ok": True, "data": data})
+                return
+            except Exception as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+                return
+
+        self._send_json(HTTPStatus.OK, {"ok": True, "data": {"date": target_date, "total_alerts": 0, "alerts": []}})
 
 
     def do_POST(self) -> None:
@@ -558,9 +588,18 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 payload = error_payload(exc)
                 dur = 0
             
-            IN_MEMORY_STOCK_SUGGESTIONS = payload
-            STOCK_SUGGESTION_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
-            STOCK_SUGGESTION_SNAPSHOT.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            if not payload.get("ok") and STOCK_SUGGESTION_SNAPSHOT.exists():
+                try:
+                    cached = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
+                    if cached.get("ok"):
+                        payload = cached
+                        payload["_warning"] = "refresh_failed_serving_cached"
+                except Exception:
+                    pass
+            else:
+                IN_MEMORY_STOCK_SUGGESTIONS = payload
+                STOCK_SUGGESTION_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+                STOCK_SUGGESTION_SNAPSHOT.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         finally:
             REFRESH_LOCK.release()
 

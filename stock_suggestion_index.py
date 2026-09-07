@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import csv
+import gzip
+import http.cookiejar
 import json
 import math
 import sys
@@ -46,6 +48,45 @@ MIN_BULLISH_CHANGE = 0.65
 MIN_BEARISH_CHANGE = -0.65
 MIN_RANGE_EXTREME = 0.55
 INDEX_LIKE_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
+MAX_ALLOWED_LOT_SIZE = 1500
+FO_LOT_SIZES_PATH = INPUT_DIR / "fo_lot_sizes.csv"
+_FO_LOT_SIZES_CACHE: dict[str, int] | None = None
+
+
+def load_fo_lot_sizes() -> dict[str, int]:
+    """Loads and caches NSE F&O contract market lot sizes from inputs/fo_lot_sizes.csv."""
+    global _FO_LOT_SIZES_CACHE
+    if _FO_LOT_SIZES_CACHE is not None:
+        return _FO_LOT_SIZES_CACHE
+
+    lot_sizes: dict[str, int] = {}
+    if FO_LOT_SIZES_PATH.exists():
+        try:
+            with open(FO_LOT_SIZES_PATH, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for r in reader:
+                    c = {k.strip(): (v.strip() if v else "") for k, v in r.items() if k}
+                    sym = c.get("SYMBOL") or c.get("Symbol")
+                    if not sym:
+                        continue
+                    # Check monthly lot size columns in order
+                    for col in ["SEP-26", "OCT-26", "NOV-26", "DEC-26"]:
+                        val = c.get(col)
+                        if val:
+                            try:
+                                lot_sizes[sym.strip().upper()] = int(float(val))
+                                break
+                            except (ValueError, TypeError):
+                                pass
+        except Exception as e:
+            print(f"[WARN] Failed to parse {FO_LOT_SIZES_PATH}: {e}")
+    _FO_LOT_SIZES_CACHE = lot_sizes
+    return _FO_LOT_SIZES_CACHE
+
+
+def get_fo_lot_size(symbol: str) -> int:
+    """Returns the market lot size for an F&O symbol (0 if unknown)."""
+    return load_fo_lot_sizes().get(symbol.strip().upper(), 0)
 
 
 class LiveDataError(RuntimeError):
@@ -87,6 +128,7 @@ class Suggestion:
     ema_trend: str = "neutral"
     vwap: float | None = None
     retest_status: str = "Initial"
+    lot_size: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -123,6 +165,7 @@ class Suggestion:
             "ema_trend": self.ema_trend,
             "vwap": self.vwap,
             "retest_status": self.retest_status,
+            "lot_size": self.lot_size,
         }
 
 
@@ -189,64 +232,113 @@ def normalize_symbol(value: Any) -> str:
     return symbol
 
 
+_NSE_SESSION: Any = None
+_NSE_OPENER: Any = None
+
+
+def get_nse_session() -> Any:
+    global _NSE_SESSION
+    if _NSE_SESSION is None:
+        try:
+            import requests
+            _NSE_SESSION = requests.Session()
+            _NSE_SESSION.headers.update({
+                "User-Agent": USER_AGENT,
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+            })
+        except ImportError:
+            _NSE_SESSION = False
+    return _NSE_SESSION if _NSE_SESSION is not False else None
+
+
+def get_nse_opener() -> urllib.request.OpenerDirector:
+    global _NSE_OPENER
+    if _NSE_OPENER is None:
+        cj = http.cookiejar.CookieJar()
+        _NSE_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    return _NSE_OPENER
+
+
 def nse_get_json(url: str, *, referer: str) -> Any:
-    cookie_jar = Path(tempfile.gettempdir()) / "nifty_stock_suggestion_nse.cookies"
-    base_headers = [
-        "-A",
-        USER_AGENT,
-        "-H",
-        "Accept: application/json, text/plain, */*",
-        "-H",
-        "Accept-Language: en-US,en;q=0.9",
-        "-H",
-        "Connection: keep-alive",
-    ]
+    req_err = ""
+    # 1. Primary: Direct requests.Session if requests is available
+    session = get_nse_session()
+    if session:
+        try:
+            resp = session.get(url, headers={"Referer": referer}, timeout=12)
+            if resp.status_code == 200:
+                return resp.json()
+            if resp.status_code in (401, 403):
+                session.get(referer or NSE_BASE, timeout=8)
+                resp2 = session.get(url, headers={"Referer": referer}, timeout=12)
+                if resp2.status_code == 200:
+                    return resp2.json()
+                req_err = f"requests HTTP {resp2.status_code}"
+            else:
+                req_err = f"requests HTTP {resp.status_code}"
+        except Exception as exc:
+            req_err = f"requests: {exc}"
 
-    # Use curl because NSE frequently blocks default Python urllib sessions.
-    import subprocess
-
-    warmup = [
-        "curl",
-        "--doh-url",
-        "https://dns.google/dns-query",
-        "--silent",
-        "--show-error",
-        "--location",
-        "--compressed",
-        "-c",
-        str(cookie_jar),
-        *base_headers,
-        "-e",
-        referer,
-        NSE_BASE,
-    ]
-    subprocess.run(warmup, cwd=ROOT, capture_output=True, text=True, timeout=20)
-
-    cmd = [
-        "curl",
-        "--doh-url",
-        "https://dns.google/dns-query",
-        "--fail",
-        "--silent",
-        "--show-error",
-        "--location",
-        "--compressed",
-        "-b",
-        str(cookie_jar),
-        *base_headers,
-        "-e",
-        referer,
-        "-H",
-        f"Referer: {referer}",
-        url,
-    ]
-    result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise LiveDataError(result.stderr.strip() or f"NSE request failed: {url}")
+    # 2. Secondary: Standard library urllib with cookie jar and gzip decompression
     try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise LiveDataError(f"NSE returned non-JSON for {url}: {result.stdout[:120]!r}") from exc
+        opener = get_nse_opener()
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate",
+                "Referer": referer,
+            },
+        )
+        with opener.open(req, timeout=12) as resp:
+            content = resp.read()
+            if resp.info().get("Content-Encoding") == "gzip":
+                content = gzip.decompress(content)
+            return json.loads(content.decode("utf-8"))
+    except Exception as exc:
+        req_err = f"{req_err}; urllib: {exc}" if req_err else f"urllib: {exc}"
+
+    # 3. Tertiary: Try curl if available on host
+    import shutil
+    import subprocess
+    curl_bin = shutil.which("curl")
+    if not curl_bin:
+        for p in ("/usr/bin/curl", "/bin/curl", "/usr/local/bin/curl", "/opt/homebrew/bin/curl"):
+            if Path(p).exists():
+                curl_bin = p
+                break
+
+    if curl_bin:
+        cookie_jar = Path(tempfile.gettempdir()) / "nifty_stock_suggestion_nse.cookies"
+        cmd = [
+            curl_bin,
+            "--silent",
+            "--show-error",
+            "--location",
+            "--compressed",
+            "-c", str(cookie_jar),
+            "-b", str(cookie_jar),
+            "-A", USER_AGENT,
+            "-H", "Accept: application/json, text/plain, */*",
+            "-H", "Accept-Language: en-US,en;q=0.9",
+            "-e", referer,
+            "-H", f"Referer: {referer}",
+            url,
+        ]
+        try:
+            result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=15)
+            if result.returncode == 0 and result.stdout.strip():
+                return json.loads(result.stdout)
+        except Exception:
+            pass
+
+    raise LiveDataError(f"NSE request failed for {url}: {req_err}")
+
 
 
 def nse_get_csv(url: str, *, referer: str) -> list[dict[str, Any]]:
@@ -322,6 +414,7 @@ def fetch_top_gainers_losers() -> tuple[list[dict[str, Any]], list[dict[str, Any
             break
         except Exception as exc:  # noqa: BLE001 - report source errors to UI
             errors.append(f"gainers {url}: {exc}")
+
     if payload is None:
         raise LiveDataError("; ".join(errors))
 
@@ -384,7 +477,7 @@ def fetch_change_in_oi() -> tuple[dict[str, dict[str, Any]], list[str]]:
         except Exception as exc:  # noqa: BLE001
             errors.append(f"oi {url}: {exc}")
     if payload is None:
-        raise LiveDataError("; ".join(errors))
+        return {}, errors
 
     rows = [normalize_oi_row(row) for row in rows_from_any_payload(payload)]
     rows = [row for row in rows if row["symbol"]]
@@ -614,7 +707,7 @@ def _generate_synthetic_candles_for_symbol(symbol: str) -> list[dict[str, Any]]:
 
 
 def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
-    """Fetches real-time 5-minute OHLCV candles for an NSE stock with disk cache & synthetic fallback."""
+    """Fetches real-time 5-minute OHLCV candles for an NSE stock with local disk cache and live exchange feeds."""
     sym = symbol.strip().upper()
 
     # 1. First check if disk cache exists
@@ -1029,7 +1122,12 @@ def build_suggestions(
     top: int,
     index_context: dict[str, dict[str, Any]],
 ) -> tuple[list[Suggestion], int]:
-    matched_rows = [row for row in rows if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS]
+    matched_rows = [
+        row for row in rows
+        if row["symbol"] in oi_by_symbol
+        and row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+    ]
     
     # Calculate activities across candidates to compute true relative volume (RVOL)
     activities = [calc_stock_activity(r, oi_by_symbol.get(r["symbol"])) for r in matched_rows]
@@ -1185,6 +1283,7 @@ def build_suggestions(
                 ema_trend=bo_info.get("ema_trend", "neutral"),
                 vwap=bo_info.get("vwap"),
                 retest_status=bo_info.get("retest_status", "Initial"),
+                lot_size=get_fo_lot_size(symbol),
             )
         )
 
@@ -1229,8 +1328,18 @@ def build_payload(top: int) -> dict[str, Any]:
 
     bullish, gainer_stock_overlap = build_suggestions(gainers, oi_by_symbol, side="bullish", top=top, index_context=index_context)
     bearish, loser_stock_overlap = build_suggestions(losers, oi_by_symbol, side="bearish", top=top, index_context=index_context)
-    gainers_with_oi = sum(1 for row in gainers if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS)
-    losers_with_oi = sum(1 for row in losers if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS)
+    gainers_with_oi = sum(
+        1 for row in gainers
+        if row["symbol"] in oi_by_symbol
+        and row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+    )
+    losers_with_oi = sum(
+        1 for row in losers
+        if row["symbol"] in oi_by_symbol
+        and row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+    )
     oi_matched = gainers_with_oi + losers_with_oi
 
     return {
@@ -1243,6 +1352,7 @@ def build_payload(top: int) -> dict[str, Any]:
         "strategy_name": "One-Side Rally Stock Suggestion Index",
         "strategy_rules": [
             "Use only stocks that appear in both NSE F&O Top 20 Gainers/Losers and Change in Open Interest.",
+            "Eliminate all high-lot contracts (lot size > 1500) to keep risk-reward and position sizing disciplined.",
             "Show only one-side rally candidates: price must hold near the day high/low, move from open, and align with OI.",
             "Cross-check NIFTY and BANKNIFTY context for market support or relative strength/weakness.",
             "Trade only after the stock breaks its morning high/low; do not chase before breakout.",
