@@ -1456,6 +1456,7 @@
       </div>
 
       <div class="navbar-status">
+        <button id="testStickyBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; flex-shrink:0;" title="Click to test visual sticky popup alert">🧪 Test Sticky Alert</button>
         <button id="soundToggleBtn" style="background:#f1f5f9; color:#64748b; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #e2e8f0; cursor:pointer; display:inline-flex; align-items:center; flex-shrink:0;">🔕 Alerts OFF</button>
         <span id="autoScanBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:inline-flex; align-items:center; gap:6px; flex-shrink:0;" title="Background Engine automatically rescans 200+ NSE F&O stocks every 5 minutes during market hours">
           <span id="autoScanDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#2563eb;"></span>
@@ -2115,6 +2116,7 @@
 
   // Expose global test helpers so users / devs can test popup anytime from console
   window.showStickyToast = showStickyToast;
+  let _testTogglePE = false;
   window.testStickyToast = function(isPE = false) {
     showStickyToast({
       symbol: isPE ? "BPCL" : "APLAPOLLO",
@@ -2132,6 +2134,18 @@
       is_breakout: true
     }, isPE);
   };
+
+  const testStickyBtn = document.getElementById("testStickyBtn");
+  if (testStickyBtn) {
+    testStickyBtn.addEventListener("click", () => {
+      unlockAudioEngine();
+      if (_soundAlertsEnabled) {
+        playAlertDing();
+      }
+      _testTogglePE = !_testTogglePE;
+      window.testStickyToast(_testTogglePE);
+    });
+  }
   let _selectedSymbol = "MUTHOOTFIN";
   let _tvChart = null;
   let _candleSeries = null;
