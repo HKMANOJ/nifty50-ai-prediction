@@ -1927,6 +1927,9 @@
         soundToggleBtn.style.color = "#1d4ed8";
         soundToggleBtn.style.borderColor = "#bfdbfe";
         playAlertDing(); // Instant test ding so user confirms speaker is on
+        if (typeof window.testStickyToast === "function") {
+          window.testStickyToast(false); // Instant test sticky popup so user confirms visual popup works!
+        }
       } else {
         soundToggleBtn.innerHTML = "🔕 Alerts OFF";
         soundToggleBtn.style.background = "#f1f5f9";
@@ -1980,20 +1983,24 @@
     }
   }
 
+  function parseTimeToMinutes(t) {
+    if (!t) return 0;
+    const s = String(t).trim();
+    const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([APap][Mm]))?/);
+    if (!m) return 0;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const ampm = m[4] ? m[4].toUpperCase() : null;
+    if (ampm === "PM" && h < 12) h += 12;
+    if (ampm === "AM" && h === 12) h = 0;
+    return h * 60 + min;
+  }
+
   function isRecentBreakout(boTimeStr, currentIstStr) {
     if (!boTimeStr || !currentIstStr) return false;
-    const match = boTimeStr.match(/(\d+):(\d+)\s+(AM|PM)/i);
-    if (!match) return false;
-    let [ , h, m, ampm ] = match;
-    h = parseInt(h);
-    if (ampm.toUpperCase() === 'PM' && h < 12) h += 12;
-    if (ampm.toUpperCase() === 'AM' && h === 12) h = 0;
-    const boMinutes = h * 60 + parseInt(m);
-    
-    const cMatch = currentIstStr.match(/(\d+):(\d+):(\d+)/);
-    if (!cMatch) return false;
-    const currentMinutes = parseInt(cMatch[1]) * 60 + parseInt(cMatch[2]);
-    
+    const boMinutes = parseTimeToMinutes(boTimeStr);
+    const currentMinutes = parseTimeToMinutes(currentIstStr);
+    if (boMinutes <= 0 || currentMinutes <= 0) return false;
     const diff = currentMinutes - boMinutes;
     return diff >= 0 && diff <= 15; // 15-minute strict cutoff
   }
@@ -2066,6 +2073,7 @@
     const typeName = isPE ? "PE BREAKDOWN" : "CE BREAKOUT";
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
+    toast.style.cursor = "pointer";
     const isRetest = (x.retest_status === "Confirmed") || (x.five_min_status || "").includes("Retest Confirmed");
     const isAfternoon = (x.five_min_status || "").includes("Afternoon");
     const isFresh = (x.retest_status === "Fresh") || (x.five_min_status || "").includes("Fresh") || (x.five_min_status || "").includes("Trigger") || isAfternoon;
@@ -2088,16 +2096,42 @@
     const slStr = x.stop_loss ? `₹${x.stop_loss}` : "--";
     const tgtStr = x.target ? `₹${x.target}` : "--";
     toast.innerHTML = `
-      <div>
+      <div style="flex:1;">
         <div class="toast-title ${type}">🚨 ${x.symbol} - ${typeName}</div>
         <div style="font-size:10px; font-weight:800; color:${subColor}; margin:2px 0;">${subTitle}</div>
-        <div class="toast-desc">Confirmed at ${x.breakout_time} (Score ${x.score})${x.lot_size ? ` · Lot: ${x.lot_size.toLocaleString()}` : ''}<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>5m RVOL: ${rvolDisplay} · VWAP: ₹${x.vwap || '--'}</div>
+        <div class="toast-desc">Confirmed at ${x.breakout_time || '--'} (Score ${x.score || '--'})${x.lot_size ? ` · Lot: ${Number(x.lot_size).toLocaleString()}` : ''}<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>5m RVOL: ${rvolDisplay} · VWAP: ₹${x.vwap || '--'}</div>
       </div>
-      <button class="toast-close">✖</button>
+      <button class="toast-close" title="Dismiss">✖</button>
     `;
-    toast.querySelector(".toast-close").addEventListener("click", () => toast.remove());
+    toast.addEventListener("click", (evt) => {
+      if (evt.target && evt.target.classList.contains("toast-close")) {
+        toast.remove();
+      } else if (typeof selectStock === "function") {
+        selectStock(x.symbol, x);
+      }
+    });
     container.appendChild(toast);
   }
+
+  // Expose global test helpers so users / devs can test popup anytime from console
+  window.showStickyToast = showStickyToast;
+  window.testStickyToast = function(isPE = false) {
+    showStickyToast({
+      symbol: isPE ? "BPCL" : "APLAPOLLO",
+      breakout_time: "14:40",
+      score: 85,
+      lot_size: 175,
+      entry: 3580.0,
+      stop_loss: 3540.0,
+      target: 3660.0,
+      rvol_5m: 2.1,
+      vwap: 3575.7,
+      retest_status: "Fresh",
+      status: "Priority Rally",
+      five_min_status: "⚡ Fresh Breakout",
+      is_breakout: true
+    }, isPE);
+  };
   let _selectedSymbol = "MUTHOOTFIN";
   let _tvChart = null;
   let _candleSeries = null;
@@ -2963,7 +2997,7 @@
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = isLocalDev
       ? `ws://127.0.0.1:8765`
-      : window.location.hostname.match(/^[0-9.]+$/) ? `ws://${window.location.hostname}:8765` : `${wsProtocol}//${window.location.host}/ws`;
+      : `${wsProtocol}//${window.location.host}/ws`;
 
     const badge = document.getElementById("wsStatusBadge");
     const dot   = document.getElementById("wsStatusDot");
