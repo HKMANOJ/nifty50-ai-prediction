@@ -1865,6 +1865,7 @@
   let _activeTab = "bullish";
   let _soundAlertsEnabled = false;
   let _initialDataLoaded = false;
+  let _initialPopupShown = false;
   const _alertedBreakouts = new Set();
 
   /* ── Universal Web Audio Engine (Unlocked for iOS Safari & Android Mobile) ── */
@@ -2069,11 +2070,14 @@
 
   function showStickyToast(x, isPE) {
     const container = document.getElementById("toastContainer");
-    if (!container) return;
+    if (!container || !x || !x.symbol) return;
+    const existing = container.querySelector(`.toast[data-sym="${x.symbol}"]`);
+    if (existing) existing.remove();
     const type = isPE ? "bearish" : "bullish";
     const typeName = isPE ? "PE BREAKDOWN" : "CE BREAKOUT";
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
+    toast.setAttribute("data-sym", x.symbol);
     toast.style.cursor = "pointer";
     const isRetest = (x.retest_status === "Confirmed") || (x.five_min_status || "").includes("Retest Confirmed");
     const isAfternoon = (x.five_min_status || "").includes("Afternoon");
@@ -2298,6 +2302,12 @@
       el.classList.toggle("selected", el.getAttribute("data-sym") === _selectedSymbol);
     });
 
+    // Show sticky popup for this stock if it is a breakout candidate
+    const matchedStock = [...(_currentBullish || []), ...(_currentBearish || [])].find(s => s.symbol === _selectedSymbol);
+    if (matchedStock && matchedStock.is_breakout && typeof showStickyToast === "function") {
+      showStickyToast(matchedStock, (matchedStock.percent_change || 0) < 0);
+    }
+
     try {
       initChart();
       const res = await fetch(`${API_BASE}/api/stock_candles?symbol=${encodeURIComponent(_selectedSymbol)}`);
@@ -2498,6 +2508,17 @@
     // Re-assign ranks 1..N based on sorted percentage
     _currentBullish.forEach((r, idx) => { r.rank = idx + 1; });
     _currentBearish.forEach((r, idx) => { r.rank = idx + 1; });
+
+    // Show top breakout popup on initial load so the user sees the active alert immediately
+    if (!_initialPopupShown) {
+      _initialPopupShown = true;
+      const topCandidate = _currentBullish.find(x => x.is_breakout) || _currentBearish.find(x => x.is_breakout);
+      if (topCandidate && typeof showStickyToast === "function") {
+        setTimeout(() => {
+          showStickyToast(topCandidate, (topCandidate.percent_change || 0) < 0);
+        }, 600);
+      }
+    }
 
     // Update Indexes
     const idxs = payload.index_context || {};
