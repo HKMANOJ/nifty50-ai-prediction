@@ -1420,6 +1420,41 @@
   let _hasEvaluatedInitialBell = false;
   const _alertedBreakouts = new Set();
 
+  /* ── IST time helpers (FIX 1 bell freshness + FIX 2 pick lock window) ──
+     All timing is done in "minutes since IST midnight", read from the payload's
+     own IST clock, so it never depends on the viewer's browser timezone. */
+  const FRESH_WINDOW_MIN = 6;    // FIX 1: only ring for breakouts <= 6 min old
+  const PICK_WINDOW_MIN  = 10;   // FIX 2: hold a System Pick 10 min from its breakout
+  let _lockedPick = null;        // { symbol, score, boMin, expiresMin, type, row }
+
+  function istNowMinutes(payload) {
+    const clk = (payload && payload.market_clock_ist) || "";
+    let m = /^(\d{1,2}):(\d{2})/.exec(clk);
+    if (m) return (+m[1]) * 60 + (+m[2]);
+    const g = (payload && payload.generated_at_ist) || "";
+    m = /T(\d{2}):(\d{2})/.exec(g);
+    if (m) return (+m[1]) * 60 + (+m[2]);
+    const d = new Date();               // last resort: local clock -> IST (UTC+5:30)
+    return (d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440;
+  }
+
+  // "10:10 AM" / "3:05 PM" / "13:05" -> minutes since IST midnight, or null.
+  function breakoutMinutes(boTime) {
+    if (!boTime) return null;
+    const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)?/i.exec(String(boTime).trim());
+    if (!m) return null;
+    let h = +m[1];
+    const ap = (m[3] || "").toUpperCase();
+    if (ap === "PM" && h !== 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    return h * 60 + (+m[2]);
+  }
+
+  function fmtMinAsClock(mins) {
+    const x = ((mins % 1440) + 1440) % 1440;
+    return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0");
+  }
+
   function getAudioContext() {
     if (!_globalAudioCtx) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -1558,6 +1593,7 @@
   function checkAndTriggerBellAlerts(payload) {
     if (!payload || !payload.ok) return;
     const allRows = [...(payload.bullish || []), ...(payload.bearish || [])];
+    const nowMin = istNowMinutes(payload);
 
     allRows.forEach(row => {
       if (row.lot_size && row.lot_size > 1100) return;
@@ -1569,20 +1605,27 @@
       const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
       const isActualBreakout = !isNear && !isConsolidating && (isBreakout || isBreakdown);
 
-      // "all the priority meets then only enable the bell rang"
-      const meetsAllPriority = (row.status === "Priority Rally" || row.bell_rang === true);
+      // FIX 1: perfect priority score (or backend bell_rang flag) required.
+      const score = row.one_side_rally_score ?? row.score ?? 0;
+      const meetsAllPriority = (score === 100 || row.bell_rang === true);
 
-      if (isActualBreakout && meetsAllPriority) {
-        const alertKey = `${row.symbol}_${row.breakout_time || 'BO'}_${row.side || ''}`;
-        if (!_alertedBreakouts.has(alertKey)) {
-          _alertedBreakouts.add(alertKey);
+      if (!(isActualBreakout && meetsAllPriority)) return;
 
-          // Once actual breakout called and all priority meets -> enable bell rang
-          if (_hasEvaluatedInitialBell) {
-            playBellRangSound();
-            showStickyToast(row, isBreakdown);
-          }
-        }
+      const alertKey = `${row.symbol}_${row.breakout_time || 'BO'}_${row.side || ''}`;
+      if (_alertedBreakouts.has(alertKey)) return;   // already handled -> stay silent
+
+      // FIX 1: only ring if the breakout is FRESH (happened within the last
+      // FRESH_WINDOW_MIN minutes). Anything older is seeded silently so it can
+      // never replay later.
+      const boMin = breakoutMinutes(row.breakout_time);
+      const ageMin = (boMin == null) ? null : (nowMin - boMin);
+      const isFresh = (ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN;
+
+      _alertedBreakouts.add(alertKey);   // seed regardless, so it fires at most once
+
+      if (isFresh && _hasEvaluatedInitialBell) {
+        playBellRangSound();
+        showStickyToast(row, isBreakdown);
       }
     });
 
@@ -1925,8 +1968,18 @@
   }
 
   /* ── Master Render Function ── */
+  let _lastGoodRenderAt = 0;
   function renderAll(payload) {
     if (!payload || !payload.ok) return;
+
+    // Never wipe a populated dashboard with an empty scan (NSE/Yahoo hiccup,
+    // rate-limit, cold cache). Keep the last good list on screen instead.
+    const hasRows = (payload.bullish && payload.bullish.length) || (payload.bearish && payload.bearish.length);
+    const hadRows = (_currentBullish && _currentBullish.length) || (_currentBearish && _currentBearish.length);
+    if (!hasRows && hadRows && (Date.now() - _lastGoodRenderAt) < 10 * 60 * 1000) {
+      return;
+    }
+    if (hasRows) _lastGoodRenderAt = Date.now();
 
     _currentBullish = (payload.bullish || []).sort((a, b) => (b.percent_change ?? 0) - (a.percent_change ?? 0));
     _currentBearish = (payload.bearish || []).sort((a, b) => (a.percent_change ?? 0) - (b.percent_change ?? 0));
@@ -2072,11 +2125,52 @@
       finalPickType = "PE";
     }
 
+    // 3b. FIX 2: lock the System Pick to a PICK_WINDOW_MIN window measured from
+    // its breakout_time. Inside the window, only a strictly higher-scoring FRESH
+    // breakout can override. After the window with nothing new -> blank.
+    const nowMinPick = istNowMinutes(payload);
+    const candBoMin  = finalTopPick ? breakoutMinutes(finalTopPick.breakout_time) : null;
+    const candFresh  = candBoMin != null && (nowMinPick - candBoMin) >= 0 && (nowMinPick - candBoMin) <= PICK_WINDOW_MIN;
+    const candScore  = finalTopPick ? (finalTopPick._finalScore ?? 0) : 0;
+
+    const lockActive = _lockedPick && nowMinPick <= _lockedPick.expiresMin;
+
+    const makeLock = (row, score, boMin, type) => ({
+      symbol: row.symbol, score, boMin, expiresMin: boMin + PICK_WINDOW_MIN, type, row,
+    });
+
+    if (lockActive) {
+      // Refresh the locked row with this cycle's data if the symbol is still present.
+      const pool = _lockedPick.type === "PE" ? _currentBearish : _currentBullish;
+      const liveRow = pool.find(x => x.symbol === _lockedPick.symbol);
+      if (liveRow) _lockedPick.row = liveRow;
+      // Override only for a strictly stronger, fresh breakout on a different name.
+      if (finalTopPick && candFresh && candScore > _lockedPick.score && finalTopPick.symbol !== _lockedPick.symbol) {
+        _lockedPick = makeLock(finalTopPick, candScore, candBoMin, finalPickType);
+      }
+    } else {
+      // No active lock: adopt the current candidate only if its breakout is fresh.
+      _lockedPick = (finalTopPick && candFresh)
+        ? makeLock(finalTopPick, candScore, candBoMin, finalPickType)
+        : null;
+    }
+
+    // Render the locked pick (its cached/refreshed row), not the raw candidate.
+    if (_lockedPick) {
+      finalTopPick = _lockedPick.row;
+      finalPickType = _lockedPick.type;
+      if (finalTopPick._finalScore == null) finalTopPick._finalScore = _lockedPick.score;
+      if (finalTopPick._isTrendAligned == null) finalTopPick._isTrendAligned = true;
+    } else {
+      finalTopPick = null;
+    }
+    const _lockTillStr = _lockedPick ? `🔒 LOCKED · valid till ${fmtMinAsClock(_lockedPick.expiresMin)}` : "";
+
     // 4. Render UI
     if (finalTopPick) {
       pickBlank.style.display = "none";
       pickActive.style.display = "block";
-      const scoreStr = finalTopPick._finalScore.toFixed(2);
+      const scoreStr = (finalTopPick._finalScore ?? 0).toFixed(2);
       const trendStr = finalTopPick._isTrendAligned ? "📈 Trend Aligned" : "🚨 MASSIVE OUTLIER";
       
       if (finalPickType === "PE") {
@@ -2090,7 +2184,7 @@
         document.getElementById("topPickSym").textContent = finalTopPick.symbol;
         document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
         document.getElementById("topPickTime").textContent = finalTopPick.breakout_time || "--";
-        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}`;
+        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}${_lockTillStr ? " · " + _lockTillStr : ""}`;
         
         if (pickCriteria) {
           pickCriteria.innerHTML = [
@@ -2111,7 +2205,7 @@
         document.getElementById("topPickSym").textContent = finalTopPick.symbol;
         document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
         document.getElementById("topPickTime").textContent = finalTopPick.breakout_time || "--";
-        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}`;
+        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}${_lockTillStr ? " · " + _lockTillStr : ""}`;
         
         if (pickCriteria) {
           pickCriteria.innerHTML = [
@@ -2452,6 +2546,9 @@
   // Streams live 5m candles to TradingView chart & broadcasts scan updates
   // ═══════════════════════════════════════════════════════════════════
   let _wsClient = null;
+  let _wsHeartbeat = null;
+  let _wsReconnectDelay = 2500;   // grows on repeated failures, resets on success
+  let _wsReconnectTimer = null;
 
   function connectWebSocket() {
     // Smart WebSocket URL detection:
@@ -2483,10 +2580,19 @@
         badge.style.color = "#166534";
         badge.style.borderColor = "#bbf7d0";
       }
+      _wsReconnectDelay = 2500;   // healthy connection -> reset backoff
       // Immediately subscribe to current active stock
       if (_selectedSymbol) {
         _wsClient.send(JSON.stringify({ action: "subscribe", symbol: _selectedSymbol }));
       }
+      // App-level heartbeat: keeps the socket alive even while the main thread
+      // is busy repainting, so the server does not drop us into a reconnect loop.
+      clearInterval(_wsHeartbeat);
+      _wsHeartbeat = setInterval(() => {
+        if (_wsClient && _wsClient.readyState === WebSocket.OPEN) {
+          try { _wsClient.send(JSON.stringify({ action: "ping" })); } catch (e) {}
+        }
+      }, 15000);
     };
 
     _wsClient.onmessage = (evt) => {
@@ -2526,6 +2632,7 @@
     };
 
     _wsClient.onclose = () => {
+      clearInterval(_wsHeartbeat);
       if (dot) dot.style.background = "#f59e0b";
       if (text) text.textContent = "WS: Reconnecting...";
       if (badge) {
@@ -2533,12 +2640,15 @@
         badge.style.color = "#b45309";
         badge.style.borderColor = "#fde68a";
       }
-      // Auto-reconnect after 2.5 seconds
-      setTimeout(connectWebSocket, 2500);
+      // Exponential backoff (2.5s -> 30s cap), single pending timer.
+      clearTimeout(_wsReconnectTimer);
+      _wsReconnectTimer = setTimeout(connectWebSocket, _wsReconnectDelay);
+      _wsReconnectDelay = Math.min(_wsReconnectDelay * 1.8, 30000);
     };
 
     _wsClient.onerror = () => {
-      _wsClient?.close();
+      // Let onclose handle reconnect/backoff; just tidy up this socket.
+      try { _wsClient && _wsClient.close(); } catch (e) {}
     };
   }
 

@@ -12,10 +12,12 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import csv
+import gzip
+import http.cookiejar
 import json
 import math
 import sys
-import tempfile
+import time as _time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -48,6 +50,49 @@ INDEX_LIKE_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT5
 MAX_ALLOWED_LOT_SIZE = 1100
 FO_LOT_SIZES_PATH = INPUT_DIR / "fo_lot_sizes.csv"
 _FO_LOT_SIZES_CACHE: dict[str, int] | None = None
+
+# 5-minute candle fetch tuning.
+# Candles only change every 5 minutes, so a short TTL cache lets back-to-back
+# refreshes (manual "Refresh Live" spam, or bullish+bearish in the same scan)
+# reuse the same download instead of re-hitting the slow upstream chart API.
+CANDLE_CACHE_TTL_SECONDS = 90
+CANDLE_FETCH_TIMEOUT = 3.5          # per-request socket timeout
+CANDLE_POOL_WAIT_SECONDS = 9.0     # hard cap on the whole batch; stragglers are abandoned
+CANDLE_POOL_MAX_WORKERS = 24
+# The live refresh runs this module as a fresh subprocess each time, so the
+# candle cache is persisted to disk (keyed by symbol -> [epoch, candles]) to
+# survive between runs and let back-to-back refreshes skip the upstream fetch.
+CANDLE_CACHE_PATH = INPUT_DIR / "candle_cache.json"
+_CANDLE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CANDLE_CACHE_LOADED = False
+
+
+def _load_candle_cache() -> None:
+    global _CANDLE_CACHE_LOADED
+    if _CANDLE_CACHE_LOADED:
+        return
+    _CANDLE_CACHE_LOADED = True
+    try:
+        raw = json.loads(CANDLE_CACHE_PATH.read_text(encoding="utf-8"))
+        cutoff = _time.time() - CANDLE_CACHE_TTL_SECONDS
+        for sym, entry in raw.items():
+            if isinstance(entry, list) and len(entry) == 2 and entry[0] >= cutoff:
+                _CANDLE_CACHE[sym] = (float(entry[0]), entry[1])
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001 - a bad cache file must never break a scan
+        print(f"candle cache load skipped: {exc}")
+
+
+def _save_candle_cache() -> None:
+    try:
+        cutoff = _time.time() - CANDLE_CACHE_TTL_SECONDS
+        fresh = {s: [ts, c] for s, (ts, c) in _CANDLE_CACHE.items() if ts >= cutoff}
+        tmp = CANDLE_CACHE_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(fresh), encoding="utf-8")
+        tmp.replace(CANDLE_CACHE_PATH)
+    except Exception as exc:  # noqa: BLE001
+        print(f"candle cache save skipped: {exc}")
 
 
 def load_fo_lot_sizes() -> dict[str, int]:
@@ -226,60 +271,63 @@ def normalize_symbol(value: Any) -> str:
     return symbol
 
 
-def nse_get_json(url: str, *, referer: str) -> Any:
-    cookie_jar = Path(tempfile.gettempdir()) / "nifty_stock_suggestion_nse.cookies"
-    base_headers = [
-        "-A",
-        USER_AGENT,
-        "-H",
-        "Accept: application/json, text/plain, */*",
-        "-H",
-        "Accept-Language: en-US,en;q=0.9",
-        "-H",
-        "Connection: keep-alive",
-    ]
+# Shared NSE session (cookie jar + opener) so the anti-bot handshake is done
+# once every few minutes instead of on every request. Uses urllib only - no
+# dependency on a `curl` binary (which is absent from slim container images).
+_NSE_OPENER: "urllib.request.OpenerDirector | None" = None
+_NSE_WARMED_AT = 0.0
+_NSE_WARM_TTL = 180.0
 
-    # Use curl because NSE frequently blocks default Python urllib sessions.
-    import subprocess
 
-    warmup = [
-        "curl",
-        "--silent",
-        "--show-error",
-        "--location",
-        "--compressed",
-        "-c",
-        str(cookie_jar),
-        *base_headers,
-        "-e",
-        referer,
-        NSE_BASE,
-    ]
-    subprocess.run(warmup, cwd=ROOT, capture_output=True, text=True, timeout=20)
+def _nse_opener() -> "urllib.request.OpenerDirector":
+    global _NSE_OPENER
+    if _NSE_OPENER is None:
+        jar = http.cookiejar.CookieJar()
+        _NSE_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    return _NSE_OPENER
 
-    cmd = [
-        "curl",
-        "--fail",
-        "--silent",
-        "--show-error",
-        "--location",
-        "--compressed",
-        "-b",
-        str(cookie_jar),
-        *base_headers,
-        "-e",
-        referer,
-        "-H",
-        f"Referer: {referer}",
-        url,
-    ]
-    result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise LiveDataError(result.stderr.strip() or f"NSE request failed: {url}")
+
+def _nse_fetch(url: str, *, referer: str, timeout: float) -> bytes:
+    req = urllib.request.Request(url, headers={
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+        "Referer": referer,
+    })
+    with _nse_opener().open(req, timeout=timeout) as resp:
+        raw = resp.read()
+    if (resp.headers.get("Content-Encoding") or "").lower() == "gzip":
+        raw = gzip.decompress(raw)
+    return raw
+
+
+def _nse_warm(referer: str, *, force: bool = False) -> None:
+    global _NSE_WARMED_AT
+    now = _time.time()
+    if not force and (now - _NSE_WARMED_AT) < _NSE_WARM_TTL:
+        return
     try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise LiveDataError(f"NSE returned non-JSON for {url}: {result.stdout[:120]!r}") from exc
+        _nse_fetch(NSE_BASE, referer=referer, timeout=15.0)
+        _NSE_WARMED_AT = _time.time()
+    except Exception:
+        _NSE_WARMED_AT = 0.0
+
+
+def nse_get_json(url: str, *, referer: str) -> Any:
+    last_err: Exception | None = None
+    for attempt in range(3):
+        _nse_warm(referer, force=(attempt > 0))
+        try:
+            raw = _nse_fetch(url, referer=referer, timeout=25.0)
+            return json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise LiveDataError(f"NSE returned non-JSON for {url}: {raw[:120]!r}") from exc
+        except Exception as exc:  # noqa: BLE001 - retry with a fresh handshake
+            last_err = exc
+            _time.sleep(0.4 * (attempt + 1))
+    raise LiveDataError(str(last_err) or f"NSE request failed: {url}")
 
 
 def nse_get_csv(url: str, *, referer: str) -> list[dict[str, Any]]:
@@ -542,7 +590,10 @@ def pct_from_open(row: dict[str, Any]) -> float | None:
 def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
     """Fetches real-time 5-minute OHLCV candles for an NSE stock."""
     yahoo_sym = f"{symbol}.NS"
-    url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range=5d"
+    # Only the current session is needed for the opening-range breakout logic, so
+    # ask for range=1d (a much smaller payload) unless a caller wants full history.
+    chart_range = "5d" if full_range else "1d"
+    url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range={chart_range}"
     req = urllib.request.Request(
         url,
         headers={
@@ -552,7 +603,7 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=4.0) as resp:
+        with urllib.request.urlopen(req, timeout=CANDLE_FETCH_TIMEOUT) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             result = (data.get("chart") or {}).get("result")
             if not result:
@@ -599,16 +650,77 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
         return []
 
 
+def bulk_fetch_candles(
+    symbols: Iterable[str],
+    candles_by_symbol: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Populate ``candles_by_symbol`` for every requested symbol.
+
+    Symbols already present in the dict are left alone (so the two sides of a
+    scan share one download). Fresh symbols are served from a short-TTL process
+    cache when possible, otherwise fetched concurrently. The whole batch is
+    capped at ``CANDLE_POOL_WAIT_SECONDS``; symbols whose request has not
+    returned by then are recorded as an empty list and the workers abandoned,
+    so one slow upstream response can no longer stall the entire refresh.
+    """
+    _load_candle_cache()
+    now = _time.time()
+    pending: list[str] = []
+    for sym in symbols:
+        if sym in candles_by_symbol:
+            continue
+        cached = _CANDLE_CACHE.get(sym)
+        if cached and (now - cached[0]) <= CANDLE_CACHE_TTL_SECONDS:
+            candles_by_symbol[sym] = cached[1]
+        else:
+            pending.append(sym)
+
+    if not pending:
+        return candles_by_symbol
+
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(len(pending), CANDLE_POOL_MAX_WORKERS)
+    )
+    future_to_sym = {executor.submit(fetch_5m_candles_for_symbol, sym): sym for sym in pending}
+    try:
+        for future in concurrent.futures.as_completed(future_to_sym, timeout=CANDLE_POOL_WAIT_SECONDS):
+            sym = future_to_sym[future]
+            try:
+                result = future.result()
+            except Exception:
+                result = []
+            candles_by_symbol[sym] = result
+            if result:
+                _CANDLE_CACHE[sym] = (_time.time(), result)
+    except concurrent.futures.TimeoutError:
+        pass
+    except Exception:
+        pass
+    finally:
+        # Do not block on stragglers - abandon any request still in flight.
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    for sym in pending:
+        candles_by_symbol.setdefault(sym, [])
+    _save_candle_cache()
+    return candles_by_symbol
+
+
 def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any]) -> dict[str, Any]:
     """Analyzes 5-minute candles using a strict 5-Minute Opening Range Breakout (ORB) and Continuous Wave Tracking."""
     if len(candles) < 2:
+        # No intraday candles came back (upstream slow/blocked). Flag it as its
+        # own state instead of "Consolidating" so the row is kept on the list
+        # rather than silently dropped - it just is not eligible for a
+        # confirmed-breakout badge until candles arrive on a later scan.
         return {
             "is_breakout": False,
-            "status": "Consolidating",
+            "status": "Awaiting 5m",
             "breakout_time": None,
             "rvol_5m": 1.0,
             "ema_trend": "bullish" if side == "bullish" else "bearish",
-            "chart_structure": "Base Building"
+            "chart_structure": "Base Building",
+            "no_candle_data": True,
         }
 
     # 1. 9-period EMA on 5-minute closes
@@ -1005,6 +1117,7 @@ def build_suggestions(
     side: str,
     top: int,
     index_context: dict[str, dict[str, Any]],
+    candles_by_symbol: dict[str, list[dict[str, Any]]] | None = None,
 ) -> tuple[list[Suggestion], int]:
     matched_rows = [
         row for row in rows
@@ -1022,21 +1135,14 @@ def build_suggestions(
     else:
         median_act = 1.0
 
-    # Fetch 5-minute candles concurrently for all candidate symbols
-    candles_by_symbol: dict[str, list[dict[str, Any]]] = {}
+    # Fetch 5-minute candles for all candidate symbols. A caller can pass a
+    # shared dict so both sides of one scan reuse a single download; anything
+    # missing is filled here (served from the short-TTL cache when possible).
+    if candles_by_symbol is None:
+        candles_by_symbol = {}
     candidate_symbols = [r["symbol"] for r in matched_rows]
     if candidate_symbols:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(candidate_symbols), 8)) as executor:
-            future_to_sym = {executor.submit(fetch_5m_candles_for_symbol, sym): sym for sym in candidate_symbols}
-            try:
-                for future in concurrent.futures.as_completed(future_to_sym, timeout=10.0):
-                    sym = future_to_sym[future]
-                    try:
-                        candles_by_symbol[sym] = future.result()
-                    except Exception:
-                        candles_by_symbol[sym] = []
-            except (concurrent.futures.TimeoutError, Exception):
-                pass
+        bulk_fetch_candles(candidate_symbols, candles_by_symbol)
 
     suggestions: list[Suggestion] = []
     for row in matched_rows:
@@ -1075,6 +1181,8 @@ def build_suggestions(
             quality_tags.insert(0, f"5m Breakout ({breakout_time or 'Active'})")
         elif "near" in five_min_status.lower():
             quality_tags.insert(0, "Near 5m Breakout")
+        elif bo_info.get("no_candle_data"):
+            quality_tags.insert(0, "5m data pending (kept on OI + rally strength)")
 
         entry, stop, target, plan = build_trade_levels(row, side=side)
         oi_change_percent = oi.get("oi_change_percent")
@@ -1178,18 +1286,49 @@ def phase_for_time(now_ist: datetime) -> str:
     return "Market closed: today's list is archived/reset on next session"
 
 
+def _passes_base_filter(symbol: str, oi_by_symbol: dict[str, dict[str, Any]]) -> bool:
+    return (
+        symbol in oi_by_symbol
+        and symbol not in INDEX_LIKE_SYMBOLS
+        and get_fo_lot_size(symbol) <= MAX_ALLOWED_LOT_SIZE
+    )
+
+
 def build_payload(top: int) -> dict[str, Any]:
     now_ist = datetime.now(INDIA_TZ)
     errors: list[str] = []
-    gainers, losers, variation_errors = fetch_top_gainers_losers()
+
+    # The three upstream NSE reads are independent - run them concurrently.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+        f_var = ex.submit(fetch_top_gainers_losers)
+        f_oi = ex.submit(fetch_change_in_oi)
+        f_idx = ex.submit(fetch_index_context)
+        gainers, losers, variation_errors = f_var.result()
+        oi_by_symbol, oi_errors = f_oi.result()
+        index_context, index_errors = f_idx.result()
     errors.extend(variation_errors)
-    oi_by_symbol, oi_errors = fetch_change_in_oi()
     errors.extend(oi_errors)
-    index_context, index_errors = fetch_index_context()
     errors.extend(index_errors)
 
-    bullish, gainer_stock_overlap = build_suggestions(gainers, oi_by_symbol, side="bullish", top=top, index_context=index_context)
-    bearish, loser_stock_overlap = build_suggestions(losers, oi_by_symbol, side="bearish", top=top, index_context=index_context)
+    # Warm the 5-minute candle cache once for the union of both sides'
+    # candidates, so bullish and bearish do not each pay a separate fetch wait.
+    shared_candles: dict[str, list[dict[str, Any]]] = {}
+    union_symbols = {
+        row["symbol"]
+        for row in (*gainers, *losers)
+        if _passes_base_filter(row["symbol"], oi_by_symbol)
+    }
+    if union_symbols:
+        bulk_fetch_candles(sorted(union_symbols), shared_candles)
+
+    bullish, gainer_stock_overlap = build_suggestions(
+        gainers, oi_by_symbol, side="bullish", top=top,
+        index_context=index_context, candles_by_symbol=shared_candles,
+    )
+    bearish, loser_stock_overlap = build_suggestions(
+        losers, oi_by_symbol, side="bearish", top=top,
+        index_context=index_context, candles_by_symbol=shared_candles,
+    )
     gainers_with_oi = sum(
         1 for row in gainers
         if row["symbol"] in oi_by_symbol
@@ -1284,6 +1423,10 @@ def error_payload(exc: Exception) -> dict[str, Any]:
     }
 
 
+def _has_signal(payload: dict[str, Any]) -> bool:
+    return bool(payload.get("ok")) and bool(payload.get("bullish") or payload.get("bearish"))
+
+
 def main() -> int:
     args = parse_args()
     output = Path(args.output)
@@ -1295,6 +1438,26 @@ def main() -> int:
         exit_code = 1
 
     output.parent.mkdir(parents=True, exist_ok=True)
+
+    # Never let a failed/empty scan clobber a good snapshot. If this run produced
+    # no usable signal but a previous good snapshot from the SAME session exists,
+    # keep serving that one and write the failure to a side file instead.
+    if not _has_signal(payload) and output.exists():
+        try:
+            prev = json.loads(output.read_text(encoding="utf-8"))
+        except Exception:
+            prev = {}
+        if _has_signal(prev) and prev.get("session_date") == payload.get("session_date"):
+            (output.parent / "stock_suggestion_index.error.json").write_text(
+                json.dumps(payload, indent=2), encoding="utf-8"
+            )
+            # Emit the last good snapshot on stdout so callers (server refresh
+            # endpoint / WS broadcast) keep showing real data instead of blank.
+            prev["_stale_kept"] = True
+            prev["_last_scan_error"] = payload.get("message") or payload.get("error")
+            print(json.dumps(prev, indent=2))
+            return exit_code
+
     output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload, indent=2))
     return exit_code

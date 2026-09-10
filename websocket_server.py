@@ -158,13 +158,19 @@ def broadcast_index_update_sync(index_context: dict[str, Any]) -> None:
 def start_websocket_server_thread(host: str = WS_HOST, port: int = WS_PORT) -> threading.Thread:
     """Starts the WebSocket server in a background daemon thread."""
     def _run():
-        global MAIN_LOOP
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        MAIN_LOOP = loop
 
         async def _main():
-            async with websockets.serve(ws_handler, host, port):
+            global MAIN_LOOP
+            # ping_interval/ping_timeout are generous so a browser busy repainting
+            # the dashboard does not get its socket dropped (which used to cause a
+            # reconnect storm). max_queue caps a slow client's backlog.
+            async with websockets.serve(
+                ws_handler, host, port,
+                ping_interval=30, ping_timeout=90, max_queue=48, close_timeout=5,
+            ):
+                MAIN_LOOP = loop  # only publish the loop once the bind succeeded
                 logger.info(f"WebSocket push engine listening on ws://{host}:{port}")
                 asyncio.create_task(candle_streaming_loop())
                 await asyncio.Future()
@@ -172,6 +178,7 @@ def start_websocket_server_thread(host: str = WS_HOST, port: int = WS_PORT) -> t
         try:
             loop.run_until_complete(_main())
         except Exception as e:
+            MAIN_LOOP = None
             logger.error(f"WebSocket server exited: {e}")
 
     thread = threading.Thread(target=_run, name="WebSocketServerThread", daemon=True)

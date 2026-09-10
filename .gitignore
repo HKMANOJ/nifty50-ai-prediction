@@ -6,3 +6,5 @@ __pycache__/
 .venv/
 .vercel/
 node_modules/
+inputs/candle_cache.json
+inputs/candle_cache.json.tmp

@@ -44,6 +44,28 @@ MOST_ACTIVE = ROOT / "inputs" / "most_active.latest.json"
 STOCK_SUGGESTION_SNAPSHOT = ROOT / "inputs" / "stock_suggestion_index.latest.json"
 REFRESH_LOCK = threading.Lock()
 
+# Debounce: collapse a burst of refresh requests (many tabs, reconnects, button
+# spam) into at most one real scan per MIN_SCAN_INTERVAL. Between scans, callers
+# get the last result instead of queueing another subprocess.
+MIN_SCAN_INTERVAL_SECONDS = 45.0
+_SCAN_STATE: dict[str, Any] = {"ts": 0.0, "payload": None, "signature": None}
+
+
+def _payload_has_signal(payload: Any) -> bool:
+    return bool(
+        isinstance(payload, dict)
+        and payload.get("ok")
+        and (payload.get("bullish") or payload.get("bearish"))
+    )
+
+
+def _payload_signature(payload: dict[str, Any]) -> str:
+    rows = list(payload.get("bullish") or []) + list(payload.get("bearish") or [])
+    return "|".join(
+        f"{r.get('symbol')}:{r.get('five_min_status')}:{r.get('is_breakout')}:{r.get('one_side_rally_score')}"
+        for r in rows
+    )
+
 IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
 def get_ist_now() -> datetime:
@@ -82,18 +104,25 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
                             res = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
                             dur = round(time.time() - scan_start, 1)
-                            is_ok = res.get("ok", False)
+                            scan_payload = res.get("stdout") if isinstance(res.get("stdout"), dict) else {}
+                            has_signal = _payload_has_signal(scan_payload)
+                            _SCAN_STATE["ts"] = time.time()
                             LAST_AUTO_SCAN_INFO["last_run_ist"] = get_ist_now().strftime("%I:%M:%S %p IST")
                             LAST_AUTO_SCAN_INFO["last_duration_seconds"] = dur
-                            LAST_AUTO_SCAN_INFO["status"] = "success" if is_ok else "failed"
-                            print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Scan completed in {dur}s (ok={is_ok})")
-                            # Real-time WebSocket push to all connected browsers
-                            if is_ok and isinstance(res.get("stdout"), dict):
-                                try:
-                                    from websocket_server import broadcast_scanner_update_sync
-                                    broadcast_scanner_update_sync(res["stdout"])
-                                except Exception as bc_err:
-                                    print(f"[WS BROADCAST ERROR] {bc_err}")
+                            LAST_AUTO_SCAN_INFO["status"] = "success" if has_signal else "failed"
+                            print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Scan completed in {dur}s (signal={has_signal})")
+                            # Push to browsers only when the scan has real data AND
+                            # it changed - prevents blank/flicker broadcast storms.
+                            if has_signal:
+                                _SCAN_STATE["payload"] = scan_payload
+                                sig = _payload_signature(scan_payload)
+                                if sig != _SCAN_STATE.get("signature"):
+                                    _SCAN_STATE["signature"] = sig
+                                    try:
+                                        from websocket_server import broadcast_scanner_update_sync
+                                        broadcast_scanner_update_sync(scan_payload)
+                                    except Exception as bc_err:
+                                        print(f"[WS BROADCAST ERROR] {bc_err}")
                         except Exception as scan_err:
                             print(f"[AUTO-SCANNER ERROR] {scan_err}")
                             LAST_AUTO_SCAN_INFO["status"] = f"error: {scan_err}"
@@ -472,40 +501,65 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
         today_str = now_ist.date().isoformat()
 
-        if STOCK_SUGGESTION_SNAPSHOT.exists():
+        # Prefer the freshest thing we already have (in-memory scan, else disk),
+        # and serve it immediately. A GET must never block on a live scan - that
+        # is what caused every tab load to trigger a scan + broadcast storm.
+        best = None
+        if _payload_has_signal(_SCAN_STATE.get("payload")):
+            best = dict(_SCAN_STATE["payload"])
+        elif STOCK_SUGGESTION_SNAPSHOT.exists():
             try:
-                payload = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
-                snapshot_date = payload.get("session_date")
-                # Attach live auto-scanner telemetry
-                payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
-                # If snapshot is from previous date or marked failed, auto-refresh live
-                if payload.get("ok") and snapshot_date == today_str:
-                    self._send_json(HTTPStatus.OK, payload)
-                    return
-                status, refreshed = self._refresh_stock_suggestions_payload()
-                refreshed["_auto_refresh_reason"] = "stale_session_auto_refreshed"
-                refreshed["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
-                self._send_json(status, refreshed)
-                return
-            except Exception as e:
-                self._send_json(
-                    HTTPStatus.INTERNAL_SERVER_ERROR,
-                    {
-                        "ok": False,
-                        "error": "stock_suggestions_load_failed",
-                        "message": f"Failed to load stock suggestion data: {str(e)}",
-                    },
-                )
-                return
+                best = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
+            except Exception:
+                best = None
 
+        if _payload_has_signal(best):
+            best["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
+            if best.get("session_date") != today_str:
+                best["_auto_refresh_reason"] = "stale_session_background_refresh"
+                self._kick_background_refresh()
+            self._send_json(HTTPStatus.OK, best)
+            return
+
+        # Nothing usable on hand - do one synchronous (debounced) scan.
         status, payload = self._refresh_stock_suggestions_payload()
-        payload["_auto_refresh_reason"] = "snapshot_missing"
+        payload["_auto_refresh_reason"] = "no_snapshot"
         payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
         self._send_json(status, payload)
 
+    def _kick_background_refresh(self) -> None:
+        """Fire a debounced refresh in a daemon thread (never blocks the GET)."""
+        def _run():
+            try:
+                self._refresh_stock_suggestions_payload()
+            except Exception:
+                pass
+        threading.Thread(target=_run, name="BgSuggestionRefresh", daemon=True).start()
+
+    def _cached_or_snapshot(self) -> dict[str, Any] | None:
+        """Best available payload without running a scan: in-memory last result,
+        else the on-disk snapshot."""
+        if _payload_has_signal(_SCAN_STATE.get("payload")):
+            return dict(_SCAN_STATE["payload"])
+        if STOCK_SUGGESTION_SNAPSHOT.exists():
+            try:
+                return json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+        return None
+
     def _refresh_stock_suggestions_payload(self) -> tuple[HTTPStatus, dict[str, Any]]:
-        """Refresh only the new stock suggestion index, independent of old NIFTY flows."""
-        if not REFRESH_LOCK.acquire(blocking=False):
+        """Refresh the stock suggestion index, debounced and non-blocking-safe."""
+        now = time.time()
+
+        # Debounce: within the cooldown, or if a scan is already running, hand
+        # back the last good result instead of launching another subprocess.
+        too_soon = (now - _SCAN_STATE["ts"]) < MIN_SCAN_INTERVAL_SECONDS
+        if too_soon or not REFRESH_LOCK.acquire(blocking=False):
+            cached = self._cached_or_snapshot()
+            if cached is not None:
+                cached["_refresh"] = {"debounced": True, "reason": "cooldown" if too_soon else "scan_in_progress"}
+                return HTTPStatus.OK, cached
             return HTTPStatus.CONFLICT, {
                 "ok": False,
                 "error": "refresh_in_progress",
@@ -515,6 +569,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         try:
             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
             result = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
+            _SCAN_STATE["ts"] = time.time()
         finally:
             REFRESH_LOCK.release()
 
@@ -525,14 +580,29 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "duration_seconds": result["duration_seconds"],
                 "stderr": result.get("stderr"),
             }
-            # Real-time WebSocket push to all open tabs
-            try:
-                from websocket_server import broadcast_scanner_update_sync
-                broadcast_scanner_update_sync(payload)
-            except Exception:
-                pass
-            status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE
-            return status, payload
+
+            if _payload_has_signal(payload):
+                _SCAN_STATE["payload"] = payload
+                signature = _payload_signature(payload)
+                # Only push to open tabs when the scan actually has data AND
+                # something changed - stops the blank/flicker broadcast storm.
+                if signature != _SCAN_STATE.get("signature"):
+                    _SCAN_STATE["signature"] = signature
+                    try:
+                        from websocket_server import broadcast_scanner_update_sync
+                        broadcast_scanner_update_sync(payload)
+                    except Exception:
+                        pass
+                return HTTPStatus.OK, payload
+
+            # Empty / failed scan: never broadcast it, never return blank -
+            # fall back to the last good result if we have one.
+            cached = self._cached_or_snapshot()
+            if _payload_has_signal(cached):
+                cached["_refresh"] = {"ok": False, "kept_last_good": True,
+                                      "scan_error": payload.get("message") or payload.get("error")}
+                return HTTPStatus.OK, cached
+            return HTTPStatus.SERVICE_UNAVAILABLE, payload
 
         return HTTPStatus.INTERNAL_SERVER_ERROR, {
             "ok": False,
