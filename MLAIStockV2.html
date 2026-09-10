@@ -1879,10 +1879,10 @@
           boCls = "bo";
         }
       } else if (isNear) {
-        statusBadge = row.five_min_status || (isBreakdown ? "Near BD" : "Near BO");
+        statusBadge = `${row.five_min_status || (isBreakdown ? "Near BD" : "Near BO")}${timeStr}`;
         boCls = "near";
       } else {
-        statusBadge = row.five_min_status || (row.is_breakout ? "Breakout" : "Consolidating");
+        statusBadge = `${row.five_min_status || (row.is_breakout ? "Breakout" : "Consolidating")}${timeStr}`;
         boCls = "wait";
       }
 
