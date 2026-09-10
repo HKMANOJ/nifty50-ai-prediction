@@ -1419,6 +1419,9 @@
   let _bellSoundEnabled = localStorage.getItem("mlai_bell_sound") !== "false";
   let _hasEvaluatedInitialBell = false;
   const _alertedBreakouts = new Set();
+  const FRESH_WINDOW_MS = 6 * 60 * 1000; // FIX 1: 6-minute window for fresh breakout alerts
+  let _lockedPick = null; // FIX 2: Locked top pick state
+  const PICK_WINDOW_MS = 10 * 60 * 1000; // FIX 2: 10-minute lock window from breakout_time
 
   function getAudioContext() {
     if (!_globalAudioCtx) {
@@ -1517,36 +1520,38 @@
     }
   }
 
-  function parseTimeToMinutes(t) {
-    if (!t) return 0;
-    const s = String(t).trim();
+  /* ── FIX 1 & 2: IST Timestamp Calculation & Formatting ── */
+  function getTodayIstBreakoutTimestamp(boTimeStr) {
+    if (!boTimeStr) return null;
+    const s = String(boTimeStr).trim();
     const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([APap][Mm]))?/);
-    if (!m) return 0;
+    if (!m) return null;
     let h = parseInt(m[1], 10);
     const min = parseInt(m[2], 10);
+    const sec = m[3] ? parseInt(m[3], 10) : 0;
     const ampm = m[4] ? m[4].toUpperCase() : null;
     if (ampm === "PM" && h < 12) h += 12;
     if (ampm === "AM" && h === 12) h = 0;
-    return h * 60 + min;
+
+    const now = new Date();
+    const istParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(now);
+    const [y, mo, d] = istParts.split("-").map(v => parseInt(v, 10));
+    return Date.UTC(y, mo - 1, d, h, min, sec) - (5.5 * 60 * 60 * 1000);
   }
 
-  function isRecentBreakout(boTimeStr, marketClockStr) {
-    if (!boTimeStr) return false;
-    const boMinutes = parseTimeToMinutes(boTimeStr);
-    let currentMinutes = 0;
-    if (marketClockStr) {
-      currentMinutes = parseTimeToMinutes(marketClockStr);
-    }
-    if (currentMinutes <= 0) {
-      const now = new Date();
-      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-      const istDate = new Date(utc + (3600000 * 5.5));
-      currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
-    }
-    if (boMinutes <= 0 || currentMinutes <= 0) return false;
-    const diff = currentMinutes - boMinutes;
-    // Strict recency window: Only alert if breakout occurred within last 15 minutes
-    return diff >= 0 && diff <= 15;
+  function formatTimeHHMM(epochMs) {
+    if (!epochMs) return "--";
+    return new Date(epochMs).toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true
+    }).toUpperCase();
   }
 
   function showStickyToast(x, isPE) {
@@ -1599,7 +1604,9 @@
 
   function checkAndTriggerBellAlerts(payload) {
     if (!payload || !payload.ok) return;
-    const marketClock = payload.market_clock_ist || "";
+    const refNow = (payload.market_clock_ist)
+      ? (getTodayIstBreakoutTimestamp(payload.market_clock_ist) || Date.now())
+      : Date.now();
     const allRows = [...(payload.bullish || []), ...(payload.bearish || [])];
 
     allRows.forEach(row => {
@@ -1612,20 +1619,23 @@
       const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
       const isActualBreakout = !isNear && !isConsolidating && (isBreakout || isBreakdown);
 
-      // "all the priority meets then only enable the bell rang"
-      const meetsAllPriority = (row.status === "Priority Rally" || row.bell_rang === true);
+      // Rule: ring the instant a fresh breakout is confirmed with priority score = 100 + all requirements met.
+      const priorityScore = row.one_side_rally_score ?? row.score ?? 0;
+      const isPriority100 = (priorityScore === 100 || row.bell_rang === true);
 
-      if (isActualBreakout && meetsAllPriority) {
+      if (isActualBreakout && isPriority100) {
         const alertKey = `${row.symbol}_${row.breakout_time || 'BO'}_${row.side || ''}`;
         if (!_alertedBreakouts.has(alertKey)) {
           _alertedBreakouts.add(alertKey);
 
-          // STRICT RECENCY CHECK:
-          // Sticky alert popup and bell sound ONLY fire for fresh breakouts within 15 minutes of the current market clock.
-          // Stale morning breakouts (e.g. 09:20 AM alert at 12:40 PM) are suppressed from sticky popups/bell!
-          const isRecent = isRecentBreakout(row.breakout_time, marketClock);
+          // Check freshness: (now - breakout_time) <= FRESH_WINDOW (6 min)
+          const boTs = getTodayIstBreakoutTimestamp(row.breakout_time);
+          const isFresh = boTs !== null && (refNow - boTs) >= -60000 && (refNow - boTs) <= FRESH_WINDOW_MS;
 
-          if (_hasEvaluatedInitialBell && isRecent) {
+          // Frame 1: Page loads with existing old breakout -> SEED it into _alertedBreakouts silently. NO bell.
+          // Frame 3: Fresh breakout arrives -> (refNow - boTs) <= 6 min -> 🔔 RING NOW + toast.
+          // Frame 5: Breakout appears but (refNow - boTs) > 6 min -> stale -> seed silently, NO bell.
+          if (_hasEvaluatedInitialBell && isFresh) {
             playBellRangSound();
             showStickyToast(row, isBreakdown);
           }
@@ -2039,146 +2049,147 @@
     }
 
     // ─────────────────────────────────────────────────────────────
-    // DISCIPLINED TRADER: System Top Pick
-    // A real trader takes max 1 trade/day.
-    // Show NOTHING unless ALL 5 gates pass. No fallback to random picks.
-    // Gate 1: Confirmed 5m Breakout (candle closed ABOVE morning high)
-    // Gate 2: Institutional Volume RVOL >= 2.0x
-    // Gate 3: Long buildup (OI Expanding, not short covering)
-    // Gate 4: Holding top 85%+ of day's range (not fading)
-    // Gate 5: NIFTY 50 market direction is NOT bearish (>= -0.3%)
-    //         A CE trade in a bearish NIFTY is fighting the current — blocked!
+    // FIX 2: 10-Minute Locked Window for System Top Pick
+    // Rule: When a pick is chosen, hold it for 10 min from its breakout_time.
+    // Within that 10 min window, only a strictly higher-score candidate overrides.
+    // After 10 min with no qualifying pick -> blank ("SCANNING...").
     // ─────────────────────────────────────────────────────────────
 
-    const pickCard  = document.getElementById("topPickCard");
-    const pickBlank = document.getElementById("topPickBlank");
-    const pickActive = document.getElementById("topPickActive");
-    const pickLabel = document.getElementById("topPickLabel");
-    const pickBadge = document.getElementById("topPickBadge");
-    const pickCriteria = document.getElementById("topPickCriteria");
-
-    // Gate 5: Smart Weighted Scoring Engine (Trend Alignment vs Outlier Override)
     const _niftyPct = (idxs["NIFTY 50"] || {}).percent_change ?? 0;
-
-    // 1. Define base multipliers based on NIFTY trend (+30% bonus for trading with the trend)
     const ceTrendBonus = _niftyPct >= 0.2 ? 1.5 : 1.0;
     const peTrendBonus = _niftyPct <= -0.2 ? 1.5 : 1.0;
 
-    // 2. Helper to find the absolute strongest candidate in a list using Weighted Score
-    const getStrongestPick = (list, isPE, trendBonus) => {
+    const refNow = (payload && payload.market_clock_ist)
+      ? (getTodayIstBreakoutTimestamp(payload.market_clock_ist) || Date.now())
+      : Date.now();
+
+    const getCandidatePick = (list, isPE, trendBonus) => {
       let bestPick = null;
       let maxScore = -1;
 
-      list.forEach(x => {
-        // Strict baseline gates: Must still be a valid breakout setup
-        const gate1 = x.is_breakout === true;
-        const gate2 = (x.vc_ranking || 0) >= 2.0;
-        const gate3 = isPE ? (x.setup || "").toLowerCase().includes("short buildup") : (x.setup || "").toLowerCase().includes("long buildup");
-        const gate4 = isPE ? (x.range_position_percent || 100) <= 15 : (x.range_position_percent || 0) >= 85;
+      (list || []).forEach(x => {
+        // Exclude lot sizes > 1100
+        if (x.lot_size && x.lot_size > 1100) return;
 
-        if (gate1 && gate2 && gate3 && gate4) {
-          // Calculate Raw Strength: (Relative Volume) * (Range Momentum)
-          const rvol = x.vc_ranking || 0;
-          const rangeStrength = isPE ? (100 - (x.range_position_percent || 100)) : (x.range_position_percent || 0);
-          const rawScore = rvol * (rangeStrength / 100.0);
-          
-          // Apply Market Trend Bonus
-          const finalScore = rawScore * trendBonus;
-          x._finalScore = finalScore; // Attach for UI display
-          x._isTrendAligned = trendBonus > 1.0;
+        // Exclude unconfirmed, near, or consolidating setups
+        const st = (x.five_min_status || "").toLowerCase();
+        if (st.includes("near") || st.includes("consolidating")) return;
 
-          if (finalScore > maxScore) {
-            maxScore = finalScore;
-            bestPick = x;
-          }
+        // Must be a confirmed breakout or breakdown
+        const isBo = Boolean(x.is_breakout || st.includes("breakout") || st.includes("breakdown"));
+        if (!isBo) return;
+
+        // Directional setup check
+        const setupStr = (x.setup || "").toLowerCase();
+        if (isPE) {
+          if (setupStr.includes("long buildup")) return;
+        } else {
+          if (setupStr.includes("short buildup")) return;
+        }
+
+        // Priority score (e.g. 92, 97, 100)
+        const pScore = Number(x.one_side_rally_score ?? x.score ?? 0);
+        if (pScore <= 0) return;
+
+        // Check breakout time freshness: must be within last 10 minutes (Frame 5)
+        const boTs = getTodayIstBreakoutTimestamp(x.breakout_time);
+        if (!boTs) return;
+        const timeDiff = refNow - boTs;
+        // Strictly within 10 min window; old morning breakouts (>= 10 min) are ignored
+        if (timeDiff < -60000 || timeDiff >= PICK_WINDOW_MS) return;
+
+        // Ranking score: Priority score primary, RVOL as tiebreaker
+        const rvol = Number(x.vc_ranking || x.rvol_5m || 1.0);
+        const rankScore = pScore * 1000 + rvol * trendBonus;
+
+        if (rankScore > maxScore) {
+          maxScore = rankScore;
+          bestPick = {
+            ...x,
+            _pScore: pScore,
+            _rankScore: rankScore,
+            _boTs: boTs,
+            _isTrendAligned: trendBonus > 1.0
+          };
         }
       });
+
       return bestPick;
     };
 
-    const bestCE = getStrongestPick(_currentBullish, false, ceTrendBonus);
-    const bestPE = getStrongestPick(_currentBearish, true, peTrendBonus);
+    const candCE = getCandidatePick(_currentBullish, false, ceTrendBonus);
+    const candPE = getCandidatePick(_currentBearish, true, peTrendBonus);
 
-    let finalTopPick = null;
-    let finalPickType = "CE";
+    let freshCandidate = null;
+    let freshCandidateType = "CE";
 
-    // 3. The Battle: Compare the best CE vs the best PE
-    if (bestCE && bestPE) {
-      if (bestCE._finalScore >= bestPE._finalScore) {
-        finalTopPick = bestCE;
-        finalPickType = "CE";
+    if (candCE && candPE) {
+      if (candCE._rankScore >= candPE._rankScore) {
+        freshCandidate = candCE;
+        freshCandidateType = "CE";
       } else {
-        finalTopPick = bestPE;
-        finalPickType = "PE";
+        freshCandidate = candPE;
+        freshCandidateType = "PE";
       }
-    } else if (bestCE) {
-      finalTopPick = bestCE;
-      finalPickType = "CE";
-    } else if (bestPE) {
-      finalTopPick = bestPE;
-      finalPickType = "PE";
+    } else if (candCE) {
+      freshCandidate = candCE;
+      freshCandidateType = "CE";
+    } else if (candPE) {
+      freshCandidate = candPE;
+      freshCandidateType = "PE";
     }
 
-    // 4. Render UI
-    if (finalTopPick) {
-      pickBlank.style.display = "none";
-      pickActive.style.display = "block";
-      const scoreStr = finalTopPick._finalScore.toFixed(2);
-      const trendStr = finalTopPick._isTrendAligned ? "📈 Trend Aligned" : "🚨 MASSIVE OUTLIER";
-      
-      if (finalPickType === "PE") {
-        pickCard.style.background = "linear-gradient(135deg, #fff1f2 0%, #ffffff 100%)";
-        pickCard.style.borderColor = "#fda4af";
-        pickLabel.style.color = "#be123c";
-        pickBadge.textContent = "PE TRADE";
-        pickBadge.style.background = "#ffe4e6";
-        pickBadge.style.color = "#be123c";
-        
-        document.getElementById("topPickSym").textContent = finalTopPick.symbol;
-        document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
-        document.getElementById("topPickTime").textContent = finalTopPick.breakout_time || "--";
-        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}`;
-        
-        if (pickCriteria) {
-          pickCriteria.innerHTML = [
-            ["📉 Breakdown",                                      "#ffe4e6", "#be123c"],
-            [`📉 RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x`,   "#ffe4e6", "#be123c"],
-            ["📉 Short Buildup",                                  "#ffe4e6", "#be123c"],
-            [`📉 Range ${finalTopPick.range_position_percent}%`,      "#ffe4e6", "#be123c"],
-          ].map(([txt, bg, col]) => `<span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${bg};color:${col}">${txt}</span>`).join("");
-        }
+    // Evaluate 10-Minute Lock State
+    const isLockActive = Boolean(_lockedPick && (refNow < _lockedPick.expiresTs));
+
+    if (!isLockActive) {
+      // Frame 1: Fresh breakout arrives -> Lock it for 10 minutes from breakout_time
+      if (freshCandidate) {
+        _lockedPick = {
+          pick: freshCandidate,
+          pickType: freshCandidateType,
+          score: freshCandidate._pScore,
+          boTime: freshCandidate.breakout_time,
+          boTs: freshCandidate._boTs,
+          expiresTs: freshCandidate._boTs + PICK_WINDOW_MS
+        };
       } else {
-        pickCard.style.background = "linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)";
-        pickCard.style.borderColor = "#86efac";
-        pickLabel.style.color = "#166534";
-        pickBadge.textContent = "CE TRADE";
-        pickBadge.style.background = "#dcfce7";
-        pickBadge.style.color = "#15803d";
-        
-        document.getElementById("topPickSym").textContent = finalTopPick.symbol;
-        document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
-        document.getElementById("topPickTime").textContent = finalTopPick.breakout_time || "--";
-        document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}`;
-        
-        if (pickCriteria) {
-          pickCriteria.innerHTML = [
-            ["📈 Breakout",                                      "#dcfce7", "#166534"],
-            [`📈 RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x`,   "#dcfce7", "#166534"],
-            ["📈 Long Buildup",                                  "#dcfce7", "#166534"],
-            [`📈 Range ${finalTopPick.range_position_percent}%`,      "#dcfce7", "#166534"],
-          ].map(([txt, bg, col]) => `<span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${bg};color:${col}">${txt}</span>`).join("");
-        }
+        // Frame 4 & 5: No fresh candidate within last 10 min -> Card blanks ("SCANNING...")
+        _lockedPick = null;
       }
     } else {
-      pickBlank.style.display = "flex";
-      pickActive.style.display = "none";
-      pickCard.style.background = "#ffffff";
-      pickCard.style.borderColor = "#e2e8f0";
-      pickLabel.style.color = "#64748b";
-      pickBadge.textContent = "SCANNING...";
-      pickBadge.style.background = "#f1f5f9";
-      pickBadge.style.color = "#64748b";
+      // An active lock already exists!
+      if (freshCandidate) {
+        // Frame 3: Only a strictly higher-score candidate overrides
+        if (freshCandidate._pScore > _lockedPick.score) {
+          _lockedPick = {
+            pick: freshCandidate,
+            pickType: freshCandidateType,
+            score: freshCandidate._pScore,
+            boTime: freshCandidate.breakout_time,
+            boTs: freshCandidate._boTs,
+            expiresTs: freshCandidate._boTs + PICK_WINDOW_MS
+          };
+        } else {
+          // Frame 2: Candidate score <= _lockedPick.score -> KEEP existing locked pick!
+          const allCurrent = [...(_currentBullish || []), ...(_currentBearish || [])];
+          const updated = allCurrent.find(s => s.symbol === _lockedPick.pick.symbol);
+          if (updated) {
+            _lockedPick.pick = { ..._lockedPick.pick, ...updated };
+          }
+        }
+      } else {
+        // No new candidate -> keep locked pick and update live quote if present
+        const allCurrent = [...(_currentBullish || []), ...(_currentBearish || [])];
+        const updated = allCurrent.find(s => s.symbol === _lockedPick.pick.symbol);
+        if (updated) {
+          _lockedPick.pick = { ..._lockedPick.pick, ...updated };
+        }
+      }
     }
+
+    // Render the Top Pick card UI
+    renderTopPickCard();
 
     // Dynamic Summary Stats
     const totalGainers = _currentBullish.length;
@@ -2210,6 +2221,104 @@
     if (currentRows.length > 0) {
       const active = currentRows.find(x => x.symbol === _selectedSymbol) || currentRows[0];
       selectStock(active.symbol, active);
+    }
+  }
+
+  /* ── FIX 2: Render Top Pick Card UI (with 10-Minute Lock Badge) ── */
+  function renderTopPickCard() {
+    const pickCard = document.getElementById("topPickCard");
+    const pickBlank = document.getElementById("topPickBlank");
+    const pickActive = document.getElementById("topPickActive");
+    const pickLabel = document.getElementById("topPickLabel");
+    const pickBadge = document.getElementById("topPickBadge");
+    const pickCriteria = document.getElementById("topPickCriteria");
+    if (!pickCard || !pickBlank || !pickActive || !pickBadge) return;
+
+    if (_lockedPick && _lockedPick.pick) {
+      const pick = _lockedPick.pick;
+      const isPE = _lockedPick.pickType === "PE";
+      const validTillStr = formatTimeHHMM(_lockedPick.expiresTs);
+      const scoreVal = _lockedPick.score;
+      const rvolVal = (pick.vc_ranking || pick.rvol_5m || 0).toFixed(1);
+      const trendStr = pick._isTrendAligned ? "📈 Trend Aligned" : "⚡ Priority Rally";
+
+      pickBlank.style.display = "none";
+      pickActive.style.display = "block";
+      pickBadge.innerHTML = `🔒 LOCKED · valid till ${validTillStr}`;
+
+      if (isPE) {
+        pickCard.style.background = "linear-gradient(135deg, #fff1f2 0%, #ffffff 100%)";
+        pickCard.style.borderColor = "#fda4af";
+        if (pickLabel) pickLabel.style.color = "#be123c";
+        pickBadge.style.background = "#ffe4e6";
+        pickBadge.style.color = "#be123c";
+
+        const symEl = document.getElementById("topPickSym");
+        if (symEl) symEl.textContent = pick.symbol;
+        const chgEl = document.getElementById("topPickChg");
+        if (chgEl) {
+          chgEl.textContent = `${pct(pick.percent_change)} ${pick.setup || 'Short buildup'}`;
+          chgEl.style.color = "#dc2626";
+        }
+        const timeEl = document.getElementById("topPickTime");
+        if (timeEl) timeEl.textContent = pick.breakout_time || "--";
+        const reasonEl = document.getElementById("topPickReason");
+        if (reasonEl) reasonEl.textContent = `Score: ${scoreVal} · RVOL ${rvolVal}x · ${trendStr}`;
+
+        if (pickCriteria) {
+          pickCriteria.innerHTML = [
+            ["🔒 Locked Window",                                  "#ffe4e6", "#be123c"],
+            [`⏱ Valid till ${validTillStr}`,                       "#ffe4e6", "#be123c"],
+            [`📉 Score ${scoreVal}`,                                "#ffe4e6", "#be123c"],
+            [`📉 RVOL ${rvolVal}x`,                                 "#ffe4e6", "#be123c"],
+          ].map(([txt, bg, col]) => `<span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${bg};color:${col}">${txt}</span>`).join("");
+        }
+      } else {
+        pickCard.style.background = "linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)";
+        pickCard.style.borderColor = "#86efac";
+        if (pickLabel) pickLabel.style.color = "#166534";
+        pickBadge.style.background = "#dcfce7";
+        pickBadge.style.color = "#15803d";
+
+        const symEl = document.getElementById("topPickSym");
+        if (symEl) symEl.textContent = pick.symbol;
+        const chgEl = document.getElementById("topPickChg");
+        if (chgEl) {
+          chgEl.textContent = `${pct(pick.percent_change)} ${pick.setup || 'Long buildup'}`;
+          chgEl.style.color = "#16a34a";
+        }
+        const timeEl = document.getElementById("topPickTime");
+        if (timeEl) timeEl.textContent = pick.breakout_time || "--";
+        const reasonEl = document.getElementById("topPickReason");
+        if (reasonEl) reasonEl.textContent = `Score: ${scoreVal} · RVOL ${rvolVal}x · ${trendStr}`;
+
+        if (pickCriteria) {
+          pickCriteria.innerHTML = [
+            ["🔒 Locked Window",                                  "#dcfce7", "#166534"],
+            [`⏱ Valid till ${validTillStr}`,                       "#dcfce7", "#166534"],
+            [`📈 Score ${scoreVal}`,                                "#dcfce7", "#166534"],
+            [`📈 RVOL ${rvolVal}x`,                                 "#dcfce7", "#166534"],
+          ].map(([txt, bg, col]) => `<span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${bg};color:${col}">${txt}</span>`).join("");
+        }
+      }
+
+      pickCard.style.cursor = "pointer";
+      pickCard.onclick = () => {
+        if (_lockedPick && _lockedPick.pick && typeof selectStock === "function") {
+          selectStock(_lockedPick.pick.symbol, _lockedPick.pick);
+        }
+      };
+    } else {
+      pickBlank.style.display = "flex";
+      pickActive.style.display = "none";
+      pickCard.style.background = "#ffffff";
+      pickCard.style.borderColor = "#e2e8f0";
+      if (pickLabel) pickLabel.style.color = "#64748b";
+      pickBadge.textContent = "SCANNING...";
+      pickBadge.style.background = "#f1f5f9";
+      pickBadge.style.color = "#64748b";
+      pickCard.style.cursor = "default";
+      pickCard.onclick = null;
     }
   }
 
@@ -2321,16 +2430,23 @@
   /* ── Live Real-Time Ticking Clock (Every Second) ── */
   function updateLiveClock() {
     const clockEl = document.getElementById("marketClock");
-    if (!clockEl) return;
-    const now = new Date();
-    const istTimeStr = now.toLocaleTimeString("en-IN", {
-      timeZone: "Asia/Kolkata",
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    });
-    clockEl.textContent = `Clock ${istTimeStr}`;
+    if (clockEl) {
+      const now = new Date();
+      const istTimeStr = now.toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+      clockEl.textContent = `Clock ${istTimeStr}`;
+    }
+
+    // FIX 2: Frame 4 — Instant expiry of locked pick when 10 min window ends
+    if (_lockedPick && Date.now() >= _lockedPick.expiresTs) {
+      _lockedPick = null;
+      renderTopPickCard();
+    }
   }
 
   setInterval(updateLiveClock, 1000);
