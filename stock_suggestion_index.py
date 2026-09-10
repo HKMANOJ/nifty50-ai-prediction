@@ -123,6 +123,7 @@ class Suggestion:
     rvol_5m: float = 1.0
     ema_trend: str = "neutral"
     lot_size: int = 0
+    bell_rang: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -158,6 +159,7 @@ class Suggestion:
             "rvol_5m": self.rvol_5m,
             "ema_trend": self.ema_trend,
             "lot_size": self.lot_size,
+            "bell_rang": self.bell_rang,
         }
 
 
@@ -1105,6 +1107,10 @@ def build_suggestions(
         if display_volume is not None:
             reason_parts.append(f"volume {int(display_volume):,}")
 
+        status_val = rally["status"] or status_from_score(rally_score, setup)
+        is_priority_rally = (status_val == "Priority Rally")
+        bell_rang = bool(is_breakout and is_priority_rally and "near" not in five_min_status.lower())
+
         suggestions.append(
             Suggestion(
                 symbol=symbol,
@@ -1128,7 +1134,7 @@ def build_suggestions(
                 move_from_open_percent=rally["move_from_open_percent"],
                 index_context=rally["index_context"],
                 quality_tags=quality_tags,
-                status=rally["status"] or status_from_score(rally_score, setup),
+                status=status_val,
                 reason=" | ".join(reason_parts),
                 vc_ranking=vc_ranking,
                 mp_score=mp_score,
@@ -1139,6 +1145,7 @@ def build_suggestions(
                 rvol_5m=bo_info.get("rvol_5m", 1.0),
                 ema_trend=bo_info.get("ema_trend", "neutral"),
                 lot_size=get_fo_lot_size(symbol),
+                bell_rang=bell_rang,
             )
         )
 

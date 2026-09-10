@@ -819,11 +819,42 @@
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.04em;
+      white-space: nowrap;
     }
     .bo-status-pill.bo { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
     .bo-status-pill.bd { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
     .bo-status-pill.near { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
     .bo-status-pill.wait { background: #f1f5f9; color: var(--text-muted); }
+
+    /* ── Toast Notifications for Bell Alerts ── */
+    .toast {
+      background: #ffffff;
+      border-left: 5px solid #3b82f6;
+      border-radius: 8px;
+      padding: 12px 16px;
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+      width: 100%;
+      max-width: 330px;
+      box-sizing: border-box;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: var(--font-sans);
+      pointer-events: auto;
+    }
+    .toast.bullish { border-left-color: #16a34a; }
+    .toast.bearish { border-left-color: #dc2626; }
+    .toast-title { font-weight: 800; font-size: 13px; margin-bottom: 2px; }
+    .toast-title.bullish { color: #166534; }
+    .toast-title.bearish { color: #991b1b; }
+    .toast-desc { font-size: 11px; color: #475569; font-weight: 500; line-height: 1.4; }
+    .toast-close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 14px; margin-left: 10px; font-weight: bold; }
+    .toast-close:hover { color: #0f172a; }
+    @keyframes slideInRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
 
     .score-meter {
       display: flex;
@@ -1082,6 +1113,8 @@
       </div>
 
       <div class="navbar-status">
+        <button id="soundToggleBtn" style="background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #bfdbfe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Toggle breakout & breakdown bell audio chime">🔔 Bell Sound: ON</button>
+        <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Click to test the bell rang sound and alert">🧪 Test Bell</button>
         <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px;" title="Real-Time WebSocket Push Engine (0ms Latency)">
           <span id="wsStatusDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#16a34a;"></span>
           <span id="wsStatusText">WS: Connecting...</span>
@@ -1095,6 +1128,9 @@
         <button class="refresh-pill-btn" id="refreshBtn" type="button">⚡ Refresh Live</button>
       </div>
     </header>
+
+    <!-- Toast Alert Container -->
+    <div id="toastContainer" style="position:fixed; top:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:10px; max-width:calc(100vw - 40px); pointer-events:none;"></div>
 
     <!-- Main Content Container -->
     <div id="viewDashboard" class="content-container">
@@ -1377,6 +1413,182 @@
   let _volumeSeries = null;
   let _emaSeries = null;
 
+  /* ── Universal Web Audio Engine (Bell Rang Chime) ── */
+  let _globalAudioCtx = null;
+  let _audioUnlocked = false;
+  let _bellSoundEnabled = localStorage.getItem("mlai_bell_sound") !== "false";
+  let _hasEvaluatedInitialBell = false;
+  const _alertedBreakouts = new Set();
+
+  function getAudioContext() {
+    if (!_globalAudioCtx) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        _globalAudioCtx = new AudioContextClass();
+      }
+    }
+    return _globalAudioCtx;
+  }
+
+  function unlockAudio() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+    if (!_audioUnlocked) {
+      try {
+        const buffer = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+        _audioUnlocked = true;
+      } catch (e) {}
+    }
+  }
+
+  ["click", "touchstart", "keydown"].forEach(evt => {
+    document.addEventListener(evt, unlockAudio, { passive: true, once: true });
+  });
+
+  function playBellRangSound() {
+    if (!_bellSoundEnabled) return;
+    unlockAudio();
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const doRing = () => {
+      try {
+        const now = ctx.currentTime;
+
+        // Strike 1: Crisp high chime (880 Hz + 1760 Hz)
+        const osc1 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        osc1.type = "sine";
+        osc1.frequency.setValueAtTime(880, now);
+        gain1.gain.setValueAtTime(0.7, now);
+        gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.65);
+
+        const oscH = ctx.createOscillator();
+        const gainH = ctx.createGain();
+        oscH.type = "sine";
+        oscH.frequency.setValueAtTime(1760, now);
+        gainH.gain.setValueAtTime(0.35, now);
+        gainH.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+        oscH.connect(gainH);
+        gainH.connect(ctx.destination);
+        oscH.start(now);
+        oscH.stop(now + 0.35);
+
+        // Strike 2: Resonant chime body (120ms later, 659.25 Hz)
+        setTimeout(() => {
+          try {
+            const now2 = ctx.currentTime;
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.type = "sine";
+            osc2.frequency.setValueAtTime(659.25, now2);
+            gain2.gain.setValueAtTime(0.8, now2);
+            gain2.gain.exponentialRampToValueAtTime(0.0001, now2 + 0.85);
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.start(now2);
+            osc2.stop(now2 + 0.85);
+          } catch (e) {}
+        }, 120);
+
+        if (navigator.vibrate) {
+          navigator.vibrate([150, 80, 150]);
+        }
+      } catch (err) {
+        console.warn("Bell audio playback error:", err);
+      }
+    };
+
+    if (ctx.state === "suspended") {
+      ctx.resume().then(doRing).catch(doRing);
+    } else {
+      doRing();
+    }
+  }
+
+  function showStickyToast(x, isPE) {
+    const container = document.getElementById("toastContainer");
+    if (!container || !x || !x.symbol) return;
+    const existing = container.querySelector(`.toast[data-sym="${x.symbol}"]`);
+    if (existing) existing.remove();
+
+    const type = isPE ? "bearish" : "bullish";
+    const statusText = isPE ? `🔴 BREAKDOWN ${x.breakout_time || ''}` : `🟢 BREAKOUT ${x.breakout_time || ''}`;
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    toast.setAttribute("data-sym", x.symbol);
+    toast.style.cursor = "pointer";
+
+    const rvolDisplay = (x.rvol_5m ? `${x.rvol_5m.toFixed(1)}x` : (x.vc_ranking ? `${x.vc_ranking.toFixed(1)}x` : "--"));
+    const entryStr = x.entry ? `₹${x.entry}` : (x.ltp ? `₹${x.ltp}` : "--");
+    const slStr = x.stop_loss ? `₹${x.stop_loss}` : "--";
+    const tgtStr = x.target ? `₹${x.target}` : "--";
+
+    toast.innerHTML = `
+      <div style="flex:1;">
+        <div class="toast-title ${type}">🔔 ${x.symbol} - ${statusText}</div>
+        <div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ ALL PRIORITY CRITERIA MET</div>
+        <div class="toast-desc">Time: ${x.breakout_time || '--'} · Score: ${x.one_side_rally_score ?? x.score ?? '--'}${x.lot_size ? ` · Lot: ${Number(x.lot_size).toLocaleString()}` : ''}<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>RVOL: ${rvolDisplay} · Range Hold: ${x.range_position_percent ?? '--'}%</div>
+      </div>
+      <button class="toast-close" title="Dismiss">✖</button>
+    `;
+
+    toast.addEventListener("click", (evt) => {
+      if (evt.target && evt.target.classList.contains("toast-close")) {
+        toast.remove();
+      } else if (typeof selectStock === "function") {
+        selectStock(x.symbol, x);
+      }
+    });
+
+    container.appendChild(toast);
+  }
+
+  function checkAndTriggerBellAlerts(payload) {
+    if (!payload || !payload.ok) return;
+    const allRows = [...(payload.bullish || []), ...(payload.bearish || [])];
+
+    allRows.forEach(row => {
+      if (row.lot_size && row.lot_size > 1100) return;
+
+      const st = (row.five_min_status || "").toLowerCase();
+      const isNear = st.includes("near");
+      const isConsolidating = st.includes("consolidating");
+      const isBreakout = Boolean(row.is_breakout || st.includes("breakout"));
+      const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
+      const isActualBreakout = !isNear && !isConsolidating && (isBreakout || isBreakdown);
+
+      // "all the priority meets then only enable the bell rang"
+      const meetsAllPriority = (row.status === "Priority Rally" || row.bell_rang === true);
+
+      if (isActualBreakout && meetsAllPriority) {
+        const alertKey = `${row.symbol}_${row.breakout_time || 'BO'}_${row.side || ''}`;
+        if (!_alertedBreakouts.has(alertKey)) {
+          _alertedBreakouts.add(alertKey);
+
+          // Once actual breakout called and all priority meets -> enable bell rang
+          if (_hasEvaluatedInitialBell) {
+            playBellRangSound();
+            showStickyToast(row, isBreakdown);
+          }
+        }
+      }
+    });
+
+    _hasEvaluatedInitialBell = true;
+  }
+
   /* Formatters */
   const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
   const fmt0 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -1646,9 +1858,33 @@
       const vc = row.vc_ranking || 1.0;
       const vcCls = vc >= 2.5 ? "high" : (vc >= 1.2 ? "mid" : "low");
       const mp = row.mp_score || 3.0;
-      const statusStr = row.five_min_status || (row.is_breakout ? "Breakout" : "Consolidating");
-      const boCls = statusStr.toLowerCase().includes("breakout") ? "bo" : (statusStr.toLowerCase().includes("breakdown") ? "bd" : (statusStr.toLowerCase().includes("near") ? "near" : "wait"));
+
+      // Breakout / Breakdown Status Badge
+      const st = (row.five_min_status || "").toLowerCase();
+      const isNear = st.includes("near");
+      const isConsolidating = st.includes("consolidating");
+      const isBreakout = Boolean(row.is_breakout || st.includes("breakout"));
+      const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
       const timeStr = row.breakout_time ? ` ${row.breakout_time}` : "";
+
+      let statusBadge = "";
+      let boCls = "wait";
+
+      if (!isNear && !isConsolidating && (isBreakout || isBreakdown)) {
+        if (isBreakdown) {
+          statusBadge = `🔴 BREAKDOWN${timeStr}`;
+          boCls = "bd";
+        } else {
+          statusBadge = `🟢 BREAKOUT${timeStr}`;
+          boCls = "bo";
+        }
+      } else if (isNear) {
+        statusBadge = row.five_min_status || (isBreakdown ? "Near BD" : "Near BO");
+        boCls = "near";
+      } else {
+        statusBadge = row.five_min_status || (row.is_breakout ? "Breakout" : "Consolidating");
+        boCls = "wait";
+      }
 
       return `
         <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
@@ -1670,7 +1906,7 @@
             </span>
           </td>
           <td>
-            <span class="bo-status-pill ${boCls}">${statusStr}${timeStr}</span>
+            <span class="bo-status-pill ${boCls}">${statusBadge}</span>
           </td>
           <td>
             <div class="score-meter">
@@ -1920,10 +2156,29 @@
     renderLeftList(currentRows);
     renderTable(currentRows);
 
+    // Evaluate Bell Alert (Only enabled when actual breakout called and all priority meets)
+    checkAndTriggerBellAlerts(payload);
+
     // Auto-select first leader
     if (currentRows.length > 0) {
       const active = currentRows.find(x => x.symbol === _selectedSymbol) || currentRows[0];
       selectStock(active.symbol, active);
+    }
+  }
+
+  function updateSoundButtonUI() {
+    const btn = document.getElementById("soundToggleBtn");
+    if (!btn) return;
+    if (_bellSoundEnabled) {
+      btn.innerHTML = "🔔 Bell Sound: ON";
+      btn.style.background = "#dbeafe";
+      btn.style.color = "#1d4ed8";
+      btn.style.borderColor = "#bfdbfe";
+    } else {
+      btn.innerHTML = "🔕 Bell Sound: OFF";
+      btn.style.background = "#f1f5f9";
+      btn.style.color = "#64748b";
+      btn.style.borderColor = "#e2e8f0";
     }
   }
 
@@ -1975,6 +2230,45 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     initChart();
+    updateSoundButtonUI();
+
+    const soundToggleBtn = document.getElementById("soundToggleBtn");
+    if (soundToggleBtn) {
+      soundToggleBtn.addEventListener("click", () => {
+        unlockAudio();
+        _bellSoundEnabled = !_bellSoundEnabled;
+        localStorage.setItem("mlai_bell_sound", _bellSoundEnabled ? "true" : "false");
+        updateSoundButtonUI();
+        if (_bellSoundEnabled) {
+          playBellRangSound();
+        }
+      });
+    }
+
+    const testBellBtn = document.getElementById("testBellBtn");
+    let _testTogglePE = false;
+    if (testBellBtn) {
+      testBellBtn.addEventListener("click", () => {
+        unlockAudio();
+        playBellRangSound();
+        _testTogglePE = !_testTogglePE;
+        showStickyToast({
+          symbol: _testTogglePE ? "DIXON" : "ATHERENERG",
+          breakout_time: _testTogglePE ? "10:05 AM" : "11:25 AM",
+          score: 100,
+          one_side_rally_score: 100,
+          status: "Priority Rally",
+          lot_size: _testTogglePE ? 50 : 375,
+          entry: _testTogglePE ? 14100.0 : 1649.9,
+          stop_loss: _testTogglePE ? 14350.0 : 1607.4,
+          target: _testTogglePE ? 13650.0 : 1722.2,
+          vc_ranking: _testTogglePE ? 3.8 : 6.0,
+          range_position_percent: _testTogglePE ? 14.0 : 83.0,
+          is_breakout: true
+        }, _testTogglePE);
+      });
+    }
+
     loadData();
   });
   /* ── Live Real-Time Ticking Clock (Every Second) ── */
