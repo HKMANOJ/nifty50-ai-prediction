@@ -1587,6 +1587,13 @@
     const badge = document.getElementById("listBadge");
     if (!list) return;
 
+    rows = (rows || []).filter(r => {
+      if (r.lot_size && r.lot_size > 1100) return false;
+      const st = (r.five_min_status || "").toLowerCase();
+      if (st === "consolidating") return false;
+      return true;
+    });
+
     if (!Array.isArray(rows) || rows.length === 0) {
       list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">No breakout candidates right now.</div>`;
       if (badge) badge.textContent = "0";
@@ -1603,7 +1610,7 @@
           <div class="item-left">
             <span class="item-rank">${idx + 1}</span>
             <div class="item-names">
-              <span class="item-symbol">${row.symbol}</span>
+              <span class="item-symbol">${row.symbol} ${row.lot_size ? `<span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${row.lot_size}</span>` : ""}</span>
               <span class="item-setup-tag">${row.setup || "OI Confirmed"}</span>
             </div>
           </div>
@@ -1620,6 +1627,13 @@
   function renderTable(rows) {
     const body = document.getElementById("vcTableBody");
     if (!body) return;
+
+    rows = (rows || []).filter(r => {
+      if (r.lot_size && r.lot_size > 1100) return false;
+      const st = (r.five_min_status || "").toLowerCase();
+      if (st === "consolidating") return false;
+      return true;
+    });
 
     if (!Array.isArray(rows) || rows.length === 0) {
       body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:30px; color:var(--text-muted);">No candidates matching filter right now.</td></tr>`;
@@ -1641,7 +1655,7 @@
           <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">${idx + 1}</td>
           <td>
             <div class="stock-col">
-              <span class="sym">${row.symbol}</span>
+              <span class="sym">${row.symbol} ${row.lot_size ? `<span style="font-size:10px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 5px; border-radius:3px; border:1px solid #cbd5e1; margin-left:5px;">Lot ${row.lot_size}</span>` : ""}</span>
               <span class="sub">${row.setup || "F&O Active"}</span>
             </div>
           </td>

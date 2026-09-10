@@ -45,6 +45,44 @@ MIN_BULLISH_CHANGE = 0.65
 MIN_BEARISH_CHANGE = -0.65
 MIN_RANGE_EXTREME = 0.55
 INDEX_LIKE_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
+MAX_ALLOWED_LOT_SIZE = 1100
+FO_LOT_SIZES_PATH = INPUT_DIR / "fo_lot_sizes.csv"
+_FO_LOT_SIZES_CACHE: dict[str, int] | None = None
+
+
+def load_fo_lot_sizes() -> dict[str, int]:
+    """Loads and caches NSE F&O contract market lot sizes from inputs/fo_lot_sizes.csv."""
+    global _FO_LOT_SIZES_CACHE
+    if _FO_LOT_SIZES_CACHE is not None:
+        return _FO_LOT_SIZES_CACHE
+
+    lot_sizes: dict[str, int] = {}
+    if FO_LOT_SIZES_PATH.exists():
+        try:
+            with open(FO_LOT_SIZES_PATH, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for r in reader:
+                    c = {k.strip(): (v.strip() if v else "") for k, v in r.items() if k}
+                    sym = c.get("SYMBOL") or c.get("Symbol")
+                    if not sym:
+                        continue
+                    for col in ["SEP-26", "OCT-26", "NOV-26", "DEC-26"]:
+                        val = c.get(col)
+                        if val:
+                            try:
+                                lot_sizes[sym.strip().upper()] = int(float(val))
+                                break
+                            except (ValueError, TypeError):
+                                pass
+        except Exception as e:
+            print(f"Error loading fo_lot_sizes.csv: {e}")
+    _FO_LOT_SIZES_CACHE = lot_sizes
+    return _FO_LOT_SIZES_CACHE
+
+
+def get_fo_lot_size(symbol: str) -> int:
+    """Returns the market lot size for an F&O symbol (0 if unknown)."""
+    return load_fo_lot_sizes().get(symbol.strip().upper(), 0)
 
 
 class LiveDataError(RuntimeError):
@@ -84,6 +122,7 @@ class Suggestion:
     chart_structure: str = "Base Building"
     rvol_5m: float = 1.0
     ema_trend: str = "neutral"
+    lot_size: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -118,6 +157,7 @@ class Suggestion:
             "chart_structure": self.chart_structure,
             "rvol_5m": self.rvol_5m,
             "ema_trend": self.ema_trend,
+            "lot_size": self.lot_size,
         }
 
 
@@ -562,11 +602,11 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
     if len(candles) < 2:
         return {
             "is_breakout": False,
-            "status": "Setting Opening Range",
+            "status": "Consolidating",
             "breakout_time": None,
             "rvol_5m": 1.0,
             "ema_trend": "bullish" if side == "bullish" else "bearish",
-            "chart_structure": "Setting ORB"
+            "chart_structure": "Base Building"
         }
 
     # 1. 9-period EMA on 5-minute closes
@@ -964,7 +1004,12 @@ def build_suggestions(
     top: int,
     index_context: dict[str, dict[str, Any]],
 ) -> tuple[list[Suggestion], int]:
-    matched_rows = [row for row in rows if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS]
+    matched_rows = [
+        row for row in rows
+        if row["symbol"] in oi_by_symbol
+        and row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+    ]
     
     # Calculate activities across candidates to compute true relative volume (RVOL)
     activities = [calc_stock_activity(r, oi_by_symbol.get(r["symbol"])) for r in matched_rows]
@@ -981,12 +1026,15 @@ def build_suggestions(
     if candidate_symbols:
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(candidate_symbols), 8)) as executor:
             future_to_sym = {executor.submit(fetch_5m_candles_for_symbol, sym): sym for sym in candidate_symbols}
-            for future in concurrent.futures.as_completed(future_to_sym, timeout=5.0):
-                sym = future_to_sym[future]
-                try:
-                    candles_by_symbol[sym] = future.result()
-                except Exception:
-                    candles_by_symbol[sym] = []
+            try:
+                for future in concurrent.futures.as_completed(future_to_sym, timeout=10.0):
+                    sym = future_to_sym[future]
+                    try:
+                        candles_by_symbol[sym] = future.result()
+                    except Exception:
+                        candles_by_symbol[sym] = []
+            except (concurrent.futures.TimeoutError, Exception):
+                pass
 
     suggestions: list[Suggestion] = []
     for row in matched_rows:
@@ -1011,6 +1059,10 @@ def build_suggestions(
 
         # If it dropped below PML (Bullish) or above PMH (Bearish), it failed its trend.
         if bo_info.get("is_failed_trend"):
+            continue
+
+        # Only show active Breakout/Breakdown or Near BO/Near BD candidates (no Consolidating)
+        if five_min_status.lower() == "consolidating":
             continue
 
         # Boost score and tag if active 5m breakout is confirmed
@@ -1086,6 +1138,7 @@ def build_suggestions(
                 chart_structure=bo_info.get("chart_structure", "Base Building"),
                 rvol_5m=bo_info.get("rvol_5m", 1.0),
                 ema_trend=bo_info.get("ema_trend", "neutral"),
+                lot_size=get_fo_lot_size(symbol),
             )
         )
 
@@ -1130,8 +1183,18 @@ def build_payload(top: int) -> dict[str, Any]:
 
     bullish, gainer_stock_overlap = build_suggestions(gainers, oi_by_symbol, side="bullish", top=top, index_context=index_context)
     bearish, loser_stock_overlap = build_suggestions(losers, oi_by_symbol, side="bearish", top=top, index_context=index_context)
-    gainers_with_oi = sum(1 for row in gainers if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS)
-    losers_with_oi = sum(1 for row in losers if row["symbol"] in oi_by_symbol and row["symbol"] not in INDEX_LIKE_SYMBOLS)
+    gainers_with_oi = sum(
+        1 for row in gainers
+        if row["symbol"] in oi_by_symbol
+        and row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+    )
+    losers_with_oi = sum(
+        1 for row in losers
+        if row["symbol"] in oi_by_symbol
+        and row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+    )
     oi_matched = gainers_with_oi + losers_with_oi
 
     return {
