@@ -50,21 +50,31 @@
       padding: 0;
     }
 
+    html, body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
     body {
       background-color: var(--bg-main);
       color: var(--text-dark);
       font-family: var(--font-main);
       min-height: 100vh;
       display: flex;
-      overflow-x: hidden;
     }
 
     /* ── App Shell ── */
     .app-shell {
       display: flex;
-      width: 100vw;
+      width: 100%;
       min-height: 100vh;
     }
+
+    /* Prevent grid/flex children (chart, table) from forcing the page wider
+       than the viewport on small screens. */
+    .split-layout > *,
+    .chart-panel,
+    .list-panel { min-width: 0; }
 
     /* ── Left Sidebar (Vardhaan Capital Style) ── */
     .sidebar {
@@ -235,10 +245,12 @@
     .main-canvas {
       flex: 1;
       min-width: 0;
+      max-width: 100%;
       display: flex;
       flex-direction: column;
       height: 100vh;
       overflow-y: auto;
+      overflow-x: hidden;
     }
 
     /* ── Top Header Bar ── */
@@ -923,29 +935,23 @@
     }
 
     /* ── Universal Responsive Breakpoints (iPad Pro, iPad, Tablet, Mobile) ── */
+
+    /* Wide tables always scroll inside their own box, never widen the page. */
+    .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
     @media (max-width: 1400px) {
-      .metrics-row {
-        grid-template-columns: repeat(4, 1fr);
-      }
+      .metrics-row { grid-template-columns: repeat(4, 1fr); }
     }
 
     @media (max-width: 1080px) {
-      .metrics-row {
-        grid-template-columns: repeat(3, 1fr);
-      }
-      .split-layout {
-        grid-template-columns: 1fr;
-      }
-      .chart-container {
-        height: 380px;
-      }
+      .metrics-row { grid-template-columns: repeat(3, 1fr); }
+      .split-layout { grid-template-columns: 1fr; }
+      .list-panel { max-height: 420px; }
     }
 
-    /* Tablets & iPad portrait (768px - 991px) */
+    /* Tablets & iPad portrait (<= 991px) */
     @media (max-width: 991px) {
-      .mobile-nav-toggle {
-        display: flex;
-      }
+      .mobile-nav-toggle { display: flex; }
 
       .sidebar {
         position: fixed;
@@ -957,76 +963,62 @@
         box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
-
-      .sidebar.mobile-open {
-        transform: translateX(260px);
-      }
-
-      .sidebar.collapsed {
-        width: 250px;
-      }
-
+      .sidebar.mobile-open { transform: translateX(260px); }
+      .sidebar.collapsed { width: 250px; }
       .sidebar.collapsed .brand-names,
       .sidebar.collapsed .menu-label,
-      .sidebar.collapsed .sidebar-footer {
-        display: flex;
-      }
+      .sidebar.collapsed .sidebar-footer { display: flex; }
 
-      .content-container {
-        padding: 12px;
-      }
-
-      .metrics-row {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
-      }
-    }
-
-    /* Mobile Phones (under 640px) */
-    @media (max-width: 640px) {
-      .top-navbar {
-        padding: 8px 12px;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
+      .top-navbar { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+      .navbar-ticker { flex-wrap: wrap; gap: 8px 10px; }
       .navbar-status {
         width: 100%;
-        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: flex-start;
       }
 
-      .navbar-ticker {
-        gap: 8px;
-      }
+      .content-container { padding: 12px; gap: 12px; }
+      .metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      /* the two rich cards (Session Leaders, System Top Pick) stay full width */
+      .metrics-row > .summary-card:nth-child(1),
+      .metrics-row > .summary-card:nth-child(2) { grid-column: 1 / -1; }
+      .chart-panel, .list-panel { max-height: none; }
+      #tvCandleContainer { height: 340px; }
+      #toastContainer { left: 8px; right: 8px; max-width: none; }
+    }
 
-      .ticker-chip {
-        font-size: 11px;
-        padding: 4px 8px;
-      }
+    /* Mobile phones (<= 640px) */
+    @media (max-width: 640px) {
+      .ticker-chip { font-size: 11px; padding: 3px 7px; gap: 4px; }
 
-      .metrics-row {
-        grid-template-columns: 1fr;
-        gap: 8px;
+      /* every navbar status pill/button shrinks uniformly */
+      .navbar-status > * {
+        font-size: 10px !important;
+        padding: 3px 7px !important;
       }
+      .refresh-pill-btn { padding: 6px 10px; }
+      #marketClock { align-self: center; }
 
-      .chart-container {
-        height: 320px;
-      }
+      .metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-card { padding: 10px 11px; }
 
-      .chart-panel-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
-      }
+      .chart-panel-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+      .chart-title-area { flex-wrap: wrap; }
+      #tvCandleContainer { height: 288px; }
 
-      .table-card-body {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-      }
+      /* the F&O scanner table: scroll horizontally instead of crushing columns */
+      table.vc-table { min-width: 720px; }
 
-      .scanner-table {
-        min-width: 780px;
-      }
+      /* Sector Analysis view (padding is set inline -> needs override) */
+      #viewSectorAnalysis { padding: 12px !important; }
+      #sectorTilesGrid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    }
+
+    /* Very small phones */
+    @media (max-width: 340px) {
+      .metrics-row { grid-template-columns: 1fr; }
+      .navbar-ticker .ticker-chip { flex: 1; }
     }
   </style>
 </head>
