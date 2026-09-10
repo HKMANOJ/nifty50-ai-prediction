@@ -1517,6 +1517,38 @@
     }
   }
 
+  function parseTimeToMinutes(t) {
+    if (!t) return 0;
+    const s = String(t).trim();
+    const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([APap][Mm]))?/);
+    if (!m) return 0;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const ampm = m[4] ? m[4].toUpperCase() : null;
+    if (ampm === "PM" && h < 12) h += 12;
+    if (ampm === "AM" && h === 12) h = 0;
+    return h * 60 + min;
+  }
+
+  function isRecentBreakout(boTimeStr, marketClockStr) {
+    if (!boTimeStr) return false;
+    const boMinutes = parseTimeToMinutes(boTimeStr);
+    let currentMinutes = 0;
+    if (marketClockStr) {
+      currentMinutes = parseTimeToMinutes(marketClockStr);
+    }
+    if (currentMinutes <= 0) {
+      const now = new Date();
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const istDate = new Date(utc + (3600000 * 5.5));
+      currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+    }
+    if (boMinutes <= 0 || currentMinutes <= 0) return false;
+    const diff = currentMinutes - boMinutes;
+    // Strict recency window: Only alert if breakout occurred within last 15 minutes
+    return diff >= 0 && diff <= 15;
+  }
+
   function showStickyToast(x, isPE) {
     const container = document.getElementById("toastContainer");
     if (!container || !x || !x.symbol) return;
@@ -1552,11 +1584,22 @@
       }
     });
 
+    // Auto-dismiss after 10 seconds so old alerts do not pile up
+    setTimeout(() => {
+      if (toast && toast.parentElement) {
+        toast.style.transition = "opacity 0.4s ease, transform 0.4s ease";
+        toast.style.opacity = "0";
+        toast.style.transform = "translateX(40px)";
+        setTimeout(() => toast.remove(), 400);
+      }
+    }, 10000);
+
     container.appendChild(toast);
   }
 
   function checkAndTriggerBellAlerts(payload) {
     if (!payload || !payload.ok) return;
+    const marketClock = payload.market_clock_ist || "";
     const allRows = [...(payload.bullish || []), ...(payload.bearish || [])];
 
     allRows.forEach(row => {
@@ -1577,8 +1620,12 @@
         if (!_alertedBreakouts.has(alertKey)) {
           _alertedBreakouts.add(alertKey);
 
-          // Once actual breakout called and all priority meets -> enable bell rang
-          if (_hasEvaluatedInitialBell) {
+          // STRICT RECENCY CHECK:
+          // Sticky alert popup and bell sound ONLY fire for fresh breakouts within 15 minutes of the current market clock.
+          // Stale morning breakouts (e.g. 09:20 AM alert at 12:40 PM) are suppressed from sticky popups/bell!
+          const isRecent = isRecentBreakout(row.breakout_time, marketClock);
+
+          if (_hasEvaluatedInitialBell && isRecent) {
             playBellRangSound();
             showStickyToast(row, isBreakdown);
           }
