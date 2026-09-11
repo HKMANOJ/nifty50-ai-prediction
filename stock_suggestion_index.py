@@ -1427,6 +1427,54 @@ def _has_signal(payload: dict[str, Any]) -> bool:
     return bool(payload.get("ok")) and bool(payload.get("bullish") or payload.get("bearish"))
 
 
+# ── Silent scan history logger ──────────────────────────────────────────────
+# Every real scan's candidates are appended to a local, gitignored, append-only
+# JSONL log - one file per session date. Nothing here touches the UI or the
+# served snapshot; it exists purely so a later question like "do rank 6-20
+# breakouts actually work out?" can be answered from real data instead of a
+# guess. Logging is best-effort: it must never break or slow down a scan.
+SCAN_HISTORY_DIR = INPUT_DIR / "scan_history"
+
+
+def log_scan_snapshot(payload: dict[str, Any]) -> None:
+    try:
+        session_date = payload.get("session_date") or datetime.now(INDIA_TZ).date().isoformat()
+        logged_at = payload.get("generated_at_ist") or datetime.now(INDIA_TZ).isoformat(timespec="seconds")
+        lines: list[str] = []
+        for side_name in ("bullish", "bearish"):
+            for row in payload.get(side_name, []) or []:
+                lines.append(json.dumps({
+                    "logged_at_ist": logged_at,
+                    "session_date": session_date,
+                    "side": side_name,
+                    "symbol": row.get("symbol"),
+                    "rank": row.get("rank"),
+                    "score": row.get("one_side_rally_score"),
+                    "status": row.get("status"),
+                    "five_min_status": row.get("five_min_status"),
+                    "is_breakout": row.get("is_breakout"),
+                    "breakout_time": row.get("breakout_time"),
+                    "percent_change": row.get("percent_change"),
+                    "ltp": row.get("ltp"),
+                    "entry": row.get("entry"),
+                    "stop_loss": row.get("stop_loss"),
+                    "target": row.get("target"),
+                    "lot_size": row.get("lot_size"),
+                    "setup": row.get("setup"),
+                    "vc_ranking": row.get("vc_ranking"),
+                    "rvol_5m": row.get("rvol_5m"),
+                    "range_position_percent": row.get("range_position_percent"),
+                }, ensure_ascii=False))
+        if not lines:
+            return
+        SCAN_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = SCAN_HISTORY_DIR / f"{session_date}.jsonl"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    except Exception as exc:  # noqa: BLE001 - logging must never break a scan
+        print(f"[scan-history] log skipped: {exc}")
+
+
 def main() -> int:
     args = parse_args()
     output = Path(args.output)
@@ -1438,6 +1486,12 @@ def main() -> int:
         exit_code = 1
 
     output.parent.mkdir(parents=True, exist_ok=True)
+
+    # Log every genuine scan's candidates in the background (not the stale-kept
+    # fallback below - that would duplicate an already-logged snapshot under a
+    # new timestamp and corrupt the time series).
+    if _has_signal(payload):
+        log_scan_snapshot(payload)
 
     # Never let a failed/empty scan clobber a good snapshot. If this run produced
     # no usable signal but a previous good snapshot from the SAME session exists,
