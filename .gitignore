@@ -9,3 +9,12 @@ node_modules/
 inputs/candle_cache.json
 inputs/candle_cache.json.tmp
 inputs/scan_history/
+inputs/tracked_breakouts.json
+inputs/discovery_log/
+inputs/discovery_state.json
+inputs/daily_top5.json
+inputs/instant_triggers.json
+inputs/outcome_tracker_state.json
+inputs/outcome_log/
+inputs/top5_eligible_state.json
+inputs/stock_suggestion_index.error.json

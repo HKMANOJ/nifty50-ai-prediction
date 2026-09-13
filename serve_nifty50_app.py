@@ -87,6 +87,11 @@ LAST_AUTO_SCAN_INFO: dict[str, Any] = {
     "status": "idle",
     "next_run_ist": None,
 }
+# Last automatic scan of the day is at this clock time - after it, the
+# auto-scanner stops entirely (even though NSE itself stays open till 15:30).
+# A manual refresh from the UI still works; this only stops the unattended
+# background loop.
+AUTO_SCAN_LAST_RUN_MINUTES = 14 * 60 + 45  # 2:45 PM IST
 
 def start_background_auto_scanner(interval_seconds: int = 300) -> None:
     """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 5 min during market hours."""
@@ -95,7 +100,8 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
         while True:
             try:
                 now_ist = get_ist_now()
-                if is_ist_market_hours(now_ist):
+                current_minutes = now_ist.hour * 60 + now_ist.minute
+                if is_ist_market_hours(now_ist) and current_minutes <= AUTO_SCAN_LAST_RUN_MINUTES:
                     if REFRESH_LOCK.acquire(blocking=False):
                         LAST_AUTO_SCAN_INFO["status"] = "running"
                         scan_start = time.time()
@@ -134,6 +140,12 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                     next_run = get_ist_now() + timedelta(seconds=interval_seconds)
                     LAST_AUTO_SCAN_INFO["next_run_ist"] = next_run.strftime("%I:%M:%S %p IST")
                     time.sleep(interval_seconds)
+                elif is_ist_market_hours(now_ist):
+                    # Past our 2:45 PM cutoff but NSE itself is still open till 15:30 -
+                    # the auto-scanner is done for the day; no more background scans.
+                    LAST_AUTO_SCAN_INFO["status"] = "scan_window_closed"
+                    LAST_AUTO_SCAN_INFO["next_run_ist"] = None
+                    time.sleep(30)
                 else:
                     LAST_AUTO_SCAN_INFO["status"] = "market_closed"
                     time.sleep(30)
@@ -629,17 +641,31 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 })
                 return
             
+            # This endpoint fetches 5 DAYS of candles (for the "5-Day Historical
+            # Candles" chart toggle), but PMH/PML/day-high/day-low are about the
+            # CURRENT session only - restrict to the most recent trading day's
+            # candles before computing them, else candles[:6] silently means
+            # "the opening range from 5 days ago" instead of today's.
+            from zoneinfo import ZoneInfo as _ZoneInfo
+            _ist = _ZoneInfo("Asia/Kolkata")
+            last_day = datetime.fromtimestamp(candles[-1]["timestamp"], tz=_ist).date()
+            today_candles = [
+                c for c in candles
+                if datetime.fromtimestamp(c["timestamp"], tz=_ist).date() == last_day
+            ] or candles
+
             # Compute PDH (Prior Day High), PDL (Prior Day Low), Open, High, Low
-            opens = [c["open"] for c in candles if c.get("open") is not None]
-            highs = [c["high"] for c in candles if c.get("high") is not None]
-            lows = [c["low"] for c in candles if c.get("low") is not None]
+            opens = [c["open"] for c in today_candles if c.get("open") is not None]
+            highs = [c["high"] for c in today_candles if c.get("high") is not None]
+            lows = [c["low"] for c in today_candles if c.get("low") is not None]
             closes = [c["close"] for c in candles if c.get("close") is not None]
             volumes = [c["volume"] for c in candles if c.get("volume") is not None]
 
             # Morning opening range (first 3 to 6 candles e.g. 09:15 - 09:45)
-            base_count = min(len(candles), 6)
-            orb_high = max(c["high"] for c in candles[:base_count]) if candles else None
-            orb_low = min(c["low"] for c in candles[:base_count]) if candles else None
+            # of TODAY specifically, not the oldest day in the 5-day fetch.
+            base_count = min(len(today_candles), 6)
+            orb_high = max(c["high"] for c in today_candles[:base_count]) if today_candles else None
+            orb_low = min(c["low"] for c in today_candles[:base_count]) if today_candles else None
 
             # Calculate 9 EMA line
             ema9_series = []

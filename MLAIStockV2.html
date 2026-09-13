@@ -424,6 +424,74 @@
       color: #0284c7;
     }
 
+    /* ── Tracked Breakouts (pinned once alerted; tracked until a real outcome) ── */
+    .tracked-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .tracked-panel-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tracked-panel-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text-dark);
+    }
+
+    .tracked-panel-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .tracked-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .tracked-row:last-child { border-bottom: none; }
+
+    .tracked-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .tracked-sym {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text-dark);
+    }
+
+    .tracked-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-top: 1px;
+    }
+
+    .tracked-price {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text-dark);
+      font-family: var(--font-mono);
+      text-align: right;
+    }
+
+
     /* ── Row 2: Split Layout (Left Candidate List + Right TradingView Chart) ── */
     .split-layout {
       display: grid;
@@ -868,6 +936,23 @@
       to { transform: translateX(0); opacity: 1; }
     }
 
+    /* Nav-item unread dot for Top 5 Eligible - stays lit (and pulsing) from
+       any tab until the user actually opens that view, so a new addition
+       isn't missed just because you're looking at the Dashboard instead. */
+    @keyframes navDotPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.4); opacity: 0.6; }
+    }
+    .nav-blink-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #ef4444;
+      margin-left: auto;
+      flex-shrink: 0;
+      animation: navDotPulse 1s ease-in-out infinite;
+    }
+
     .score-meter {
       display: flex;
       align-items: center;
@@ -1071,6 +1156,15 @@
         <span class="icon">📉</span>
         <span class="menu-label">Market Sentiment</span>
       </div>
+      <div class="menu-item" id="navTracked" data-view="tracked">
+        <span class="icon">📌</span>
+        <span class="menu-label">Tracked Breakouts</span>
+      </div>
+      <div class="menu-item" id="navTop5Eligible" data-view="top5eligible">
+        <span class="icon">🎯</span>
+        <span class="menu-label">Top 5 Eligible</span>
+        <span class="nav-blink-dot" id="top5EligibleNavDot" style="display:none;"></span>
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -1249,6 +1343,7 @@
               <span class="chart-active-ltp" id="chartLtp">₹3,209.00</span>
               <span class="chart-active-chg up" id="chartPct">+4.55% LEADING</span>
               <span class="chart-stat-chip orb" id="chartOrb">PMH: ₹3,165.00</span>
+              <span class="chart-stat-chip" id="chartPmhPmlStatus" style="display:none;"></span>
               <span class="chart-stat-chip" id="chartPdh">Structure: Breakout Rally</span>
               <span class="chart-stat-chip" style="background:#eff6ff; color:#2563eb; font-weight:700;">📅 5-Day Historical Candles</span>
             </div>
@@ -1389,6 +1484,109 @@
 
     </div><!-- /viewSectorAnalysis -->
 
+    <!-- ═══════════════════════════════════════════════════════════
+         TRACKED BREAKOUTS VIEW (hidden by default, shown on nav click)
+         A frozen snapshot of every row the bell ever rang for, captured at
+         that exact moment - never dropped just for falling out of the live
+         top-20, and never auto-updated afterward. Check it manually.
+         ═══════════════════════════════════════════════════════════ -->
+    <div id="viewTrackedBreakouts" class="content-container" style="display:none; flex-direction:column; padding:16px 20px; gap:18px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+        <div>
+          <h2 style="font-size:18px; font-weight:800; color:#0f172a; margin:0;">📌 Tracked Breakouts</h2>
+          <p style="font-size:12px; color:#64748b; margin:4px 0 0;">Frozen snapshot from the moment the bell rang · never dropped for falling out of the live top-20 · check it manually from here</p>
+        </div>
+      </div>
+
+      <section class="tracked-panel" id="instantTriggersPanel">
+        <div class="tracked-panel-header">
+          <span class="tracked-panel-title">⚡ Instant Triggers</span>
+          <span class="tracked-panel-sub" id="instantTriggersCountLabel">0 fired</span>
+        </div>
+        <div style="padding:10px 14px 0; font-size:11px; color:var(--text-muted); font-weight:600; line-height:1.5;">
+          Fires the moment a breakout is confirmed - not gated by score=100 or Priority Rally like the Bell. Scored on 5 instant-only factors: Price Action, Support &amp; Resistance, OI Setup Quality, Sector/Index Alignment, Volume Surge. Faster than the Bell by design, so expect more noise/fakeouts - the Rally Score keeps running underneath and "Upgraded" shows once it independently confirms.
+        </div>
+        <div id="instantTriggersBody"></div>
+      </section>
+      <div id="instantTriggersEmptyState" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:32px 20px; text-align:center; color:#94a3b8; font-size:13px;">
+        Nothing triggered yet today. A stock appears here the instant a breakout is confirmed - before the Bell, before Priority Rally.
+      </div>
+
+      <section class="tracked-panel" id="dailyTop5Panel">
+        <div class="tracked-panel-header">
+          <span class="tracked-panel-title">🏆 Today's Top 5 (12-Factor Score)</span>
+          <span class="tracked-panel-sub" id="top5LockLabel">Analyzing until 09:30 AM…</span>
+        </div>
+        <div style="padding:10px 14px 0; font-size:11px; color:var(--text-muted); font-weight:600; line-height:1.5;">
+          Waits till 09:30 AM for the opening range to settle, then re-locks a fresh 5 highest-scoring stocks per side every 15 minutes - stable within each window, rolling across the day. Equal-weighted: Trend, Strength, Momentum, Volume, Velocity, Relative Strength, Sector Alignment, Market Direction, Liquidity, Volatility, Support &amp; Resistance, Price Action.
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:16px; padding:10px 14px 14px;">
+          <div style="flex:1 1 320px; min-width:0;">
+            <div style="font-size:11px; font-weight:800; color:var(--green); margin-bottom:6px;">🟢 BULLISH</div>
+            <div id="top5BullishBody"></div>
+          </div>
+          <div style="flex:1 1 320px; min-width:0;">
+            <div style="font-size:11px; font-weight:800; color:var(--red); margin-bottom:6px;">🔴 BEARISH</div>
+            <div id="top5BearishBody"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tracked-panel" id="trackedPanel" style="display:none;">
+        <div class="tracked-panel-header">
+          <span class="tracked-panel-title">At the moment of alert</span>
+          <span class="tracked-panel-sub" id="trackedCountLabel">0 pinned</span>
+        </div>
+        <div id="trackedPanelBody"></div>
+      </section>
+
+      <div id="trackedEmptyState" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:48px 20px; text-align:center; color:#94a3b8; font-size:13px;">
+        Nothing pinned yet today. A stock appears here the moment it rings the bell.
+      </div>
+    </div><!-- /viewTrackedBreakouts -->
+
+    <!-- ═══════════════════════════════════════════════════════════
+         TOP 5 ELIGIBLE VIEW (hidden by default, shown on nav click)
+         Live, recomputed every scan (no locking) - a short, harder-gated
+         list meant to actually be traded, not just observed. A stock only
+         qualifies if it is a CONFIRMED breakout, Rally Score >= 80, AND has
+         pulled back <=1.5% from its own post-breakout high (the one signal
+         that actually separated real runners from stalls in analysis) -
+         too soon after breaking out (not enough candles yet to judge the
+         pullback) means NOT YET eligible, not automatically excluded.
+         ═══════════════════════════════════════════════════════════ -->
+    <div id="viewTop5Eligible" class="content-container" style="display:none; flex-direction:column; padding:16px 20px; gap:18px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+        <div>
+          <h2 style="font-size:18px; font-weight:800; color:#0f172a; margin:0;">🎯 Top 5 Eligible</h2>
+          <p style="font-size:12px; color:#64748b; margin:4px 0 0;">Confirmed breakout + Rally Score ≥80 + pullback since breakout >1.0% — the hardest-gated list, meant to trade, not just watch</p>
+        </div>
+      </div>
+
+      <section class="tracked-panel" id="top5EligiblePanel">
+        <div style="padding:10px 14px 0; font-size:11px; color:var(--text-muted); font-weight:600; line-height:1.5;">
+          A stock only appears here once it clears all three gates. A fresh breakout that hasn't had enough candles yet to judge its pullback is simply not listed YET (not excluded) - it can appear a few candles later once confirmed, or never if it fades. This list is live and can shrink or change every scan; nothing here is pinned or frozen.
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:16px; padding:10px 14px 14px;">
+          <div style="flex:1 1 320px; min-width:0;">
+            <div style="font-size:11px; font-weight:800; color:var(--green); margin-bottom:6px;">🟢 BULLISH</div>
+            <div id="top5EligibleBullishBody"></div>
+          </div>
+          <div style="flex:1 1 320px; min-width:0;">
+            <div style="font-size:11px; font-weight:800; color:var(--red); margin-bottom:6px;">🔴 BEARISH</div>
+            <div id="top5EligibleBearishBody"></div>
+          </div>
+        </div>
+      </section>
+    </div><!-- /viewTop5Eligible -->
+
+    <!-- PMH/PML Filter as a standalone view was removed - the same check is
+         now a real business-logic filter in the backend (every stock in the
+         Dashboard already passes it), so a separate tab would just mirror
+         the Dashboard exactly. The Dashboard chart badge (chartPmhPmlStatus)
+         still uses this data via _latestPmhPmlFilter, kept updated by
+         renderPmhPmlFilter() below even without a dedicated view. -->
+
   </main>
 </div>
 
@@ -1417,7 +1615,29 @@
      own IST clock, so it never depends on the viewer's browser timezone. */
   const FRESH_WINDOW_MIN = 6;    // FIX 1: only ring for breakouts <= 6 min old
   const PICK_WINDOW_MIN  = 10;   // FIX 2: hold a System Pick 10 min from its breakout
+  // Trading cutoff: no NEW bell alerts and no NEW System Pick locks after this
+  // clock time. Anything already ringing/locked before the cutoff still plays
+  // out normally (existing lock holds till its own expiry; Tracked Breakouts
+  // stays untouched) - this only stops fresh signals from firing past 12:45.
+  const TRADE_CUTOFF_MIN = 12 * 60 + 45;
+  // Display-only cap: the backend still scores/ranks the full candidate pool
+  // (business logic untouched) - this just trims what the dashboard SHOWS,
+  // per side, to the top N by rank. The discovery-delay log (server side)
+  // records the true first-reaches-top-N moment regardless of this cap.
+  // Exploratory: still showing every qualifying stock (not capped to 6) so
+  // the real, lot-size-filtered count is visible. Set back to 6 to restore
+  // the top-6 view.
+  const MAX_DISPLAY_ROWS = 500;
+  // Any stock with a lot size above this is excluded - matches the server's
+  // MAX_ALLOWED_LOT_SIZE so client and server agree on what "too big" means.
+  const MAX_LOT_SIZE_DISPLAY = 1000;
   let _lockedPick = null;        // { symbol, score, boMin, expiresMin, type, row }
+  // Previous scan's Top 5 Eligible symbols per side, so a freshly-added
+  // stock (not seen last render) can get the new-entry blink treatment.
+  let _prevTop5EligibleSymbols = { bullish: new Set(), bearish: new Set() };
+  // Latest PMH/PML Filter result, kept for the Dashboard chart badge so it
+  // reflects the currently-viewed stock without a separate fetch.
+  let _latestPmhPmlFilter = { bullish: [], bearish: [] };
 
   function istNowMinutes(payload) {
     const clk = (payload && payload.market_clock_ist) || "";
@@ -1586,9 +1806,10 @@
     if (!payload || !payload.ok) return;
     const allRows = [...(payload.bullish || []), ...(payload.bearish || [])];
     const nowMin = istNowMinutes(payload);
+    if (nowMin > TRADE_CUTOFF_MIN) { _hasEvaluatedInitialBell = true; return; }
 
     allRows.forEach(row => {
-      if (row.lot_size && row.lot_size > 1100) return;
+      if (row.lot_size && row.lot_size > MAX_LOT_SIZE_DISPLAY) return;
 
       const st = (row.five_min_status || "").toLowerCase();
       const isNear = st.includes("near");
@@ -1752,6 +1973,28 @@
     const pctEl = document.getElementById("chartPct");
     const orbEl = document.getElementById("chartOrb");
     const pdhEl = document.getElementById("chartPdh");
+    const pmhPmlStatusEl = document.getElementById("chartPmhPmlStatus");
+
+    if (pmhPmlStatusEl) {
+      const inBullish = (_latestPmhPmlFilter.bullish || []).some(x => x.symbol === _selectedSymbol);
+      const inBearish = (_latestPmhPmlFilter.bearish || []).some(x => x.symbol === _selectedSymbol);
+      if (inBullish) {
+        pmhPmlStatusEl.style.display = "inline-block";
+        pmhPmlStatusEl.textContent = "✅ Above PMH + Prev Close";
+        pmhPmlStatusEl.style.background = "#f0fdf4";
+        pmhPmlStatusEl.style.color = "#166534";
+      } else if (inBearish) {
+        pmhPmlStatusEl.style.display = "inline-block";
+        pmhPmlStatusEl.textContent = "✅ Below PML + Prev Close";
+        pmhPmlStatusEl.style.background = "#fef2f2";
+        pmhPmlStatusEl.style.color = "#991b1b";
+      } else {
+        pmhPmlStatusEl.style.display = "inline-block";
+        pmhPmlStatusEl.textContent = "— Not PMH/PML Qualifying";
+        pmhPmlStatusEl.style.background = "#f1f5f9";
+        pmhPmlStatusEl.style.color = "#64748b";
+      }
+    }
 
     if (symEl) symEl.textContent = _selectedSymbol;
     if (ltpEl && meta.ltp) ltpEl.textContent = `₹${Number(meta.ltp).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
@@ -1828,6 +2071,303 @@
     }
   }
 
+  /* ── Render Tracked Breakouts (frozen snapshot, captured once at alert) ── */
+  function renderTrackedBreakouts(items) {
+    const panel = document.getElementById("trackedPanel");
+    const body = document.getElementById("trackedPanelBody");
+    const emptyState = document.getElementById("trackedEmptyState");
+    const countLabel = document.getElementById("trackedCountLabel");
+    if (!panel || !body) return;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      panel.style.display = "none";
+      if (emptyState) emptyState.style.display = "block";
+      body.innerHTML = "";
+      return;
+    }
+    panel.style.display = "block";
+    if (emptyState) emptyState.style.display = "none";
+    if (countLabel) countLabel.textContent = `${items.length} pinned`;
+
+    body.innerHTML = items.map(it => {
+      const isBull = it.side === "bullish";
+      const isUp = (it.percent_change || 0) >= 0;
+
+      // Same breakout/breakdown badge logic as the F&O table (renderTable),
+      // so a pinned row's badge looks identical to its live table row.
+      const st = (it.five_min_status || "").toLowerCase();
+      const isNear = st.includes("near");
+      const isConsolidating = st.includes("consolidating");
+      const isBreakout = Boolean(it.is_breakout || st.includes("breakout"));
+      const isBreakdown = Boolean(st.includes("breakdown") || ((it.percent_change || 0) < 0 && it.is_breakout));
+      const timeStr = it.breakout_time ? ` ${it.breakout_time}` : "";
+      let boBadge = "", boCls = "wait";
+      if (!isNear && !isConsolidating && (isBreakout || isBreakdown)) {
+        boBadge = isBreakdown ? `🔴 BREAKDOWN${timeStr}` : `🟢 BREAKOUT${timeStr}`;
+        boCls = isBreakdown ? "bd" : "bo";
+      } else if (isNear) {
+        boBadge = `${it.five_min_status || (isBreakdown ? "Near BD" : "Near BO")}${timeStr}`;
+        boCls = "near";
+      } else {
+        boBadge = `${it.five_min_status || "--"}${timeStr}`;
+      }
+
+      const vc = it.vc_ranking || 0;
+      const vcCls = vc >= 2.5 ? "high" : (vc >= 1.2 ? "mid" : "low");
+      const mp = it.mp_score || 0;
+      const rallyScore = it.rally_score ?? 0;
+
+      return `
+        <div class="tracked-row" style="flex-direction:column; align-items:stretch; gap:8px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div class="tracked-dot" style="background:${isBull ? '#10b981' : '#ef4444'};"></div>
+            <div style="flex:1; min-width:160px;">
+              <div class="tracked-sym">${it.symbol}${it.lot_size ? ` <span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${it.lot_size}</span>` : ""}</div>
+              <div class="tracked-sub">${it.setup || "--"}</div>
+            </div>
+            <span class="bo-status-pill ${boCls}" style="font-size:10px;">${boBadge}</span>
+            <div class="score-meter" style="min-width:80px;">
+              <span class="val">${rallyScore}</span>
+              <div class="score-bar-bg"><div class="score-bar-fill" style="width:${Math.min(100, Math.max(0, rallyScore))}%"></div></div>
+            </div>
+            <span style="font-size:11px; font-weight:700; color:${it.action_status === 'Priority Rally' ? 'var(--green)' : 'var(--text-dark)'};">${it.action_status || "--"}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--text-muted); font-weight:600; padding-left:18px;">
+            <span>Alerted ${it.alert_time_ist || "--"}</span>
+            <span class="tracked-price" style="font-size:12px;">₹${it.alert_price != null ? Number(it.alert_price).toLocaleString("en-IN") : "--"}</span>
+            <span style="color:${isUp ? 'var(--green)' : 'var(--red)'}; font-weight:800;">${isUp ? "+" : ""}${(it.percent_change ?? 0).toFixed(2)}%</span>
+            <span>Vol ${it.volume != null ? Number(it.volume).toLocaleString("en-IN") : "--"}</span>
+            <span class="vc-pill ${vcCls}" style="font-size:10px;">${vc.toFixed(2)}x</span>
+            <span class="mp-badge ${isBull ? 'up' : 'down'}" style="font-size:11px;"><span>${isBull ? '↑' : '↓'}</span><span>${mp.toFixed(2)}</span></span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  /* ── Render Top 5 Eligible (confirmed BO + score>=80 + shallow pullback) ── */
+  function renderTop5Eligible(data) {
+    const bullBody = document.getElementById("top5EligibleBullishBody");
+    const bearBody = document.getElementById("top5EligibleBearishBody");
+    if (!bullBody || !bearBody) return;
+
+    let _anyNewThisRender = false;
+
+    const renderSide = (items, sideName) => {
+      const prevSet = _prevTop5EligibleSymbols[sideName] || new Set();
+      const nextSet = new Set();
+      if (!Array.isArray(items) || items.length === 0) {
+        _prevTop5EligibleSymbols[sideName] = nextSet;
+        return `<div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11px;">Nothing eligible right now - either no confirmed breakouts, or none have held a shallow enough pullback yet.</div>`;
+      }
+      const html = items.map((it, idx) => {
+        const isUp = (it.percent_change || 0) >= 0;
+        nextSet.add(it.symbol);
+        const isNew = !prevSet.has(it.symbol);
+        if (isNew) _anyNewThisRender = true;
+        return `
+          <div class="tracked-row" style="flex-direction:column; align-items:stretch; gap:6px;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <span style="font-size:11px; font-weight:800; color:var(--text-muted); width:14px;">${idx + 1}</span>
+              <div style="flex:1; min-width:140px;">
+                <div class="tracked-sym">${it.symbol}${it.lot_size ? ` <span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${it.lot_size}</span>` : ""}</div>
+                <div class="tracked-sub">${it.setup || "--"}${it.breakout_time ? ` · BO ${it.breakout_time}` : ""}${it.eligible_since_ist ? ` · Listed ${it.eligible_since_ist}` : ""}</div>
+              </div>
+              <div class="score-meter" style="min-width:80px;">
+                <span class="val">${it.rally_score}</span>
+                <div class="score-bar-bg"><div class="score-bar-fill" style="width:${Math.min(100, Math.max(0, it.rally_score))}%"></div></div>
+              </div>
+              <span style="font-size:11px; font-weight:700; color:${it.status === 'Priority Rally' ? 'var(--green)' : 'var(--text-dark)'};">${it.status || "--"}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--text-muted); font-weight:600; padding-left:22px;">
+              <span class="tracked-price" style="font-size:12px;">₹${it.ltp != null ? Number(it.ltp).toLocaleString("en-IN") : "--"}</span>
+              <span style="color:${isUp ? 'var(--green)' : 'var(--red)'}; font-weight:800;">${isUp ? "+" : ""}${(it.percent_change ?? 0).toFixed(2)}%</span>
+              <span class="vc-pill" style="font-size:10px;">${(it.vc_ranking ?? 0).toFixed(2)}x</span>
+              <span style="color:var(--green); font-weight:700;">Pullback since BO: ${it.pullback_since_bo_pct}%</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+      _prevTop5EligibleSymbols[sideName] = nextSet;
+      return html;
+    };
+
+    bullBody.innerHTML = renderSide(data && data.bullish, "bullish");
+    bearBody.innerHTML = renderSide(data && data.bearish, "bearish");
+
+    // Nav-item dot: only surface it if the user is NOT already looking at
+    // this tab (they're already seeing the row-level blink live in that case).
+    const navDot = document.getElementById("top5EligibleNavDot");
+    const onThisTab = document.getElementById("navTop5Eligible")?.classList.contains("active");
+    if (navDot && _anyNewThisRender && !onThisTab) {
+      navDot.style.display = "inline-block";
+    }
+  }
+
+  /* ── Render PMH/PML Filter (above/below opening range + prev close) ── */
+  function renderPmhPmlFilter(data) {
+    _latestPmhPmlFilter = data || { bullish: [], bearish: [] };
+    const bullBody = document.getElementById("pmhPmlBullishBody");
+    const bearBody = document.getElementById("pmhPmlBearishBody");
+    if (!bullBody || !bearBody) return;
+
+    const renderSide = (items, isBullSide) => {
+      if (!Array.isArray(items) || items.length === 0) {
+        return `<div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11px;">Nothing qualifying right now.</div>`;
+      }
+      return items.map((it, idx) => {
+        const isUp = (it.percent_change || 0) >= 0;
+        const levelLabel = isBullSide ? "PMH" : "PML";
+        return `
+          <div class="tracked-row" style="flex-direction:column; align-items:stretch; gap:6px;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <span style="font-size:11px; font-weight:800; color:var(--text-muted); width:14px;">${idx + 1}</span>
+              <div style="flex:1; min-width:140px;">
+                <div class="tracked-sym">${it.symbol}${it.lot_size ? ` <span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${it.lot_size}</span>` : ""}</div>
+                <div class="tracked-sub">${it.setup || "--"}${it.breakout_time ? ` · BO ${it.breakout_time}` : ""}</div>
+              </div>
+              <div class="score-meter" style="min-width:80px;">
+                <span class="val">${it.rally_score}</span>
+                <div class="score-bar-bg"><div class="score-bar-fill" style="width:${Math.min(100, Math.max(0, it.rally_score))}%"></div></div>
+              </div>
+              <span style="font-size:11px; font-weight:700; color:${it.status === 'Priority Rally' ? 'var(--green)' : 'var(--text-dark)'};">${it.status || "--"}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--text-muted); font-weight:600; padding-left:22px;">
+              <span class="tracked-price" style="font-size:12px;">₹${it.ltp != null ? Number(it.ltp).toLocaleString("en-IN") : "--"}</span>
+              <span style="color:${isUp ? 'var(--green)' : 'var(--red)'}; font-weight:800;">${isUp ? "+" : ""}${(it.percent_change ?? 0).toFixed(2)}%</span>
+              <span class="vc-pill" style="font-size:10px;">${(it.vc_ranking ?? 0).toFixed(2)}x</span>
+              <span>${levelLabel} ₹${it.orb_level}</span>
+              <span>Prev Close ₹${it.prev_close ?? "--"}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    };
+
+    bullBody.innerHTML = renderSide(data && data.bullish, true);
+    bearBody.innerHTML = renderSide(data && data.bearish, false);
+  }
+
+  /* ── Render Instant Triggers (fires on is_breakout, not score=100) ── */
+  function renderInstantTriggers(items) {
+    const panel = document.getElementById("instantTriggersPanel");
+    const body = document.getElementById("instantTriggersBody");
+    const emptyState = document.getElementById("instantTriggersEmptyState");
+    const countLabel = document.getElementById("instantTriggersCountLabel");
+    if (!panel || !body) return;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      panel.style.display = "none";
+      if (emptyState) emptyState.style.display = "block";
+      body.innerHTML = "";
+      return;
+    }
+    panel.style.display = "block";
+    if (emptyState) emptyState.style.display = "none";
+    if (countLabel) countLabel.textContent = `${items.length} fired`;
+
+    body.innerHTML = items.map(it => {
+      const isBull = it.side === "bullish";
+      const isUp = (it.percent_change_at_trigger || 0) >= 0;
+      const score = it.instant_score ?? 0;
+      const factorChips = Object.entries(it.factors || {}).map(([label, val]) => `
+        <div style="display:flex; justify-content:space-between; gap:4px; font-size:9.5px; padding:2px 0;">
+          <span style="color:var(--text-muted); font-weight:600;">${label}</span>
+          <span style="font-weight:800; color:${val >= 70 ? 'var(--green)' : val >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${val.toFixed(0)}</span>
+        </div>
+      `).join("");
+      return `
+        <div class="tracked-row" style="flex-direction:column; align-items:stretch; gap:6px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div class="tracked-dot" style="background:${isBull ? '#10b981' : '#ef4444'};"></div>
+            <div style="flex:1; min-width:140px;">
+              <div class="tracked-sym">${it.symbol}${it.lot_size ? ` <span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${it.lot_size}</span>` : ""}</div>
+              <div class="tracked-sub">${it.setup || "--"}${it.breakout_time ? ` · BO ${it.breakout_time}` : ""}</div>
+            </div>
+            <div class="score-meter" style="min-width:80px;">
+              <span class="val">${score.toFixed(1)}</span>
+              <div class="score-bar-bg"><div class="score-bar-fill" style="width:${Math.min(100, Math.max(0, score))}%"></div></div>
+            </div>
+            ${it.upgraded_to_priority
+              ? `<span style="font-size:10px; font-weight:800; color:var(--green); background:var(--green-bg); border:1px solid var(--green-border); padding:2px 6px; border-radius:4px;">✓ Upgraded ${it.upgraded_at_ist || ""}</span>`
+              : `<span style="font-size:10px; font-weight:700; color:var(--text-muted); background:#f1f5f9; padding:2px 6px; border-radius:4px;">Watching…</span>`
+            }
+          </div>
+          <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--text-muted); font-weight:600; padding-left:18px;">
+            <span>Triggered ${it.triggered_at_ist || "--"}</span>
+            <span class="tracked-price" style="font-size:12px;">₹${it.price_at_trigger != null ? Number(it.price_at_trigger).toLocaleString("en-IN") : "--"}</span>
+            <span style="color:${isUp ? 'var(--green)' : 'var(--red)'}; font-weight:800;">${isUp ? "+" : ""}${(it.percent_change_at_trigger ?? 0).toFixed(2)}%</span>
+            <span>Rally Score at trigger: ${it.rally_score_at_trigger ?? "--"}</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:2px 10px; padding-left:22px;">
+            ${factorChips}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  /* ── Render Daily Top 5 (12-factor scorecard, locked at 09:30 AM) ── */
+  function renderDailyTop5(top5) {
+    const lockLabel = document.getElementById("top5LockLabel");
+    const bullBody = document.getElementById("top5BullishBody");
+    const bearBody = document.getElementById("top5BearishBody");
+    if (!lockLabel || !bullBody || !bearBody) return;
+
+    const lockTime = (top5 && top5.lock_time_ist) || "09:30";
+
+    if (!top5 || !top5.locked) {
+      lockLabel.textContent = `Analyzing until ${lockTime} AM…`;
+      const waiting = `<div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11px;">Locking in at ${lockTime} AM</div>`;
+      bullBody.innerHTML = waiting;
+      bearBody.innerHTML = waiting;
+      return;
+    }
+
+    const windowStr = (top5.window_start_ist && top5.window_end_ist)
+      ? `Window ${top5.window_start_ist}–${top5.window_end_ist}`
+      : `Locked ${top5.locked_at_ist || ""}`;
+    lockLabel.textContent = `${windowStr} · rolls every ${top5.window_minutes || 15}min`;
+
+    const renderSide = (items) => {
+      if (!Array.isArray(items) || items.length === 0) {
+        return `<div style="padding:14px; text-align:center; color:var(--text-muted); font-size:11px;">No qualifying candidates at lock time.</div>`;
+      }
+      return items.map((it, idx) => {
+        const isUp = (it.percent_change || 0) >= 0;
+        const score = it.composite_score ?? 0;
+        const factorChips = Object.entries(it.factors || {}).map(([label, val]) => `
+          <div style="display:flex; justify-content:space-between; gap:4px; font-size:9.5px; padding:2px 0;">
+            <span style="color:var(--text-muted); font-weight:600;">${label}</span>
+            <span style="font-weight:800; color:${val >= 70 ? 'var(--green)' : val >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${val.toFixed(0)}</span>
+          </div>
+        `).join("");
+        return `
+          <div class="tracked-row" style="flex-direction:column; align-items:stretch; gap:6px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="font-size:11px; font-weight:800; color:var(--text-muted); width:14px;">${idx + 1}</span>
+              <div style="flex:1; min-width:120px;">
+                <div class="tracked-sym">${it.symbol}${it.lot_size ? ` <span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${it.lot_size}</span>` : ""}</div>
+                <div class="tracked-sub">${it.sector || "Other"} · ${it.setup || "--"}${it.breakout_time ? ` · BO ${it.breakout_time}` : ""}</div>
+              </div>
+              <div class="score-meter" style="min-width:70px;">
+                <span class="val">${score.toFixed(1)}</span>
+                <div class="score-bar-bg"><div class="score-bar-fill" style="width:${Math.min(100, Math.max(0, score))}%"></div></div>
+              </div>
+              <span style="font-size:11px; font-weight:800; color:${isUp ? 'var(--green)' : 'var(--red)'};">${isUp ? "+" : ""}${(it.percent_change ?? 0).toFixed(2)}%</span>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:2px 10px; padding-left:22px;">
+              ${factorChips}
+            </div>
+          </div>
+        `;
+      }).join("");
+    };
+
+    bullBody.innerHTML = renderSide(top5.bullish);
+    bearBody.innerHTML = renderSide(top5.bearish);
+  }
+
   /* ── Render Left Scroll List ── */
   function renderLeftList(rows) {
     const list = document.getElementById("stockScrollList");
@@ -1835,11 +2375,11 @@
     if (!list) return;
 
     rows = (rows || []).filter(r => {
-      if (r.lot_size && r.lot_size > 1100) return false;
+      if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
       const st = (r.five_min_status || "").toLowerCase();
       if (st === "consolidating") return false;
       return true;
-    });
+    }).slice(0, MAX_DISPLAY_ROWS);
 
     if (!Array.isArray(rows) || rows.length === 0) {
       list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">No breakout candidates right now.</div>`;
@@ -1876,11 +2416,11 @@
     if (!body) return;
 
     rows = (rows || []).filter(r => {
-      if (r.lot_size && r.lot_size > 1100) return false;
+      if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
       const st = (r.five_min_status || "").toLowerCase();
       if (st === "consolidating") return false;
       return true;
-    });
+    }).slice(0, MAX_DISPLAY_ROWS);
 
     if (!Array.isArray(rows) || rows.length === 0) {
       body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:30px; color:var(--text-muted);">No candidates matching filter right now.</td></tr>`;
@@ -1980,6 +2520,12 @@
     _currentBullish.forEach((r, idx) => { r.rank = idx + 1; });
     _currentBearish.forEach((r, idx) => { r.rank = idx + 1; });
 
+    renderTop5Eligible(payload.top5_eligible);
+    renderPmhPmlFilter(payload.pmh_pml_filter);
+    renderInstantTriggers(payload.instant_triggers);
+    renderDailyTop5(payload.daily_top5);
+    renderTrackedBreakouts(payload.tracked_breakouts);
+
     // Update Indexes
     const idxs = payload.index_context || {};
     const n50 = idxs["NIFTY 50"] || {};
@@ -2005,7 +2551,17 @@
     const scanDot = document.getElementById("autoScanDot");
     const scanInfo = payload._auto_scan_info || {};
     if (scanText) {
-      if (isMarketHours()) {
+      if (scanInfo.status === "scan_window_closed") {
+        // Past the 2:45 PM auto-scan cutoff - NSE may still be open till 15:30,
+        // but the background scanner has stopped for the day on purpose.
+        scanText.textContent = "Auto-Scan: Done for today (2:45 cutoff)";
+        if (scanBadge) {
+          scanBadge.style.background = "#fff7ed";
+          scanBadge.style.color = "#c2410c";
+          scanBadge.style.borderColor = "#fed7aa";
+        }
+        if (scanDot) scanDot.style.background = "#f97316";
+      } else if (isMarketHours()) {
         const lastT = scanInfo.last_run_ist ? scanInfo.last_run_ist.replace(" IST", "") : (payload.market_clock_ist || "");
         scanText.textContent = lastT ? `Auto-Scan: 5m (Last: ${lastT})` : "Auto-Scan: 5m Active";
         if (scanBadge) {
@@ -2126,6 +2682,9 @@
     const candScore  = finalTopPick ? (finalTopPick._finalScore ?? 0) : 0;
 
     const lockActive = _lockedPick && nowMinPick <= _lockedPick.expiresMin;
+    // Past the trading cutoff: no NEW lock may be taken, but a lock already
+    // held from before the cutoff keeps running until its own expiry.
+    const pastCutoff = nowMinPick > TRADE_CUTOFF_MIN;
 
     const makeLock = (row, score, boMin, type) => ({
       symbol: row.symbol, score, boMin, expiresMin: boMin + PICK_WINDOW_MIN, type, row,
@@ -2137,12 +2696,13 @@
       const liveRow = pool.find(x => x.symbol === _lockedPick.symbol);
       if (liveRow) _lockedPick.row = liveRow;
       // Override only for a strictly stronger, fresh breakout on a different name.
-      if (finalTopPick && candFresh && candScore > _lockedPick.score && finalTopPick.symbol !== _lockedPick.symbol) {
+      if (!pastCutoff && finalTopPick && candFresh && candScore > _lockedPick.score && finalTopPick.symbol !== _lockedPick.symbol) {
         _lockedPick = makeLock(finalTopPick, candScore, candBoMin, finalPickType);
       }
     } else {
-      // No active lock: adopt the current candidate only if its breakout is fresh.
-      _lockedPick = (finalTopPick && candFresh)
+      // No active lock: adopt the current candidate only if its breakout is fresh
+      // and we're still before the cutoff.
+      _lockedPick = (!pastCutoff && finalTopPick && candFresh)
         ? makeLock(finalTopPick, candScore, candBoMin, finalPickType)
         : null;
     }
@@ -2656,6 +3216,8 @@
     // Toggle visibility of views
     document.getElementById("viewDashboard").style.display   = targetView === "dashboard" ? "" : "none";
     document.getElementById("viewSectorAnalysis").style.display = targetView === "sector"    ? "flex" : "none";
+    document.getElementById("viewTrackedBreakouts").style.display = targetView === "tracked" ? "flex" : "none";
+    document.getElementById("viewTop5Eligible").style.display = targetView === "top5eligible" ? "flex" : "none";
 
     // Update active nav item highlight
     document.querySelectorAll(".menu-item[data-view]").forEach(el => {
@@ -2666,6 +3228,12 @@
     if (targetView === "sector") {
       document.getElementById("navSector").classList.add("active");
       renderSectorView();
+    } else if (targetView === "tracked") {
+      document.getElementById("navTracked").classList.add("active");
+    } else if (targetView === "top5eligible") {
+      document.getElementById("navTop5Eligible").classList.add("active");
+      const navDot = document.getElementById("top5EligibleNavDot");
+      if (navDot) navDot.style.display = "none";
     } else {
       document.getElementById("navDashboard").classList.add("active");
     }
@@ -2777,7 +3345,13 @@
       }
     }
 
-    const allStocks = [...(payload.bullish || []), ...(payload.bearish || [])];
+    // Use the broad market universe (every OI-confirmed F&O stock, not just
+    // today's breakout candidates) so every sector gets a fair reading -
+    // falls back to the narrow breakout list only if an older cached payload
+    // (from before this field existed) is all that's available.
+    const allStocks = (payload.market_universe && payload.market_universe.length)
+      ? payload.market_universe
+      : [...(payload.bullish || []), ...(payload.bearish || [])];
 
     // ── Step 1: Compute per-sector stats from live stock data ──
     const sectorStats = {};
