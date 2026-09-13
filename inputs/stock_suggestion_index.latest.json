@@ -1,9 +1,9 @@
 {
   "ok": true,
   "data_mode": "real",
-  "generated_at_ist": "2026-09-13T20:10:49+05:30",
+  "generated_at_ist": "2026-09-13T21:50:10+05:30",
   "session_date": "2026-09-13",
-  "market_clock_ist": "20:10:49",
+  "market_clock_ist": "21:50:10",
   "analysis_phase": "Market closed: today's list is archived/reset on next session",
   "strategy_name": "One-Side Rally Stock Suggestion Index",
   "strategy_rules": [
@@ -184,7 +184,7 @@
       "rvol_5m": 4.39,
       "ema_trend": "bullish",
       "lot_size": 325,
-      "bell_rang": false,
+      "bell_rang": true,
       "day_range_percent": 5.03,
       "prev_close": 1514.0
     },
@@ -454,7 +454,7 @@
       "rvol_5m": 2.93,
       "ema_trend": "bullish",
       "lot_size": 350,
-      "bell_rang": false,
+      "bell_rang": true,
       "day_range_percent": 4.48,
       "prev_close": 1890.0
     },
@@ -498,7 +498,7 @@
       "rvol_5m": 5.04,
       "ema_trend": "bullish",
       "lot_size": 25,
-      "bell_rang": false,
+      "bell_rang": true,
       "day_range_percent": 2.61,
       "prev_close": 31195.0
     },
@@ -586,7 +586,7 @@
       "rvol_5m": 5.76,
       "ema_trend": "bullish",
       "lot_size": 125,
-      "bell_rang": false,
+      "bell_rang": true,
       "day_range_percent": 1.85,
       "prev_close": 4930.0
     },
@@ -630,7 +630,7 @@
       "rvol_5m": 4.88,
       "ema_trend": "bullish",
       "lot_size": 550,
-      "bell_rang": false,
+      "bell_rang": true,
       "day_range_percent": 1.52,
       "prev_close": 1668.4
     }
@@ -815,7 +815,7 @@
       "rvol_5m": 4.1,
       "ema_trend": "bearish",
       "lot_size": 675,
-      "bell_rang": false,
+      "bell_rang": true,
       "day_range_percent": 1.68,
       "prev_close": 1304.0
     },
@@ -860,7 +860,7 @@
       "rvol_5m": 3.64,
       "ema_trend": "bearish",
       "lot_size": 150,
-      "bell_rang": false,
+      "bell_rang": true,
       "day_range_percent": 2.1,
       "prev_close": 4374.0
     },
@@ -1128,7 +1128,7 @@
       "rvol_5m": 6.32,
       "ema_trend": "bearish",
       "lot_size": 300,
-      "bell_rang": false,
+      "bell_rang": true,
       "day_range_percent": 1.01,
       "prev_close": 1942.3
     }
@@ -1262,13 +1262,13 @@
       "range_position_percent": 90.2
     },
     {
-      "symbol": "COFORGE",
-      "percent_change": 0.7310021275435106,
-      "ltp": 1846.5,
-      "volume": 2480538.0,
-      "lot_size": 475,
-      "vc_ranking": 2.57,
-      "range_position_percent": 69.6
+      "symbol": "AUROPHARMA",
+      "percent_change": 0.6832923056895773,
+      "ltp": 1679.800048828125,
+      "volume": 479002.0,
+      "lot_size": 550,
+      "vc_ranking": 0.66,
+      "range_position_percent": 94.5
     },
     {
       "symbol": "CDSL",
@@ -1280,15 +1280,6 @@
       "range_position_percent": 100.0
     },
     {
-      "symbol": "AUROPHARMA",
-      "percent_change": 0.6832923056895773,
-      "ltp": 1679.800048828125,
-      "volume": 479002.0,
-      "lot_size": 550,
-      "vc_ranking": 0.66,
-      "range_position_percent": 94.5
-    },
-    {
       "symbol": "AXISBANK",
       "percent_change": 0.0,
       "ltp": 1246.0,
@@ -1296,15 +1287,6 @@
       "lot_size": 625,
       "vc_ranking": 4.81,
       "range_position_percent": 70.3
-    },
-    {
-      "symbol": "GLENMARK",
-      "percent_change": 0.17391102160973085,
-      "ltp": 2419.199951171875,
-      "volume": 324924.0,
-      "lot_size": 375,
-      "vc_ranking": 0.7,
-      "range_position_percent": 73.8
     },
     {
       "symbol": "GVT&D",
@@ -1316,22 +1298,22 @@
       "range_position_percent": 100.0
     },
     {
-      "symbol": "KPITTECH",
-      "percent_change": 0.5082130864869688,
-      "ltp": 553.75,
-      "volume": 785774.0,
-      "lot_size": 775,
-      "vc_ranking": 0.37,
-      "range_position_percent": 78.7
+      "symbol": "GLENMARK",
+      "percent_change": 0.17391102160973085,
+      "ltp": 2419.199951171875,
+      "volume": 324924.0,
+      "lot_size": 375,
+      "vc_ranking": 0.7,
+      "range_position_percent": 73.8
     },
     {
-      "symbol": "INFY",
-      "percent_change": 0.11576952936565364,
-      "ltp": 1037.699951171875,
-      "volume": 5578395.0,
-      "lot_size": 400,
-      "vc_ranking": 3.96,
-      "range_position_percent": 43.0
+      "symbol": "COFORGE",
+      "percent_change": 0.7310021275435106,
+      "ltp": 1846.5,
+      "volume": 2480538.0,
+      "lot_size": 475,
+      "vc_ranking": 2.57,
+      "range_position_percent": 69.6
     },
     {
       "symbol": "KAYNES",
@@ -1343,40 +1325,22 @@
       "range_position_percent": 90.1
     },
     {
-      "symbol": "KFINTECH",
-      "percent_change": 0.11123470522803114,
-      "ltp": 900.0,
-      "volume": 598036.0,
-      "lot_size": 575,
-      "vc_ranking": 0.47,
-      "range_position_percent": 80.9
+      "symbol": "INFY",
+      "percent_change": 0.11576952936565364,
+      "ltp": 1037.699951171875,
+      "volume": 5578395.0,
+      "lot_size": 400,
+      "vc_ranking": 3.96,
+      "range_position_percent": 43.0
     },
     {
-      "symbol": "PHOENIXLTD",
-      "percent_change": 1.0582010582010581,
-      "ltp": 1910.0,
-      "volume": 694759.0,
-      "lot_size": 350,
-      "vc_ranking": 0.7,
-      "range_position_percent": 100.0
-    },
-    {
-      "symbol": "PGEL",
-      "percent_change": 0.5535055350553505,
-      "ltp": 545.0,
-      "volume": 813128.0,
-      "lot_size": 950,
-      "vc_ranking": 0.33,
-      "range_position_percent": 100.0
-    },
-    {
-      "symbol": "NAM-INDIA",
-      "percent_change": 0.38818359375,
-      "ltp": 1189.5999755859375,
-      "volume": 716151.0,
-      "lot_size": 625,
-      "vc_ranking": 0.43,
-      "range_position_percent": 92.8
+      "symbol": "KPITTECH",
+      "percent_change": 0.5082130864869688,
+      "ltp": 553.75,
+      "volume": 785774.0,
+      "lot_size": 775,
+      "vc_ranking": 0.37,
+      "range_position_percent": 78.7
     },
     {
       "symbol": "OFSS",
@@ -1388,6 +1352,33 @@
       "range_position_percent": 55.3
     },
     {
+      "symbol": "NAM-INDIA",
+      "percent_change": 0.38818359375,
+      "ltp": 1189.5999755859375,
+      "volume": 716151.0,
+      "lot_size": 625,
+      "vc_ranking": 0.43,
+      "range_position_percent": 92.8
+    },
+    {
+      "symbol": "PGEL",
+      "percent_change": 0.5535055350553505,
+      "ltp": 545.0,
+      "volume": 813128.0,
+      "lot_size": 950,
+      "vc_ranking": 0.33,
+      "range_position_percent": 100.0
+    },
+    {
+      "symbol": "KFINTECH",
+      "percent_change": 0.11123470522803114,
+      "ltp": 900.0,
+      "volume": 598036.0,
+      "lot_size": 575,
+      "vc_ranking": 0.47,
+      "range_position_percent": 80.9
+    },
+    {
       "symbol": "PREMIERENE",
       "percent_change": 0.6508949485516348,
       "ltp": 974.2000122070312,
@@ -1397,22 +1388,13 @@
       "range_position_percent": 86.0
     },
     {
-      "symbol": "TVSMOTOR",
-      "percent_change": 0.08492053863884508,
-      "ltp": 4125.0,
-      "volume": 421406.0,
-      "lot_size": 175,
-      "vc_ranking": 1.12,
-      "range_position_percent": 68.6
-    },
-    {
-      "symbol": "MPHASIS",
-      "percent_change": 0.14399790548501906,
-      "ltp": 2295.0,
-      "volume": 174305.0,
-      "lot_size": 275,
-      "vc_ranking": 0.35,
-      "range_position_percent": 62.6
+      "symbol": "PHOENIXLTD",
+      "percent_change": 1.0582010582010581,
+      "ltp": 1910.0,
+      "volume": 694759.0,
+      "lot_size": 350,
+      "vc_ranking": 0.7,
+      "range_position_percent": 100.0
     },
     {
       "symbol": "ZYDUSLIFE",
@@ -1424,6 +1406,15 @@
       "range_position_percent": 46.9
     },
     {
+      "symbol": "MPHASIS",
+      "percent_change": 0.14399790548501906,
+      "ltp": 2295.0,
+      "volume": 174305.0,
+      "lot_size": 275,
+      "vc_ranking": 0.35,
+      "range_position_percent": 62.6
+    },
+    {
       "symbol": "ICICIPRULI",
       "percent_change": 0.10615711252653928,
       "ltp": 471.5,
@@ -1431,15 +1422,6 @@
       "lot_size": 925,
       "vc_ranking": 0.48,
       "range_position_percent": 71.8
-    },
-    {
-      "symbol": "INDIGO",
-      "percent_change": 0.5662285136501517,
-      "ltp": 4973.0,
-      "volume": 865153.0,
-      "lot_size": 150,
-      "vc_ranking": 2.89,
-      "range_position_percent": 100.0
     },
     {
       "symbol": "PERSISTENT",
@@ -1451,6 +1433,15 @@
       "range_position_percent": 64.2
     },
     {
+      "symbol": "TVSMOTOR",
+      "percent_change": 0.08492053863884508,
+      "ltp": 4125.0,
+      "volume": 421406.0,
+      "lot_size": 175,
+      "vc_ranking": 1.12,
+      "range_position_percent": 68.6
+    },
+    {
       "symbol": "ULTRACEMCO",
       "percent_change": 0.19127425084251753,
       "ltp": 11000.0,
@@ -1460,12 +1451,12 @@
       "range_position_percent": 92.8
     },
     {
-      "symbol": "SIEMENS",
-      "percent_change": 0.06574954481084132,
-      "ltp": 3957.0,
-      "volume": 160550.0,
-      "lot_size": 175,
-      "vc_ranking": 0.54,
+      "symbol": "INDIGO",
+      "percent_change": 0.5662285136501517,
+      "ltp": 4973.0,
+      "volume": 865153.0,
+      "lot_size": 150,
+      "vc_ranking": 2.89,
       "range_position_percent": 100.0
     },
     {
@@ -1476,6 +1467,15 @@
       "lot_size": 125,
       "vc_ranking": 0.67,
       "range_position_percent": 75.3
+    },
+    {
+      "symbol": "SIEMENS",
+      "percent_change": 0.06574954481084132,
+      "ltp": 3957.0,
+      "volume": 160550.0,
+      "lot_size": 175,
+      "vc_ranking": 0.54,
+      "range_position_percent": 100.0
     },
     {
       "symbol": "VOLTAS",
@@ -1613,15 +1613,6 @@
       "range_position_percent": 0.0
     },
     {
-      "symbol": "AMBER",
-      "percent_change": -0.4807692307692308,
-      "ltp": 7245.0,
-      "volume": 106090.0,
-      "lot_size": 100,
-      "vc_ranking": 0.58,
-      "range_position_percent": 88.8
-    },
-    {
       "symbol": "COLPAL",
       "percent_change": -0.6137669663222284,
       "ltp": 1797.4000244140625,
@@ -1629,78 +1620,6 @@
       "lot_size": 275,
       "vc_ranking": 0.4,
       "range_position_percent": 84.4
-    },
-    {
-      "symbol": "ADANIPORTS",
-      "percent_change": -0.19230907319358032,
-      "ltp": 1764.5999755859375,
-      "volume": 1557251.0,
-      "lot_size": 475,
-      "vc_ranking": 1.86,
-      "range_position_percent": 65.2
-    },
-    {
-      "symbol": "CAMS",
-      "percent_change": -0.1404494382022472,
-      "ltp": 711.0,
-      "volume": 1362028.0,
-      "lot_size": 825,
-      "vc_ranking": 0.84,
-      "range_position_percent": 89.9
-    },
-    {
-      "symbol": "BRITANNIA",
-      "percent_change": -0.93831104012777,
-      "ltp": 4962.0,
-      "volume": 188183.0,
-      "lot_size": 125,
-      "vc_ranking": 0.54,
-      "range_position_percent": 25.2
-    },
-    {
-      "symbol": "ADANIENSOL",
-      "percent_change": -1.357856167828155,
-      "ltp": 1373.0,
-      "volume": 1084547.0,
-      "lot_size": 675,
-      "vc_ranking": 1.0,
-      "range_position_percent": 51.6
-    },
-    {
-      "symbol": "ASIANPAINT",
-      "percent_change": -1.0247788319122497,
-      "ltp": 2472.5,
-      "volume": 600069.0,
-      "lot_size": 250,
-      "vc_ranking": 1.13,
-      "range_position_percent": 100.0
-    },
-    {
-      "symbol": "CIPLA",
-      "percent_change": -0.5315663001529131,
-      "ltp": 1366.0,
-      "volume": 1650410.0,
-      "lot_size": 425,
-      "vc_ranking": 1.18,
-      "range_position_percent": 82.7
-    },
-    {
-      "symbol": "ALKEM",
-      "percent_change": -0.9828727131179447,
-      "ltp": 5087.5,
-      "volume": 236305.0,
-      "lot_size": 125,
-      "vc_ranking": 0.63,
-      "range_position_percent": 47.9
-    },
-    {
-      "symbol": "BAJAJ-AUTO",
-      "percent_change": -0.7647858599592114,
-      "ltp": 11678.0,
-      "volume": 204575.0,
-      "lot_size": 75,
-      "vc_ranking": 1.76,
-      "range_position_percent": 76.7
     },
     {
       "symbol": "360ONE",
@@ -1712,67 +1631,13 @@
       "range_position_percent": 77.3
     },
     {
-      "symbol": "ADANIENT",
-      "percent_change": -0.5589496945274867,
-      "ltp": 3060.0,
-      "volume": 1719312.0,
-      "lot_size": 309,
-      "vc_ranking": 3.23,
-      "range_position_percent": 92.5
-    },
-    {
-      "symbol": "BHARTIARTL",
-      "percent_change": -0.42958262175435025,
-      "ltp": 1831.0999755859375,
-      "volume": 3944798.0,
-      "lot_size": 475,
-      "vc_ranking": 5.11,
-      "range_position_percent": 0.0
-    },
-    {
-      "symbol": "BOSCHLTD",
-      "percent_change": -0.7995899538698105,
-      "ltp": 48385.0,
-      "volume": 18338.0,
-      "lot_size": 25,
-      "vc_ranking": 0.7,
-      "range_position_percent": 35.1
-    },
-    {
-      "symbol": "APLAPOLLO",
-      "percent_change": -1.881720430107535,
-      "ltp": 2153.5,
-      "volume": 530104.0,
-      "lot_size": 350,
-      "vc_ranking": 1.02,
-      "range_position_percent": 62.3
-    },
-    {
-      "symbol": "ADANIGREEN",
-      "percent_change": -1.3701755963262958,
-      "ltp": 1281.300048828125,
-      "volume": 862195.0,
-      "lot_size": 600,
-      "vc_ranking": 0.85,
-      "range_position_percent": 29.2
-    },
-    {
-      "symbol": "BDL",
-      "percent_change": -0.41841004184100417,
-      "ltp": 1190.0,
-      "volume": 919077.0,
-      "lot_size": 425,
-      "vc_ranking": 0.91,
-      "range_position_percent": 97.2
-    },
-    {
-      "symbol": "CHOLAFIN",
-      "percent_change": -0.7046786221590909,
-      "ltp": 1845.9000244140625,
-      "volume": 1463218.0,
-      "lot_size": 625,
-      "vc_ranking": 1.94,
-      "range_position_percent": 92.0
+      "symbol": "BRITANNIA",
+      "percent_change": -0.93831104012777,
+      "ltp": 4962.0,
+      "volume": 188183.0,
+      "lot_size": 125,
+      "vc_ranking": 0.54,
+      "range_position_percent": 25.2
     },
     {
       "symbol": "BHARATFORG",
@@ -1784,6 +1649,60 @@
       "range_position_percent": 100.0
     },
     {
+      "symbol": "CAMS",
+      "percent_change": -0.1404494382022472,
+      "ltp": 711.0,
+      "volume": 1362028.0,
+      "lot_size": 825,
+      "vc_ranking": 0.84,
+      "range_position_percent": 89.9
+    },
+    {
+      "symbol": "ADANIENSOL",
+      "percent_change": -1.357856167828155,
+      "ltp": 1373.0,
+      "volume": 1084547.0,
+      "lot_size": 675,
+      "vc_ranking": 1.0,
+      "range_position_percent": 51.6
+    },
+    {
+      "symbol": "AMBER",
+      "percent_change": -0.4807692307692308,
+      "ltp": 7245.0,
+      "volume": 106090.0,
+      "lot_size": 100,
+      "vc_ranking": 0.58,
+      "range_position_percent": 88.8
+    },
+    {
+      "symbol": "BHARTIARTL",
+      "percent_change": -0.42958262175435025,
+      "ltp": 1831.0999755859375,
+      "volume": 3944798.0,
+      "lot_size": 475,
+      "vc_ranking": 5.11,
+      "range_position_percent": 0.0
+    },
+    {
+      "symbol": "ADANIENT",
+      "percent_change": -0.5589496945274867,
+      "ltp": 3060.0,
+      "volume": 1719312.0,
+      "lot_size": 309,
+      "vc_ranking": 3.23,
+      "range_position_percent": 92.5
+    },
+    {
+      "symbol": "APLAPOLLO",
+      "percent_change": -1.881720430107535,
+      "ltp": 2153.5,
+      "volume": 530104.0,
+      "lot_size": 350,
+      "vc_ranking": 1.02,
+      "range_position_percent": 62.3
+    },
+    {
       "symbol": "ABB",
       "percent_change": -0.750443443853186,
       "ltp": 7274.0,
@@ -1793,22 +1712,85 @@
       "range_position_percent": 66.6
     },
     {
-      "symbol": "GODREJCP",
-      "percent_change": -0.5632831359926402,
-      "ltp": 865.0,
-      "volume": 753600.0,
-      "lot_size": 500,
-      "vc_ranking": 0.45,
-      "range_position_percent": 44.1
+      "symbol": "ADANIPORTS",
+      "percent_change": -0.19230907319358032,
+      "ltp": 1764.5999755859375,
+      "volume": 1557251.0,
+      "lot_size": 475,
+      "vc_ranking": 1.86,
+      "range_position_percent": 65.2
     },
     {
-      "symbol": "DMART",
-      "percent_change": -0.05420054200542006,
-      "ltp": 3688.0,
-      "volume": 701475.0,
-      "lot_size": 150,
-      "vc_ranking": 1.87,
-      "range_position_percent": 67.0
+      "symbol": "ALKEM",
+      "percent_change": -0.9828727131179447,
+      "ltp": 5087.5,
+      "volume": 236305.0,
+      "lot_size": 125,
+      "vc_ranking": 0.63,
+      "range_position_percent": 47.9
+    },
+    {
+      "symbol": "CHOLAFIN",
+      "percent_change": -0.7046786221590909,
+      "ltp": 1845.9000244140625,
+      "volume": 1463218.0,
+      "lot_size": 625,
+      "vc_ranking": 1.94,
+      "range_position_percent": 92.0
+    },
+    {
+      "symbol": "BDL",
+      "percent_change": -0.41841004184100417,
+      "ltp": 1190.0,
+      "volume": 919077.0,
+      "lot_size": 425,
+      "vc_ranking": 0.91,
+      "range_position_percent": 97.2
+    },
+    {
+      "symbol": "CIPLA",
+      "percent_change": -0.5315663001529131,
+      "ltp": 1366.0,
+      "volume": 1650410.0,
+      "lot_size": 425,
+      "vc_ranking": 1.18,
+      "range_position_percent": 82.7
+    },
+    {
+      "symbol": "ASIANPAINT",
+      "percent_change": -1.0247788319122497,
+      "ltp": 2472.5,
+      "volume": 600069.0,
+      "lot_size": 250,
+      "vc_ranking": 1.13,
+      "range_position_percent": 100.0
+    },
+    {
+      "symbol": "BAJAJ-AUTO",
+      "percent_change": -0.7647858599592114,
+      "ltp": 11678.0,
+      "volume": 204575.0,
+      "lot_size": 75,
+      "vc_ranking": 1.76,
+      "range_position_percent": 76.7
+    },
+    {
+      "symbol": "ADANIGREEN",
+      "percent_change": -1.3701755963262958,
+      "ltp": 1281.300048828125,
+      "volume": 862195.0,
+      "lot_size": 600,
+      "vc_ranking": 0.85,
+      "range_position_percent": 29.2
+    },
+    {
+      "symbol": "BOSCHLTD",
+      "percent_change": -0.7995899538698105,
+      "ltp": 48385.0,
+      "volume": 18338.0,
+      "lot_size": 25,
+      "vc_ranking": 0.7,
+      "range_position_percent": 35.1
     },
     {
       "symbol": "APOLLOHOSP",
@@ -1820,22 +1802,13 @@
       "range_position_percent": 21.0
     },
     {
-      "symbol": "GRASIM",
-      "percent_change": -1.117809510583007,
-      "ltp": 3281.89990234375,
-      "volume": 502648.0,
-      "lot_size": 250,
-      "vc_ranking": 1.46,
-      "range_position_percent": 42.2
-    },
-    {
-      "symbol": "HCLTECH",
-      "percent_change": -0.07456705998860812,
-      "ltp": 1206.0999755859375,
-      "volume": 2143180.0,
-      "lot_size": 400,
-      "vc_ranking": 2.03,
-      "range_position_percent": 36.5
+      "symbol": "FORTIS",
+      "percent_change": -1.6233599874819986,
+      "ltp": 887.7999877929688,
+      "volume": 749815.0,
+      "lot_size": 775,
+      "vc_ranking": 0.68,
+      "range_position_percent": 12.2
     },
     {
       "symbol": "DLF",
@@ -1856,13 +1829,22 @@
       "range_position_percent": 8.7
     },
     {
-      "symbol": "FORTIS",
-      "percent_change": -1.6233599874819986,
-      "ltp": 887.7999877929688,
-      "volume": 749815.0,
-      "lot_size": 775,
-      "vc_ranking": 0.68,
-      "range_position_percent": 12.2
+      "symbol": "HCLTECH",
+      "percent_change": -0.07456705998860812,
+      "ltp": 1206.0999755859375,
+      "volume": 2143180.0,
+      "lot_size": 400,
+      "vc_ranking": 2.03,
+      "range_position_percent": 36.5
+    },
+    {
+      "symbol": "GODREJCP",
+      "percent_change": -0.5632831359926402,
+      "ltp": 865.0,
+      "volume": 753600.0,
+      "lot_size": 500,
+      "vc_ranking": 0.45,
+      "range_position_percent": 44.1
     },
     {
       "symbol": "DIXON",
@@ -1872,6 +1854,42 @@
       "lot_size": 50,
       "vc_ranking": 4.42,
       "range_position_percent": 88.4
+    },
+    {
+      "symbol": "DMART",
+      "percent_change": -0.05420054200542006,
+      "ltp": 3688.0,
+      "volume": 701475.0,
+      "lot_size": 150,
+      "vc_ranking": 1.87,
+      "range_position_percent": 67.0
+    },
+    {
+      "symbol": "INDUSINDBK",
+      "percent_change": -1.5201840121784662,
+      "ltp": 978.2000122070312,
+      "volume": 2451821.0,
+      "lot_size": 700,
+      "vc_ranking": 1.61,
+      "range_position_percent": 39.5
+    },
+    {
+      "symbol": "HAVELLS",
+      "percent_change": -0.4480286738351254,
+      "ltp": 1111.0,
+      "volume": 650087.0,
+      "lot_size": 500,
+      "vc_ranking": 0.87,
+      "range_position_percent": 79.7
+    },
+    {
+      "symbol": "GRASIM",
+      "percent_change": -1.117809510583007,
+      "ltp": 3281.89990234375,
+      "volume": 502648.0,
+      "lot_size": 250,
+      "vc_ranking": 1.46,
+      "range_position_percent": 42.2
     },
     {
       "symbol": "ICICIGI",
@@ -1901,22 +1919,13 @@
       "range_position_percent": 85.0
     },
     {
-      "symbol": "INDUSINDBK",
-      "percent_change": -1.5201840121784662,
-      "ltp": 978.2000122070312,
-      "volume": 2451821.0,
-      "lot_size": 700,
-      "vc_ranking": 1.61,
-      "range_position_percent": 39.5
-    },
-    {
-      "symbol": "LT",
-      "percent_change": -0.6144133711283185,
-      "ltp": 3930.699951171875,
-      "volume": 1135353.0,
-      "lot_size": 175,
-      "vc_ranking": 3.39,
-      "range_position_percent": 84.6
+      "symbol": "HINDUNILVR",
+      "percent_change": -0.7877258919837282,
+      "ltp": 1927.0,
+      "volume": 1062166.0,
+      "lot_size": 300,
+      "vc_ranking": 1.28,
+      "range_position_percent": 0.0
     },
     {
       "symbol": "KEI",
@@ -1928,22 +1937,13 @@
       "range_position_percent": 100.0
     },
     {
-      "symbol": "HINDUNILVR",
-      "percent_change": -0.7877258919837282,
-      "ltp": 1927.0,
-      "volume": 1062166.0,
-      "lot_size": 300,
-      "vc_ranking": 1.28,
-      "range_position_percent": 0.0
-    },
-    {
-      "symbol": "M&M",
-      "percent_change": -0.5378065177028036,
-      "ltp": 3107.0,
-      "volume": 1194037.0,
-      "lot_size": 200,
-      "vc_ranking": 2.55,
-      "range_position_percent": 69.0
+      "symbol": "LT",
+      "percent_change": -0.6144133711283185,
+      "ltp": 3930.699951171875,
+      "volume": 1135353.0,
+      "lot_size": 175,
+      "vc_ranking": 3.39,
+      "range_position_percent": 84.6
     },
     {
       "symbol": "MCX",
@@ -1955,13 +1955,13 @@
       "range_position_percent": 22.8
     },
     {
-      "symbol": "HAVELLS",
-      "percent_change": -0.4480286738351254,
-      "ltp": 1111.0,
-      "volume": 650087.0,
-      "lot_size": 500,
-      "vc_ranking": 0.87,
-      "range_position_percent": 79.7
+      "symbol": "PAGEIND",
+      "percent_change": -1.0769230769230769,
+      "ltp": 35365.0,
+      "volume": 10816.0,
+      "lot_size": 20,
+      "vc_ranking": 0.33,
+      "range_position_percent": 91.5
     },
     {
       "symbol": "NESTLEIND",
@@ -1973,15 +1973,6 @@
       "range_position_percent": 35.5
     },
     {
-      "symbol": "PAGEIND",
-      "percent_change": -1.0769230769230769,
-      "ltp": 35365.0,
-      "volume": 10816.0,
-      "lot_size": 20,
-      "vc_ranking": 0.33,
-      "range_position_percent": 91.5
-    },
-    {
       "symbol": "MARUTI",
       "percent_change": -1.5091342335186657,
       "ltp": 12400.0,
@@ -1989,24 +1980,6 @@
       "lot_size": 50,
       "vc_ranking": 3.77,
       "range_position_percent": 14.0
-    },
-    {
-      "symbol": "TATACONSUM",
-      "percent_change": -0.8603441376550643,
-      "ltp": 991.0,
-      "volume": 883919.0,
-      "lot_size": 550,
-      "vc_ranking": 0.57,
-      "range_position_percent": 24.6
-    },
-    {
-      "symbol": "MAXHEALTH",
-      "percent_change": -0.08665981399238486,
-      "ltp": 1037.699951171875,
-      "volume": 2316202.0,
-      "lot_size": 525,
-      "vc_ranking": 1.43,
-      "range_position_percent": 78.7
     },
     {
       "symbol": "POLYCAB",
@@ -2018,6 +1991,24 @@
       "range_position_percent": 84.2
     },
     {
+      "symbol": "SBIN",
+      "percent_change": -1.3865492515567786,
+      "ltp": 995.7000122070312,
+      "volume": 7385392.0,
+      "lot_size": 750,
+      "vc_ranking": 4.62,
+      "range_position_percent": 28.2
+    },
+    {
+      "symbol": "MAXHEALTH",
+      "percent_change": -0.08665981399238486,
+      "ltp": 1037.699951171875,
+      "volume": 2316202.0,
+      "lot_size": 525,
+      "vc_ranking": 1.43,
+      "range_position_percent": 78.7
+    },
+    {
       "symbol": "SHREECEM",
       "percent_change": -0.9436032477507131,
       "ltp": 22570.0,
@@ -2027,40 +2018,13 @@
       "range_position_percent": 70.2
     },
     {
-      "symbol": "BAJAJFINSV",
-      "percent_change": -1.3913939706261274,
-      "ltp": 1913.5,
-      "volume": 735449.0,
-      "lot_size": 300,
-      "vc_ranking": 1.06,
-      "range_position_percent": 59.2
-    },
-    {
-      "symbol": "SBILIFE",
-      "percent_change": -0.9349670015362173,
-      "ltp": 1684.699951171875,
-      "volume": 296437.0,
-      "lot_size": 375,
-      "vc_ranking": 0.35,
-      "range_position_percent": 49.8
-    },
-    {
-      "symbol": "POLICYBZR",
-      "percent_change": -0.1499972873263889,
-      "ltp": 1797.300048828125,
-      "volume": 533938.0,
-      "lot_size": 350,
-      "vc_ranking": 0.89,
-      "range_position_percent": 68.4
-    },
-    {
-      "symbol": "SBIN",
-      "percent_change": -1.3865492515567786,
-      "ltp": 995.7000122070312,
-      "volume": 7385392.0,
-      "lot_size": 750,
-      "vc_ranking": 4.62,
-      "range_position_percent": 28.2
+      "symbol": "TATACONSUM",
+      "percent_change": -0.8603441376550643,
+      "ltp": 991.0,
+      "volume": 883919.0,
+      "lot_size": 550,
+      "vc_ranking": 0.57,
+      "range_position_percent": 24.6
     },
     {
       "symbol": "TATAELXSI",
@@ -2081,22 +2045,31 @@
       "range_position_percent": 96.6
     },
     {
-      "symbol": "RADICO",
-      "percent_change": -2.0605359269899104,
-      "ltp": 4368.10009765625,
-      "volume": 100516.0,
-      "lot_size": 150,
-      "vc_ranking": 0.29,
-      "range_position_percent": 7.5
+      "symbol": "BAJAJFINSV",
+      "percent_change": -1.3913939706261274,
+      "ltp": 1913.5,
+      "volume": 735449.0,
+      "lot_size": 300,
+      "vc_ranking": 1.06,
+      "range_position_percent": 59.2
     },
     {
-      "symbol": "TCS",
-      "percent_change": -0.14971875921577557,
-      "ltp": 2200.800048828125,
-      "volume": 2382041.0,
-      "lot_size": 225,
-      "vc_ranking": 3.26,
-      "range_position_percent": 31.9
+      "symbol": "M&M",
+      "percent_change": -0.5378065177028036,
+      "ltp": 3107.0,
+      "volume": 1194037.0,
+      "lot_size": 200,
+      "vc_ranking": 2.55,
+      "range_position_percent": 69.0
+    },
+    {
+      "symbol": "POLICYBZR",
+      "percent_change": -0.1499972873263889,
+      "ltp": 1797.300048828125,
+      "volume": 533938.0,
+      "lot_size": 350,
+      "vc_ranking": 0.89,
+      "range_position_percent": 68.4
     },
     {
       "symbol": "SOLARINDS",
@@ -2108,31 +2081,22 @@
       "range_position_percent": 42.9
     },
     {
-      "symbol": "TIINDIA",
-      "percent_change": -1.7307655484068627,
-      "ltp": 2606.10009765625,
-      "volume": 127756.0,
-      "lot_size": 200,
-      "vc_ranking": 0.24,
-      "range_position_percent": 43.5
+      "symbol": "SBILIFE",
+      "percent_change": -0.9349670015362173,
+      "ltp": 1684.699951171875,
+      "volume": 296437.0,
+      "lot_size": 375,
+      "vc_ranking": 0.35,
+      "range_position_percent": 49.8
     },
     {
-      "symbol": "HEROMOTOCO",
-      "percent_change": -1.1079545454545454,
-      "ltp": 5221.5,
-      "volume": 236958.0,
-      "lot_size": 150,
-      "vc_ranking": 0.84,
-      "range_position_percent": 62.5
-    },
-    {
-      "symbol": "PNBHOUSING",
-      "percent_change": -0.00847969346374046,
-      "ltp": 1178.9000244140625,
-      "volume": 1129641.0,
-      "lot_size": 650,
-      "vc_ranking": 0.98,
-      "range_position_percent": 61.1
+      "symbol": "TCS",
+      "percent_change": -0.14971875921577557,
+      "ltp": 2200.800048828125,
+      "volume": 2382041.0,
+      "lot_size": 225,
+      "vc_ranking": 3.26,
+      "range_position_percent": 31.9
     },
     {
       "symbol": "TITAN",
@@ -2144,15 +2108,6 @@
       "range_position_percent": 92.1
     },
     {
-      "symbol": "SRF",
-      "percent_change": -1.4529613996129418,
-      "ltp": 2482.39990234375,
-      "volume": 272816.0,
-      "lot_size": 200,
-      "vc_ranking": 0.63,
-      "range_position_percent": 59.0
-    },
-    {
       "symbol": "HYUNDAI",
       "percent_change": -1.4058956916099774,
       "ltp": 2174.0,
@@ -2162,31 +2117,22 @@
       "range_position_percent": 8.6
     },
     {
-      "symbol": "ICICIBANK",
-      "percent_change": -0.37558332769050196,
-      "ltp": 1379.300048828125,
-      "volume": 6655919.0,
-      "lot_size": 700,
-      "vc_ranking": 8.84,
-      "range_position_percent": 54.3
+      "symbol": "TIINDIA",
+      "percent_change": -1.7307655484068627,
+      "ltp": 2606.10009765625,
+      "volume": 127756.0,
+      "lot_size": 200,
+      "vc_ranking": 0.24,
+      "range_position_percent": 43.5
     },
     {
-      "symbol": "MAZDOCK",
-      "percent_change": -1.8546492111446717,
-      "ltp": 2339.0,
-      "volume": 467144.0,
-      "lot_size": 225,
-      "vc_ranking": 0.8,
-      "range_position_percent": 55.3
-    },
-    {
-      "symbol": "NAUKRI",
-      "percent_change": -1.1225257843379446,
-      "ltp": 1250.800048828125,
-      "volume": 486376.0,
-      "lot_size": 550,
-      "vc_ranking": 0.45,
-      "range_position_percent": 33.5
+      "symbol": "RADICO",
+      "percent_change": -2.0605359269899104,
+      "ltp": 4368.10009765625,
+      "volume": 100516.0,
+      "lot_size": 150,
+      "vc_ranking": 0.29,
+      "range_position_percent": 7.5
     },
     {
       "symbol": "HDFCAMC",
@@ -2198,40 +2144,22 @@
       "range_position_percent": 65.3
     },
     {
-      "symbol": "UNOMINDA",
-      "percent_change": -1.894188799319273,
-      "ltp": 1201.5999755859375,
-      "volume": 364328.0,
-      "lot_size": 550,
-      "vc_ranking": 0.5,
-      "range_position_percent": 10.0
+      "symbol": "ICICIBANK",
+      "percent_change": -0.37558332769050196,
+      "ltp": 1379.300048828125,
+      "volume": 6655919.0,
+      "lot_size": 700,
+      "vc_ranking": 8.84,
+      "range_position_percent": 54.3
     },
     {
-      "symbol": "SUNPHARMA",
-      "percent_change": -1.1284255776464267,
-      "ltp": 1840.0,
-      "volume": 1419224.0,
-      "lot_size": 350,
-      "vc_ranking": 1.65,
-      "range_position_percent": 29.3
-    },
-    {
-      "symbol": "CUMMINSIND",
-      "percent_change": -1.6488845780795343,
-      "ltp": 5070.0,
-      "volume": 300279.0,
-      "lot_size": 200,
-      "vc_ranking": 1.22,
-      "range_position_percent": 50.5
-    },
-    {
-      "symbol": "MUTHOOTFIN",
-      "percent_change": -1.7385149513901108,
-      "ltp": 2792.10009765625,
-      "volume": 918414.0,
-      "lot_size": 275,
-      "vc_ranking": 2.43,
-      "range_position_percent": 76.6
+      "symbol": "PNBHOUSING",
+      "percent_change": -0.00847969346374046,
+      "ltp": 1178.9000244140625,
+      "volume": 1129641.0,
+      "lot_size": 650,
+      "vc_ranking": 0.98,
+      "range_position_percent": 61.1
     },
     {
       "symbol": "RELIANCE",
@@ -2243,49 +2171,49 @@
       "range_position_percent": 32.1
     },
     {
-      "symbol": "MFSL",
-      "percent_change": -0.19595918643152177,
-      "ltp": 1477.0,
-      "volume": 343227.0,
-      "lot_size": 400,
-      "vc_ranking": 0.29,
-      "range_position_percent": 69.6
+      "symbol": "SUNPHARMA",
+      "percent_change": -1.1284255776464267,
+      "ltp": 1840.0,
+      "volume": 1419224.0,
+      "lot_size": 350,
+      "vc_ranking": 1.65,
+      "range_position_percent": 29.3
     },
     {
-      "symbol": "ATHERENERG",
-      "percent_change": -0.13869625520110684,
-      "ltp": 1656.0,
-      "volume": 4533774.0,
-      "lot_size": 375,
-      "vc_ranking": 3.22,
-      "range_position_percent": 70.3
+      "symbol": "NAUKRI",
+      "percent_change": -1.1225257843379446,
+      "ltp": 1250.800048828125,
+      "volume": 486376.0,
+      "lot_size": 550,
+      "vc_ranking": 0.45,
+      "range_position_percent": 33.5
     },
     {
-      "symbol": "SBICARD",
-      "percent_change": -1.6659144218773383,
-      "ltp": 655.2000122070312,
-      "volume": 1526586.0,
-      "lot_size": 800,
-      "vc_ranking": 0.81,
-      "range_position_percent": 34.4
-    },
-    {
-      "symbol": "SHRIRAMFIN",
-      "percent_change": -0.9055900206225915,
-      "ltp": 1028.5999755859375,
-      "volume": 3030203.0,
-      "lot_size": 825,
-      "vc_ranking": 1.73,
-      "range_position_percent": 72.5
-    },
-    {
-      "symbol": "TRENT",
-      "percent_change": -0.5782842323145357,
-      "ltp": 2802.39990234375,
-      "volume": 661254.0,
+      "symbol": "MAZDOCK",
+      "percent_change": -1.8546492111446717,
+      "ltp": 2339.0,
+      "volume": 467144.0,
       "lot_size": 225,
-      "vc_ranking": 1.19,
-      "range_position_percent": 76.4
+      "vc_ranking": 0.8,
+      "range_position_percent": 55.3
+    },
+    {
+      "symbol": "SRF",
+      "percent_change": -1.4529613996129418,
+      "ltp": 2482.39990234375,
+      "volume": 272816.0,
+      "lot_size": 200,
+      "vc_ranking": 0.63,
+      "range_position_percent": 59.0
+    },
+    {
+      "symbol": "HEROMOTOCO",
+      "percent_change": -1.1079545454545454,
+      "ltp": 5221.5,
+      "volume": 236958.0,
+      "lot_size": 150,
+      "vc_ranking": 0.84,
+      "range_position_percent": 62.5
     },
     {
       "symbol": "BAJFINANCE",
@@ -2297,6 +2225,42 @@
       "range_position_percent": 97.5
     },
     {
+      "symbol": "UNITDSPR",
+      "percent_change": -0.35714285714285715,
+      "ltp": 1395.0,
+      "volume": 546570.0,
+      "lot_size": 400,
+      "vc_ranking": 0.48,
+      "range_position_percent": 46.3
+    },
+    {
+      "symbol": "MUTHOOTFIN",
+      "percent_change": -1.7385149513901108,
+      "ltp": 2792.10009765625,
+      "volume": 918414.0,
+      "lot_size": 275,
+      "vc_ranking": 2.43,
+      "range_position_percent": 76.6
+    },
+    {
+      "symbol": "UNOMINDA",
+      "percent_change": -1.894188799319273,
+      "ltp": 1201.5999755859375,
+      "volume": 364328.0,
+      "lot_size": 550,
+      "vc_ranking": 0.5,
+      "range_position_percent": 10.0
+    },
+    {
+      "symbol": "MFSL",
+      "percent_change": -0.19595918643152177,
+      "ltp": 1477.0,
+      "volume": 343227.0,
+      "lot_size": 400,
+      "vc_ranking": 0.29,
+      "range_position_percent": 69.6
+    },
+    {
       "symbol": "HAL",
       "percent_change": -0.9090909090909091,
       "ltp": 4905.0,
@@ -2306,16 +2270,72 @@
       "range_position_percent": 53.3
     },
     {
-      "symbol": "UNITDSPR",
-      "percent_change": -0.35714285714285715,
-      "ltp": 1395.0,
-      "volume": 546570.0,
-      "lot_size": 400,
-      "vc_ranking": 0.48,
-      "range_position_percent": 46.3
+      "symbol": "SBICARD",
+      "percent_change": -1.6659144218773383,
+      "ltp": 655.2000122070312,
+      "volume": 1526586.0,
+      "lot_size": 800,
+      "vc_ranking": 0.81,
+      "range_position_percent": 34.4
+    },
+    {
+      "symbol": "TRENT",
+      "percent_change": -0.5782842323145357,
+      "ltp": 2802.39990234375,
+      "volume": 661254.0,
+      "lot_size": 225,
+      "vc_ranking": 1.19,
+      "range_position_percent": 76.4
+    },
+    {
+      "symbol": "SHRIRAMFIN",
+      "percent_change": -0.9055900206225915,
+      "ltp": 1028.5999755859375,
+      "volume": 3030203.0,
+      "lot_size": 825,
+      "vc_ranking": 1.73,
+      "range_position_percent": 72.5
+    },
+    {
+      "symbol": "ATHERENERG",
+      "percent_change": -0.13869625520110684,
+      "ltp": 1656.0,
+      "volume": 4533774.0,
+      "lot_size": 375,
+      "vc_ranking": 3.22,
+      "range_position_percent": 70.3
+    },
+    {
+      "symbol": "CUMMINSIND",
+      "percent_change": -1.6488845780795343,
+      "ltp": 5070.0,
+      "volume": 300279.0,
+      "lot_size": 200,
+      "vc_ranking": 1.22,
+      "range_position_percent": 50.5
     }
   ],
   "tracked_breakouts": [
+    {
+      "symbol": "HINDUNILVR",
+      "side": "bearish",
+      "lot_size": 300,
+      "setup": "Long unwinding",
+      "alert_time_ist": "03:15 PM",
+      "alert_price": 1927.0,
+      "percent_change": -0.7877258919837282,
+      "volume": 1062166.0,
+      "vc_ranking": 1.27,
+      "mp_score": 2.27,
+      "five_min_status": "Breakdown",
+      "breakout_time": "03:15 PM",
+      "is_breakout": true,
+      "rally_score": 81,
+      "action_status": "Rally Watch",
+      "entry": 1925.46,
+      "stop_loss": 1946.6,
+      "target": 1889.52
+    },
     {
       "symbol": "RELIANCE",
       "side": "bearish",
@@ -2397,6 +2417,46 @@
       "target": 7338.65
     },
     {
+      "symbol": "LTM",
+      "side": "bearish",
+      "lot_size": 150,
+      "setup": "Short buildup",
+      "alert_time_ist": "11:40 AM",
+      "alert_price": 4275.0,
+      "percent_change": -2.26,
+      "volume": 19413.0,
+      "vc_ranking": 0.62,
+      "mp_score": 2.47,
+      "five_min_status": "Breakdown",
+      "breakout_time": "11:40 AM",
+      "is_breakout": true,
+      "rally_score": 94,
+      "action_status": "Rally Watch",
+      "entry": 4271.58,
+      "stop_loss": 4366.8,
+      "target": 4109.71
+    },
+    {
+      "symbol": "JSWSTEEL",
+      "side": "bearish",
+      "lot_size": 675,
+      "setup": "Short buildup",
+      "alert_time_ist": "03:10 PM",
+      "alert_price": 1265.0,
+      "percent_change": -2.99,
+      "volume": 22787.0,
+      "vc_ranking": 0.8,
+      "mp_score": 2.75,
+      "five_min_status": "Breakdown",
+      "breakout_time": "03:10 PM",
+      "is_breakout": true,
+      "rally_score": 97,
+      "action_status": "Rally Watch",
+      "entry": 1263.99,
+      "stop_loss": 1286.9,
+      "target": 1225.04
+    },
+    {
       "symbol": "COCHINSHIP",
       "side": "bearish",
       "lot_size": 400,
@@ -2415,6 +2475,86 @@
       "entry": 1370.9,
       "stop_loss": 1510.0,
       "target": 1134.43
+    },
+    {
+      "symbol": "AUROPHARMA",
+      "side": "bullish",
+      "lot_size": 550,
+      "setup": "Long buildup",
+      "alert_time_ist": "10:30 AM",
+      "alert_price": 1679.800048828125,
+      "percent_change": 0.6832923056895773,
+      "volume": 479002.0,
+      "vc_ranking": 0.66,
+      "mp_score": 1.29,
+      "five_min_status": "Breakout",
+      "breakout_time": "10:30 AM",
+      "is_breakout": true,
+      "rally_score": 88,
+      "action_status": "Rally Watch",
+      "entry": 1682.54,
+      "stop_loss": 1655.8,
+      "target": 1728.0
+    },
+    {
+      "symbol": "TORNTPHARM",
+      "side": "bullish",
+      "lot_size": 125,
+      "setup": "Short covering",
+      "alert_time_ist": "10:45 AM",
+      "alert_price": 4965.5,
+      "percent_change": 0.7200811359026369,
+      "volume": 256537.0,
+      "vc_ranking": 0.67,
+      "mp_score": 1.43,
+      "five_min_status": "Breakout",
+      "breakout_time": "10:45 AM",
+      "is_breakout": true,
+      "rally_score": 76,
+      "action_status": "Rally Watch",
+      "entry": 4991.97,
+      "stop_loss": 4897.0,
+      "target": 5153.42
+    },
+    {
+      "symbol": "POWERINDIA",
+      "side": "bullish",
+      "lot_size": 25,
+      "setup": "Long buildup",
+      "alert_time_ist": "10:00 AM",
+      "alert_price": 31435.0,
+      "percent_change": 0.77,
+      "volume": 26770.0,
+      "vc_ranking": 0.89,
+      "mp_score": 1.7,
+      "five_min_status": "Breakout",
+      "breakout_time": "10:00 AM",
+      "is_breakout": true,
+      "rally_score": 88,
+      "action_status": "Rally Watch",
+      "entry": 31540.15,
+      "stop_loss": 30700.0,
+      "target": 32968.41
+    },
+    {
+      "symbol": "PHOENIXLTD",
+      "side": "bullish",
+      "lot_size": 350,
+      "setup": "Short covering",
+      "alert_time_ist": "10:40 AM",
+      "alert_price": 1910.0,
+      "percent_change": 1.0582010582010581,
+      "volume": 694759.0,
+      "vc_ranking": 0.7,
+      "mp_score": 1.6,
+      "five_min_status": "Breakout",
+      "breakout_time": "10:40 AM",
+      "is_breakout": true,
+      "rally_score": 83,
+      "action_status": "Rally Watch",
+      "entry": 1911.53,
+      "stop_loss": 1825.3,
+      "target": 2058.12
     },
     {
       "symbol": "HDFCBANK",
@@ -2457,6 +2597,26 @@
       "target": 3743.76
     },
     {
+      "symbol": "BLUESTARCO",
+      "side": "bullish",
+      "lot_size": 325,
+      "setup": "Short covering",
+      "alert_time_ist": "09:55 AM",
+      "alert_price": 1558.0,
+      "percent_change": 2.91,
+      "volume": 41413.0,
+      "vc_ranking": 0.84,
+      "mp_score": 2.75,
+      "five_min_status": "Breakout",
+      "breakout_time": "09:55 AM",
+      "is_breakout": true,
+      "rally_score": 97,
+      "action_status": "Rally Watch",
+      "entry": 1566.35,
+      "stop_loss": 1489.0,
+      "target": 1697.84
+    },
+    {
       "symbol": "WAAREEENER",
       "side": "bullish",
       "lot_size": 175,
@@ -2479,9 +2639,9 @@
   ],
   "daily_top5": {
     "locked": true,
-    "locked_at_ist": "20:10:49",
-    "window_start_ist": "20:00",
-    "window_end_ist": "20:15",
+    "locked_at_ist": "21:49:32",
+    "window_start_ist": "21:45",
+    "window_end_ist": "22:00",
     "window_minutes": 15,
     "lock_time_ist": "09:30",
     "bullish": [

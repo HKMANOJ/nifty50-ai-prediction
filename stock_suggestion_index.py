@@ -1415,8 +1415,12 @@ def build_suggestions(
             reason_parts.append(f"volume {int(display_volume):,}")
 
         status_val = rally["status"] or status_from_score(rally_score, setup)
-        is_priority_rally = (status_val == "Priority Rally")
-        bell_rang = bool(is_breakout and is_priority_rally and "near" not in five_min_status.lower())
+        # Matches the frontend bell (MLAIStockV2.html checkAndTriggerBellAlerts):
+        # rings on confirmed breakout alone, no longer waits for Priority Rally -
+        # that used to delay Tracked Breakouts pins by 20-30+ min on real cases.
+        # status_val can still separately reach "Priority Rally" later once the
+        # score catches up; this flag just no longer waits for it.
+        bell_rang = bool(is_breakout and "near" not in five_min_status.lower())
 
         _high, _low, _prev_close = row.get("high"), row.get("low"), row.get("prev_close")
         day_range_percent = (
