@@ -1818,11 +1818,12 @@
       const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
       const isActualBreakout = !isNear && !isConsolidating && (isBreakout || isBreakdown);
 
-      // FIX 1: perfect priority score (or backend bell_rang flag) required.
-      const score = row.one_side_rally_score ?? row.score ?? 0;
-      const meetsAllPriority = (score === 100 || row.bell_rang === true);
-
-      if (!(isActualBreakout && meetsAllPriority)) return;
+      // Rings the instant a breakout is CONFIRMED - no longer waits for
+      // score=100/Priority Rally (that used to delay the bell by 20-30+ min
+      // per the real cases we found - WAAREEENER, HDFCBANK, etc). Same gate
+      // Instant Triggers already uses; the row's status/score still shows
+      // and can separately upgrade to "Priority Rally" once it catches up.
+      if (!isActualBreakout) return;
 
       const alertKey = `${row.symbol}_${row.breakout_time || 'BO'}_${row.side || ''}`;
       if (_alertedBreakouts.has(alertKey)) return;   // already handled -> stay silent
