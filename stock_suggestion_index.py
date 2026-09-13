@@ -1550,7 +1550,7 @@ def update_tracked_breakouts(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 key = (row.get("symbol"), side_name)
                 if key in by_key:
                     continue
-                items.append({
+                tracked_entry = {
                     "symbol": row.get("symbol"),
                     "side": side_name,
                     "lot_size": row.get("lot_size"),
@@ -1569,7 +1569,9 @@ def update_tracked_breakouts(payload: dict[str, Any]) -> list[dict[str, Any]]:
                     "entry": row.get("entry"),
                     "stop_loss": row.get("stop_loss"),
                     "target": row.get("target"),
-                })
+                }
+                items.append(tracked_entry)
+                _log_event_to_db("tracked_breakout", session_date, row.get("symbol"), side_name, tracked_entry)
                 by_key.add(key)
 
         items = items[-MAX_TRACKED_BREAKOUTS:]
@@ -1760,6 +1762,12 @@ def update_daily_top5(
             state["window_start_ist"] = window_start
             state["locked_at_ist"] = now_ist.strftime("%H:%M:%S")
             _save_daily_top5_state(state)
+            for side_name in ("bullish", "bearish"):
+                for entry in state["top5"].get(side_name, []):
+                    _log_event_to_db(
+                        "daily_top5", session_date, entry.get("symbol"), side_name,
+                        {**entry, "window_start_ist": window_start, "locked_at_ist": state["locked_at_ist"]},
+                    )
 
         window_end_ist = None
         if state.get("window_start_ist"):
@@ -1910,6 +1918,7 @@ def update_instant_triggers(
                 }
                 items.append(new_item)
                 by_key[key] = new_item
+                _log_event_to_db("instant_trigger", session_date, item.symbol, side_name, new_item)
 
         items = items[-MAX_INSTANT_TRIGGERS:]
         state["items"] = items
@@ -1950,6 +1959,7 @@ def _flush_outcome_log(session_date: str | None, items: list[dict[str, Any]]) ->
         with path.open("a", encoding="utf-8") as f:
             for it in items:
                 f.write(json.dumps(it) + "\n")
+                _log_event_to_db("outcome", session_date, it.get("symbol"), it.get("side"), it)
     except Exception as exc:  # noqa: BLE001
         print(f"[outcome_tracker] flush skipped: {exc}", file=sys.stderr)
 
@@ -2457,6 +2467,36 @@ def _has_signal(payload: dict[str, Any]) -> bool:
     return bool(payload.get("ok")) and bool(payload.get("bullish") or payload.get("bearish"))
 
 
+# ── Remote log mirror (Neon Postgres) ───────────────────────────────────────
+# Every local log below also mirrors its key events to a "scanner_event_log"
+# table in Postgres (via db_adapter.py, DATABASE_URL from .env), so they're
+# traceable even when not running/watching this app locally. Local JSON/JSONL
+# files stay the source of truth; this is a best-effort mirror only - a DB
+# hiccup must never break a scan, same philosophy as every local log here.
+def _log_event_to_db(
+    event_type: str,
+    session_date: str | None,
+    symbol: str | None,
+    side: str | None,
+    payload: dict[str, Any],
+) -> None:
+    try:
+        import db_adapter
+        if not db_adapter.DATABASE_URL:
+            return
+        conn = db_adapter.get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO scanner_event_log (event_type, session_date, symbol, side, payload) "
+            "VALUES (%s, %s, %s, %s, %s::jsonb)",
+            (event_type, session_date, symbol, side, json.dumps(payload, default=str)),
+        )
+        conn.commit()
+        cur.close()
+    except Exception as exc:  # noqa: BLE001 - must never break a scan
+        print(f"[db_log] {event_type} skipped: {exc}", file=sys.stderr)
+
+
 # ── Silent scan history logger ──────────────────────────────────────────────
 # Every real scan's candidates are appended to a local, gitignored, append-only
 # JSONL log - one file per session date. Nothing here touches the UI or the
@@ -2581,7 +2621,7 @@ def log_discovery_delays(payload: dict[str, Any]) -> None:
                 logged.add(key)
                 bo_min = _parse_clock_to_minutes(row.get("breakout_time"))
                 delay_minutes = (now_min - bo_min) if (bo_min is not None and now_min is not None) else None
-                new_lines.append(json.dumps({
+                discovery_entry = {
                     "session_date": session_date,
                     "symbol": row.get("symbol"),
                     "side": side_name,
@@ -2593,7 +2633,9 @@ def log_discovery_delays(payload: dict[str, Any]) -> None:
                     "status_when_shown": row.get("status"),
                     "percent_change_when_shown": row.get("percent_change"),
                     "vc_ranking_when_shown": row.get("vc_ranking"),
-                }, ensure_ascii=False))
+                }
+                new_lines.append(json.dumps(discovery_entry, ensure_ascii=False))
+                _log_event_to_db("discovery", session_date, row.get("symbol"), side_name, discovery_entry)
 
         if new_lines:
             DISCOVERY_LOG_DIR.mkdir(parents=True, exist_ok=True)
