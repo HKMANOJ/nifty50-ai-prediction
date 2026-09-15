@@ -2942,12 +2942,13 @@
 
   function triggerChartResize() {
     setTimeout(() => {
-      if (_chart && chartContainer) {
-        _chart.applyOptions({
-          width: chartContainer.clientWidth,
-          height: chartContainer.clientHeight || 420
+      const tvContainer = document.getElementById("tvCandleContainer");
+      if (_tvChart && tvContainer) {
+        _tvChart.applyOptions({
+          width: tvContainer.clientWidth,
+          height: tvContainer.clientHeight || 420
         });
-        _chart.timeScale().fitContent();
+        _tvChart.timeScale().fitContent();
       }
     }, 280);
   }
@@ -2974,10 +2975,11 @@
 
   // Universal Screen Resize handler (iPad rotation, browser resize)
   window.addEventListener("resize", () => {
-    if (_chart && chartContainer) {
-      _chart.applyOptions({
-        width: chartContainer.clientWidth,
-        height: chartContainer.clientHeight || 420
+    const tvContainer = document.getElementById("tvCandleContainer");
+    if (_tvChart && tvContainer) {
+      _tvChart.applyOptions({
+        width: tvContainer.clientWidth,
+        height: tvContainer.clientHeight || 420
       });
     }
   });

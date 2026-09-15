@@ -50,6 +50,10 @@ MIN_RANGE_EXTREME = 0.55
 # activity) is excluded entirely - too little real participation behind the
 # move to trust it, regardless of how big the %-change looks.
 MIN_VC_RANKING = 0.5
+# PMH/PML qualification allows a small pullback below the exact opening-range
+# extreme (0.5%) so a stock that's still up big on the day but has eased
+# slightly off its morning high isn't zeroed out entirely.
+PMH_PML_TOLERANCE_PCT = 0.5
 INDEX_LIKE_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
 # "Daily Top 5" multi-factor picks: the system waits until this clock time
 # for the opening range to settle, then re-locks a fresh 5-per-side pick
@@ -704,7 +708,25 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
                         })
             if not all_candles:
                 return []
-            
+
+            # Yahoo's still-forming last bar is sometimes returned as several
+            # near-tick entries (each with open==high==low==close) instead of
+            # one evolving OHLC candle. Collapse any entries that fall in the
+            # same 5-minute bucket so every consumer (chart, WS push, ORB/PMH
+            # calculations) sees one real candle per bucket.
+            merged_candles: list[dict[str, Any]] = []
+            for c in all_candles:
+                bucket_ts = (c["timestamp"] // 300) * 300
+                if merged_candles and (merged_candles[-1]["timestamp"] // 300) * 300 == bucket_ts:
+                    prev = merged_candles[-1]
+                    prev["high"] = max(prev["high"], c["high"])
+                    prev["low"] = min(prev["low"], c["low"])
+                    prev["close"] = c["close"]
+                    prev["volume"] += c["volume"]
+                else:
+                    merged_candles.append(dict(c))
+            all_candles = merged_candles
+
             if full_range:
                 return all_candles
 
@@ -1358,12 +1380,14 @@ def build_suggestions(
             ltp_check = row.get("ltp")
             prev_close_check = row.get("prev_close")
             if side == "bullish":
-                if ltp_check is None or ltp_check < orb_check_high:
+                bullish_floor = orb_check_high * (1 - PMH_PML_TOLERANCE_PCT / 100)
+                if ltp_check is None or ltp_check < bullish_floor:
                     continue
                 if prev_close_check is not None and ltp_check <= prev_close_check:
                     continue
             else:
-                if ltp_check is None or ltp_check > orb_check_low:
+                bearish_ceiling = orb_check_low * (1 + PMH_PML_TOLERANCE_PCT / 100)
+                if ltp_check is None or ltp_check > bearish_ceiling:
                     continue
                 if prev_close_check is not None and ltp_check >= prev_close_check:
                     continue
@@ -2232,11 +2256,11 @@ def compute_pmh_pml_filter(
                 continue
             if side_name == "bullish":
                 level = orb_high
-                passes_level = ltp >= level
+                passes_level = ltp >= level * (1 - PMH_PML_TOLERANCE_PCT / 100)
                 passes_prev = prev_close is not None and ltp > prev_close
             else:
                 level = orb_low
-                passes_level = ltp <= level
+                passes_level = ltp <= level * (1 + PMH_PML_TOLERANCE_PCT / 100)
                 passes_prev = prev_close is not None and ltp < prev_close
             if not (passes_level and passes_prev):
                 continue
