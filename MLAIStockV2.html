@@ -1600,6 +1600,12 @@
   let _selectedSymbol = "MUTHOOTFIN";
   let _tvChart = null;
   let _candleSeries = null;
+  // Bumped on every selectStock() call so a slow/late-arriving chart fetch
+  // from an earlier selection can detect it's stale and skip painting -
+  // otherwise an in-flight request for a previously-selected symbol can
+  // resolve after a newer selection and silently overwrite the chart with
+  // the wrong stock's data (blank/stuck-looking chart, no visible error).
+  let _chartRequestSeq = 0;
   let _volumeSeries = null;
   let _emaSeries = null;
 
@@ -1962,6 +1968,7 @@
   async function selectStock(symbol, meta = {}) {
     if (!symbol) return;
     _selectedSymbol = symbol.toUpperCase();
+    const mySeq = ++_chartRequestSeq;
 
     // Notify WebSocket server to switch live candle stream to this symbol
     if (_wsClient && _wsClient.readyState === WebSocket.OPEN) {
@@ -2018,9 +2025,17 @@
 
     try {
       initChart();
-      const res = await fetch(`${API_BASE}/api/stock_candles?symbol=${encodeURIComponent(_selectedSymbol)}`);
+      const fetchSymbol = _selectedSymbol;
+      const res = await fetch(`${API_BASE}/api/stock_candles?symbol=${encodeURIComponent(fetchSymbol)}`);
       const data = await res.json();
-      if (!data || !data.ok || !Array.isArray(data.candles) || data.candles.length === 0) return;
+      if (mySeq !== _chartRequestSeq) return; // a newer selection has since started - drop this stale response
+      if (!data || !data.ok || !Array.isArray(data.candles) || data.candles.length === 0) {
+        // Don't leave the PREVIOUS stock's candles/price-axis on screen under
+        // the newly-selected symbol's name - clear the chart so a failed
+        // fetch looks empty, not like a stuck/wrong chart.
+        if (_candleSeries) _candleSeries.setData([]);
+        return;
+      }
 
       if (orbEl && (data.orb_high || data.day_high)) {
         orbEl.textContent = `PMH: ₹${(data.orb_high || data.day_high).toFixed(2)}`;
