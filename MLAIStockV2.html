@@ -2042,6 +2042,13 @@
       }
 
       if (_candleSeries && _tvChart) {
+        // If the user ever dragged the price axis on a previous chart,
+        // lightweight-charts permanently turns off auto-scale for that
+        // series - every later setData() then keeps the OLD locked price
+        // range, so the new symbol's real candles fall outside the visible
+        // window and the chart looks blank even though the data is correct.
+        // Force it back on before loading a new symbol's data.
+        _candleSeries.priceScale().applyOptions({ autoScale: true });
         _candleSeries.setData(data.candles);
 
         // Add PMH (Prior Day High) & PML (Prior Day Low) blue price lines
