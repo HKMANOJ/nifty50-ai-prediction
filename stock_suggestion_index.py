@@ -1964,6 +1964,30 @@ MAX_PENDING_OUTCOMES = 200
 
 
 def _load_outcome_tracker_state() -> dict[str, Any]:
+    # Postgres is the durable source of truth - a local-file-only state gets
+    # silently wiped whenever the process restarts (Render's ephemeral
+    # filesystem on every redeploy/idle-sleep, or just not running
+    # continuously), losing whatever was still pending mid-day and, worse,
+    # leaving a stale local file that gets re-flushed as a duplicate the next
+    # time it IS loaded. Try Postgres first; fall back to the local file only
+    # if the database is unavailable.
+    try:
+        import db_adapter
+        if db_adapter.DATABASE_URL:
+            conn = db_adapter.get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT session_date, items FROM outcome_tracker_pending_state WHERE id = 1")
+            row = cur.fetchone()
+            cur.close()
+            if row is not None:
+                session_date, items = row
+                return {
+                    "session_date": str(session_date) if session_date else None,
+                    "items": items or [],
+                }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[outcome_tracker] postgres load skipped: {exc}", file=sys.stderr)
+
     try:
         return json.loads(OUTCOME_TRACKER_STATE_PATH.read_text(encoding="utf-8"))
     except Exception:
@@ -1973,9 +1997,26 @@ def _load_outcome_tracker_state() -> dict[str, Any]:
 def _save_outcome_tracker_state(state: dict[str, Any]) -> None:
     try:
         INPUT_DIR.mkdir(parents=True, exist_ok=True)
-        OUTCOME_TRACKER_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        OUTCOME_TRACKER_STATE_PATH.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
     except Exception as exc:  # noqa: BLE001
-        print(f"[outcome_tracker] save skipped: {exc}", file=sys.stderr)
+        print(f"[outcome_tracker] local save skipped: {exc}", file=sys.stderr)
+
+    try:
+        import db_adapter
+        if db_adapter.DATABASE_URL:
+            conn = db_adapter.get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO outcome_tracker_pending_state (id, session_date, items, updated_at) "
+                "VALUES (1, %s, %s::jsonb, NOW()) "
+                "ON CONFLICT (id) DO UPDATE SET "
+                "session_date = EXCLUDED.session_date, items = EXCLUDED.items, updated_at = NOW()",
+                (state.get("session_date"), json.dumps(state.get("items", []), default=str)),
+            )
+            conn.commit()
+            cur.close()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[outcome_tracker] postgres save skipped: {exc}", file=sys.stderr)
 
 
 def _flush_outcome_log(session_date: str | None, items: list[dict[str, Any]]) -> None:
@@ -2514,11 +2555,27 @@ def _log_event_to_db(
             return
         conn = db_adapter.get_db_connection()
         cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO scanner_event_log (event_type, session_date, symbol, side, payload) "
-            "VALUES (%s, %s, %s, %s, %s::jsonb)",
-            (event_type, session_date, symbol, side, json.dumps(payload, default=str)),
-        )
+        if event_type == "outcome":
+            # A stuck/stale local outcome_tracker_state.json (e.g. after a
+            # container restart wipes tracking mid-day) can get re-flushed on
+            # a later day's session-rollover, writing the same logical
+            # (date, symbol, side, trigger_time) outcome again. Upsert on
+            # that natural key instead of blindly inserting, backed by
+            # idx_outcome_dedup, so re-flushes overwrite rather than pile up.
+            cur.execute(
+                "INSERT INTO scanner_event_log (event_type, session_date, symbol, side, payload) "
+                "VALUES (%s, %s, %s, %s, %s::jsonb) "
+                "ON CONFLICT (event_type, session_date, symbol, side, (payload->>'trigger_time_ist')) "
+                "WHERE event_type = 'outcome' "
+                "DO UPDATE SET payload = EXCLUDED.payload, created_at = NOW()",
+                (event_type, session_date, symbol, side, json.dumps(payload, default=str)),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO scanner_event_log (event_type, session_date, symbol, side, payload) "
+                "VALUES (%s, %s, %s, %s, %s::jsonb)",
+                (event_type, session_date, symbol, side, json.dumps(payload, default=str)),
+            )
         conn.commit()
         cur.close()
     except Exception as exc:  # noqa: BLE001 - must never break a scan
