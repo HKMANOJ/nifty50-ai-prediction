@@ -2532,6 +2532,59 @@ def error_payload(exc: Exception) -> dict[str, Any]:
     }
 
 
+def build_premarket_reset_payload(now_ist: datetime) -> dict[str, Any]:
+    """Called once, shortly before market open (see the background scanner in
+    serve_nifty50_app.py), to actually clear yesterday's leftover picks
+    instead of leaving the last real scan's full numbers on screen looking
+    "live" until the first 9:15+ scan completes (which can take 30+ seconds).
+    Resets the per-feature state files to today/empty and returns an honest,
+    empty payload shaped like build_payload()'s real output - the dashboard
+    should look freshly ready, not like yesterday's close."""
+    session_date = now_ist.date().isoformat()
+
+    _save_tracked_state({"session_date": session_date, "items": []})
+    _save_daily_top5_state({
+        "session_date": session_date, "window_start_ist": None, "locked_at_ist": None,
+        "top5": {"bullish": [], "bearish": []},
+    })
+    _save_instant_triggers_state({"session_date": session_date, "items": []})
+    _save_top5_eligible_state({"session_date": session_date, "first_seen": {}})
+    # Deliberately NOT touching the Outcome Tracker's pending state - those
+    # items are still waiting on in-progress +15/30/60min checks from the
+    # prior session and must be left alone to finish naturally.
+
+    return {
+        "ok": True,
+        "data_mode": "real",
+        "generated_at_ist": now_ist.isoformat(timespec="seconds"),
+        "session_date": session_date,
+        "market_clock_ist": now_ist.strftime("%H:%M:%S"),
+        "analysis_phase": phase_for_time(now_ist),
+        "strategy_name": "One-Side Rally Stock Suggestion Index",
+        "source": {},
+        "index_context": {},
+        "coverage": {
+            "gainers_loaded": 0, "losers_loaded": 0, "oi_symbols_loaded": 0,
+            "gainers_with_oi_match": 0, "losers_with_oi_match": 0, "top_rows_with_oi_match": 0,
+            "gainer_stock_overlap_before_rally_filter": 0, "loser_stock_overlap_before_rally_filter": 0,
+            "max_suggestions_per_side": DEFAULT_SUGGESTIONS_PER_SIDE, "one_side_min_score": MIN_ONE_SIDE_SCORE,
+        },
+        "summary": {"bullish_candidates": 0, "bearish_candidates": 0, "priority_bullish": 0, "priority_bearish": 0},
+        "bullish": [],
+        "bearish": [],
+        "warnings": [],
+        "market_universe": [],
+        "tracked_breakouts": [],
+        "daily_top5": {"locked": False, "locked_at_ist": None, "window_start_ist": None,
+                        "window_end_ist": None, "window_minutes": DAILY_TOP5_WINDOW_MINUTES,
+                        "lock_time_ist": DAILY_TOP5_LOCK_TIME.strftime("%H:%M"),
+                        "bullish": [], "bearish": []},
+        "instant_triggers": [],
+        "top5_eligible": {"bullish": [], "bearish": []},
+        "pmh_pml_filter": {"bullish": [], "bearish": []},
+    }
+
+
 def _has_signal(payload: dict[str, Any]) -> bool:
     return bool(payload.get("ok")) and bool(payload.get("bullish") or payload.get("bearish"))
 

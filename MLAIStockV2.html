@@ -2584,6 +2584,17 @@
           scanBadge.style.borderColor = "#fed7aa";
         }
         if (scanDot) scanDot.style.background = "#f97316";
+      } else if (scanInfo.status === "pre_market" || isPreMarket()) {
+        // 9:00-9:15 AM - picks already cleared for the new session, but NSE's
+        // real open (and first scan) hasn't happened yet. Don't say "Active"
+        // or show a leftover "Last: " time from yesterday's final scan.
+        scanText.textContent = "Auto-Scan: Pre-Market (opens 9:15 AM)";
+        if (scanBadge) {
+          scanBadge.style.background = "#f1f5f9";
+          scanBadge.style.color = "#64748b";
+          scanBadge.style.borderColor = "#e2e8f0";
+        }
+        if (scanDot) scanDot.style.background = "#94a3b8";
       } else if (isMarketHours()) {
         const lastT = scanInfo.last_run_ist ? scanInfo.last_run_ist.replace(" IST", "") : (payload.market_clock_ist || "");
         scanText.textContent = lastT ? `Auto-Scan: 5m (Last: ${lastT})` : "Auto-Scan: 5m Active";

@@ -93,6 +93,63 @@ LAST_AUTO_SCAN_INFO: dict[str, Any] = {
 # background loop.
 AUTO_SCAN_LAST_RUN_MINUTES = 14 * 60 + 45  # 2:45 PM IST
 
+# Yesterday's full scan results otherwise sit on screen looking "live" from
+# market close until the first real 9:15+ scan completes (30+ seconds in).
+# Pre-market, clear everything so the dashboard honestly shows "getting
+# ready" instead of stale numbers dressed up as current.
+PREMARKET_RESET_START_MINUTES = 9 * 60       # 9:00 AM IST
+PREMARKET_RESET_END_MINUTES = 9 * 60 + 15    # 9:15 AM IST - real market open
+_premarket_reset_date: str | None = None
+
+
+def _run_premarket_reset_if_due(now_ist: datetime) -> None:
+    global _premarket_reset_date
+    current_minutes = now_ist.hour * 60 + now_ist.minute
+    today_str = now_ist.date().isoformat()
+    if now_ist.weekday() >= 5:  # weekend - nothing to get ready for
+        return
+    # Tightly bounded to the 9:00-9:15 pre-market window only (not "anytime
+    # before 2:45 PM") - a mid-day container restart resets the in-memory
+    # _premarket_reset_date flag too, and this must NOT be able to fire again
+    # after real market open and wipe intraday data that's already been
+    # collected for the day.
+    if current_minutes < PREMARKET_RESET_START_MINUTES or current_minutes >= PREMARKET_RESET_END_MINUTES:
+        return
+    if _premarket_reset_date == today_str:
+        return
+    try:
+        exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
+        res = run_command(
+            [exec_py, "-c",
+             "import json, sys; from datetime import datetime; "
+             "from zoneinfo import ZoneInfo; import stock_suggestion_index as ssi; "
+             "print(json.dumps(ssi.build_premarket_reset_payload(datetime.now(ZoneInfo('Asia/Kolkata')))))"],
+            timeout=30,
+        )
+        empty_payload = res.get("stdout") if isinstance(res.get("stdout"), dict) else None
+        if empty_payload:
+            STOCK_SUGGESTION_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+            STOCK_SUGGESTION_SNAPSHOT.write_text(json.dumps(empty_payload, indent=2), encoding="utf-8")
+            _SCAN_STATE["payload"] = empty_payload
+            _SCAN_STATE["signature"] = None
+            _SCAN_STATE["ts"] = time.time()
+            # Otherwise the Auto-Scan badge keeps showing yesterday's last-run
+            # time/status until the first real 9:15+ scan overwrites it.
+            LAST_AUTO_SCAN_INFO["status"] = "pre_market"
+            LAST_AUTO_SCAN_INFO["last_run_ist"] = None
+            LAST_AUTO_SCAN_INFO["last_duration_seconds"] = None
+            LAST_AUTO_SCAN_INFO["next_run_ist"] = None
+            try:
+                from websocket_server import broadcast_scanner_update_sync
+                broadcast_scanner_update_sync(empty_payload)
+            except Exception as bc_err:
+                print(f"[PREMARKET-RESET] broadcast skipped: {bc_err}")
+            print(f"[{now_ist.strftime('%H:%M:%S IST')}] [PREMARKET-RESET] Cleared yesterday's picks for {today_str}")
+            _premarket_reset_date = today_str
+    except Exception as exc:
+        print(f"[PREMARKET-RESET ERROR] {exc}")
+
+
 def start_background_auto_scanner(interval_seconds: int = 300) -> None:
     """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 5 min during market hours."""
     def _loop() -> None:
@@ -101,6 +158,7 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
             try:
                 now_ist = get_ist_now()
                 current_minutes = now_ist.hour * 60 + now_ist.minute
+                _run_premarket_reset_if_due(now_ist)
                 if is_ist_market_hours(now_ist) and current_minutes <= AUTO_SCAN_LAST_RUN_MINUTES:
                     if REFRESH_LOCK.acquire(blocking=False):
                         LAST_AUTO_SCAN_INFO["status"] = "running"
