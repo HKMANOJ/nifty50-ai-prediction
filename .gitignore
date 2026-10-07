@@ -9,6 +9,7 @@ node_modules/
 inputs/candle_cache.json
 inputs/candle_cache.json.tmp
 inputs/scan_history/
+inputs/scanner_telemetry/
 inputs/tracked_breakouts.json
 inputs/discovery_log/
 inputs/discovery_state.json

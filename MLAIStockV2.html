@@ -1590,6 +1590,7 @@
   </main>
 </div>
 
+<script src="scanner_display_telemetry.js"></script>
 <script>
   const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8001" : "";
   const refreshBtn = document.getElementById("refreshBtn");
@@ -2328,6 +2329,7 @@
         </div>
       `;
     }).join("");
+    window.ScannerDisplayTelemetry?.bind(body, ".tracked-row", items, "instant_triggers");
   }
 
   /* ── Render Daily Top 5 (12-factor scorecard, locked at 09:30 AM) ── */
@@ -2520,6 +2522,7 @@
         </tr>
       `;
     }).join("");
+    window.ScannerDisplayTelemetry?.bind(body, "tr[data-sym]", rows, "ranking", _activeTab);
   }
 
   /* ── Master Render Function ── */
@@ -2535,6 +2538,7 @@
       return;
     }
     if (hasRows) _lastGoodRenderAt = Date.now();
+    window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
 
     _currentBullish = (payload.bullish || []).sort((a, b) => (b.percent_change ?? 0) - (a.percent_change ?? 0));
     _currentBearish = (payload.bearish || []).sort((a, b) => (a.percent_change ?? 0) - (b.percent_change ?? 0));

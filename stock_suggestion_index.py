@@ -1120,6 +1120,7 @@ def assess_one_side_rally(
     tags: list[str] = []
     blockers: list[str] = []
     score = 0.0
+    score_components: dict[str, float] = {}
 
     # 1. Volume Surge / RVOL Buildup (Max 25 pts)
     if activity_ratio >= 2.5:
@@ -1137,6 +1138,7 @@ def assess_one_side_rally(
     else:
         score += 2
 
+    score_components["volume"] = score
     # 2. Day Range Position / Upper Range Hold (Max 25 pts)
     if range_pos is None:
         score += 10
@@ -1164,6 +1166,7 @@ def assess_one_side_rally(
         else:
             blockers.append("rejected from day low")
 
+    score_components["range_hold"] = score - sum(score_components.values())
     # 3. Move from Open (Max 20 pts)
     if open_move is None:
         tags.append("open move unavailable")
@@ -1186,6 +1189,7 @@ def assess_one_side_rally(
         elif open_move > 0:
             blockers.append("trading above session open")
 
+    score_components["move_from_open"] = score - sum(score_components.values())
     # 4. Open Interest Setup & Squeeze Potential (Max 20 pts)
     if side == "bullish":
         if setup == "Long buildup":
@@ -1220,6 +1224,7 @@ def assess_one_side_rally(
     elif oi_change_percent >= 6:
         score += 3
 
+    score_components["oi_setup_and_expansion"] = score - sum(score_components.values())
     # 5. Price Momentum (Max 10 pts)
     if pct_change is None:
         blockers.append("price change unavailable")
@@ -1246,9 +1251,11 @@ def assess_one_side_rally(
         else:
             blockers.append(f"price move above {MIN_BEARISH_CHANGE:.2f}%")
 
+    score_components["price_momentum"] = score - sum(score_components.values())
     # 6. Index Context Score (Max 8 pts)
     note, index_score = index_context_note(row, side, index_context)
     score += index_score
+    score_components["index_context"] = index_score
     tags.append(note)
 
     score_int = int(round(max(0, min(100, score))))
@@ -1266,6 +1273,7 @@ def assess_one_side_rally(
         "index_context": note,
         "quality_tags": tags,
         "blockers": blockers,
+        "score_components": score_components,
         "is_one_side": one_side,
     }
 
@@ -1314,7 +1322,24 @@ def build_suggestions(
     top: int,
     index_context: dict[str, dict[str, Any]],
     candles_by_symbol: dict[str, list[dict[str, Any]]] | None = None,
+    audit: list[dict[str, Any]] | None = None,
 ) -> tuple[list[Suggestion], int]:
+    def record(row, decision_reason, **details):
+        if audit is not None:
+            audit.append({"symbol": row["symbol"], "side": side,
+                          "setup": classify_oi(row.get("percent_change"), (oi_by_symbol.get(row["symbol"]) or {}).get("oi_change")),
+                          "ltp": row.get("ltp"), "percent_change": row.get("percent_change"),
+                          "volume": row.get("volume"), "qualified": False,
+                          "included_in_payload": False, **details, "reason": decision_reason})
+
+    for row in rows:
+        symbol = row["symbol"]
+        if symbol not in oi_by_symbol:
+            record(row, "oi_data_unavailable")
+        elif symbol in INDEX_LIKE_SYMBOLS:
+            record(row, "index_symbol_excluded")
+        elif get_fo_lot_size(symbol) > MAX_ALLOWED_LOT_SIZE:
+            record(row, "lot_size_above_limit", lot_size=get_fo_lot_size(symbol))
     matched_rows = [
         row for row in rows
         if row["symbol"] in oi_by_symbol
@@ -1341,6 +1366,8 @@ def build_suggestions(
         bulk_fetch_candles(candidate_symbols, candles_by_symbol)
 
     suggestions: list[Suggestion] = []
+    assessments: dict[str, dict[str, Any]] = {}
+    breakout_assessments: dict[str, dict[str, Any]] = {}
     for row in matched_rows:
         symbol = row["symbol"]
         oi = oi_by_symbol[symbol]
@@ -1348,23 +1375,32 @@ def build_suggestions(
         activity_ratio = (row_act / median_act) if median_act > 0 else 1.0
         vc_ranking = round(max(0.1, activity_ratio), 2)
         if vc_ranking <= MIN_VC_RANKING:
+            record(row, "volume_confluence_below_minimum", vc_ranking=vc_ranking)
             continue
 
         setup = classify_oi(row.get("percent_change"), oi.get("oi_change"))
         base_score = calc_score(row, oi, side=side, activity_ratio=activity_ratio)
         rally = assess_one_side_rally(row, oi, side=side, activity_ratio=activity_ratio, index_context=index_context)
+        assessments[symbol] = rally
         if not rally["is_one_side"]:
+            record(row, "rally_gate_failed", rally=rally, base_score=base_score, vc_ranking=vc_ranking)
             continue
 
         # 5-Minute Breakout Analysis
         sym_candles = candles_by_symbol.get(symbol, [])
         bo_info = analyze_5m_breakout(sym_candles, side, row)
+        bo_info["latest_candle_at_ist"] = (
+            datetime.fromtimestamp(sym_candles[-1]["timestamp"], tz=INDIA_TZ).isoformat()
+            if sym_candles else None
+        )
+        breakout_assessments[symbol] = bo_info
         five_min_status = bo_info["status"]
         breakout_time = bo_info["breakout_time"]
         is_breakout = bo_info["is_breakout"]
 
         # If it dropped below PML (Bullish) or above PMH (Bearish), it failed its trend.
         if bo_info.get("is_failed_trend"):
+            record(row, "trend_invalidated", rally=rally, breakout=bo_info, vc_ranking=vc_ranking)
             continue
 
         # Must be trading beyond today's opening-range high/low (PMH/PML - same
@@ -1382,18 +1418,23 @@ def build_suggestions(
             if side == "bullish":
                 bullish_floor = orb_check_high * (1 - PMH_PML_TOLERANCE_PCT / 100)
                 if ltp_check is None or ltp_check < bullish_floor:
+                    record(row, "below_opening_range_floor", rally=rally, breakout=bo_info, required_level=bullish_floor)
                     continue
                 if prev_close_check is not None and ltp_check <= prev_close_check:
+                    record(row, "not_above_previous_close", rally=rally, breakout=bo_info)
                     continue
             else:
                 bearish_ceiling = orb_check_low * (1 + PMH_PML_TOLERANCE_PCT / 100)
                 if ltp_check is None or ltp_check > bearish_ceiling:
+                    record(row, "above_opening_range_ceiling", rally=rally, breakout=bo_info, required_level=bearish_ceiling)
                     continue
                 if prev_close_check is not None and ltp_check >= prev_close_check:
+                    record(row, "not_below_previous_close", rally=rally, breakout=bo_info)
                     continue
 
         # Only show active Breakout/Breakdown or Near BO/Near BD candidates (no Consolidating)
         if five_min_status.lower() == "consolidating":
+            record(row, "consolidating", rally=rally, breakout=bo_info)
             continue
 
         # Boost score and tag if active 5m breakout is confirmed
@@ -1503,6 +1544,16 @@ def build_suggestions(
     else:
         suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else 9999)
 
+    if audit is not None:
+        for index, item in enumerate(suggestions, start=1):
+            record({"symbol": item.symbol, "ltp": item.ltp, "percent_change": item.percent_change,
+                    "volume": item.volume}, "included" if index <= top else "payload_rank_limit",
+                   **{**item.to_dict(), "side": side, "qualified": True,
+                      "rank": index, "included_in_payload": index <= top,
+                      "rally": assessments[item.symbol],
+                      "breakout": breakout_assessments[item.symbol],
+                      "scanner_reason": item.reason,
+                      "breakout_bonus": 8 if item.is_breakout else 0})
     ranked = suggestions[:top]
     return [
         Suggestion(**{**item.to_dict(), "rank": index})
@@ -1904,6 +1955,7 @@ def update_instant_triggers(
     an `upgraded_to_priority` flag that flips on later if the slower Rally
     Score independently confirms the same move."""
     try:
+        from scanner_telemetry import signal_id
         session_date = payload.get("session_date")
         state = _load_instant_triggers_state()
         if state.get("session_date") != session_date:
@@ -1919,9 +1971,14 @@ def update_instant_triggers(
                 existing = by_key.get(key)
 
                 if existing is not None:
+                    existing.setdefault("signal_id", signal_id(session_date, item.symbol, side_name, existing.get("setup")))
                     if not existing.get("upgraded_to_priority") and item.status == "Priority Rally" and item.bell_rang:
                         existing["upgraded_to_priority"] = True
                         existing["upgraded_at_ist"] = payload.get("market_clock_ist")
+                        existing["signal_id"] = signal_id(session_date, item.symbol, side_name, existing.get("setup"))
+                        existing["qualified_at_ist"] = datetime.now(INDIA_TZ).isoformat(timespec="milliseconds")
+                        existing["snapshot_id"] = payload.get("snapshot_id")
+                        _log_event_to_db("instant_trigger", session_date, item.symbol, side_name, existing)
                     continue
 
                 if not item.is_breakout:
@@ -1930,6 +1987,10 @@ def update_instant_triggers(
                 breakdown = score_instant_trigger_factors(item, side_name, index_context, sector_alignment)
                 is_upgraded = bool(item.status == "Priority Rally" and item.bell_rang)
                 new_item = {
+                    "signal_id": signal_id(session_date, item.symbol, side_name, item.setup),
+                    "snapshot_id": payload.get("snapshot_id"),
+                    "detected_at_ist": datetime.now(INDIA_TZ).isoformat(timespec="milliseconds"),
+                    "qualified_at_ist": datetime.now(INDIA_TZ).isoformat(timespec="milliseconds") if is_upgraded else None,
                     "symbol": item.symbol,
                     "side": side_name,
                     "lot_size": item.lot_size,
@@ -2069,6 +2130,8 @@ def update_outcome_tracker(
             if trigger_min is None:
                 continue
             items.append({
+                "signal_id": trig.get("signal_id"),
+                "origin_snapshot_id": trig.get("snapshot_id"),
                 "symbol": trig["symbol"],
                 "side": trig["side"],
                 "session_date": session_date,
@@ -2324,6 +2387,9 @@ def compute_pmh_pml_filter(
 
 
 def build_payload(top: int) -> dict[str, Any]:
+    import scanner_telemetry
+    scan_id = scanner_telemetry.new_scan()
+    decision_audit: list[dict[str, Any]] = []
     now_ist = datetime.now(INDIA_TZ)
     errors: list[str] = []
 
@@ -2372,11 +2438,11 @@ def build_payload(top: int) -> dict[str, Any]:
 
     bullish, gainer_stock_overlap = build_suggestions(
         gainers, oi_by_symbol, side="bullish", top=top,
-        index_context=index_context, candles_by_symbol=shared_candles,
+        index_context=index_context, candles_by_symbol=shared_candles, audit=decision_audit,
     )
     bearish, loser_stock_overlap = build_suggestions(
         losers, oi_by_symbol, side="bearish", top=top,
-        index_context=index_context, candles_by_symbol=shared_candles,
+        index_context=index_context, candles_by_symbol=shared_candles, audit=decision_audit,
     )
     gainers_with_oi = sum(
         1 for row in gainers
@@ -2436,6 +2502,12 @@ def build_payload(top: int) -> dict[str, Any]:
         "ok": True,
         "data_mode": "real",
         "generated_at_ist": now_ist.isoformat(timespec="seconds"),
+        "snapshot_id": scan_id,
+        "scanner_config": {"min_one_side_score": MIN_ONE_SIDE_SCORE,
+                           "min_vc_ranking": MIN_VC_RANKING,
+                           "max_lot_size": MAX_ALLOWED_LOT_SIZE,
+                           "pmh_pml_tolerance_pct": PMH_PML_TOLERANCE_PCT,
+                           "max_suggestions_per_side": top},
         "session_date": now_ist.date().isoformat(),
         "market_clock_ist": now_ist.strftime("%H:%M:%S"),
         "analysis_phase": phase_for_time(now_ist),
@@ -2485,6 +2557,10 @@ def build_payload(top: int) -> dict[str, Any]:
         payload.get("session_date"), payload.get("market_clock_ist"),
     )
     payload["pmh_pml_filter"] = compute_pmh_pml_filter(bullish, bearish)
+    try:
+        scanner_telemetry.prepare_snapshot(payload, decision_audit, scan_id)
+    except Exception as exc:
+        print(f"[scanner-telemetry] scan logging skipped: {exc}", file=sys.stderr)
     return payload
 
 
@@ -2736,8 +2812,8 @@ def _save_discovery_state(state: dict[str, Any]) -> None:
 
 def log_discovery_delays(payload: dict[str, Any]) -> None:
     """The first time a symbol reaches rank <= MAX_DISPLAY_ROWS this session,
-    write one permanent row: its true breakout_time vs the moment it actually
-    became visible in the (now capped) dashboard, and the gap between them."""
+    write server Top-6 eligibility evidence, not proof of browser visibility.
+    Actual viewport appearances are recorded separately as signal_displayed."""
     try:
         session_date = payload.get("session_date")
         state = _load_discovery_state()
@@ -2760,6 +2836,9 @@ def log_discovery_delays(payload: dict[str, Any]) -> None:
                 bo_min = _parse_clock_to_minutes(row.get("breakout_time"))
                 delay_minutes = (now_min - bo_min) if (bo_min is not None and now_min is not None) else None
                 discovery_entry = {
+                    "signal_id": row.get("signal_id"),
+                    "snapshot_id": payload.get("snapshot_id"),
+                    "evidence_type": "server_top6_eligibility",
                     "session_date": session_date,
                     "symbol": row.get("symbol"),
                     "side": side_name,

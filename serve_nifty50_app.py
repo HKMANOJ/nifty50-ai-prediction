@@ -413,6 +413,19 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed_path = urlparse(self.path)
+        if parsed_path.path == "/api/stock_suggestions/display_receipts":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0 or length > 128 * 1024:
+                    raise ValueError("invalid receipt body length")
+                from scanner_telemetry import record_display_receipts
+                result = record_display_receipts(self._read_json_body())
+                self._send_json(HTTPStatus.OK, result)
+            except (ValueError, TypeError) as exc:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            except Exception:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "receipt_logging_unavailable"})
+            return
         if parsed_path.path == "/api/ai_options":
             self._record_ai_option()
             return
