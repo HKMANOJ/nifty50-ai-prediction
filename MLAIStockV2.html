@@ -1201,7 +1201,7 @@
       <div class="navbar-status">
         <button id="soundToggleBtn" style="background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #bfdbfe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Toggle breakout & breakdown bell audio chime">🔔 Bell Sound: ON</button>
         <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Click to test the bell rang sound and alert">🧪 Test Bell</button>
-        <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px;" title="Real-Time WebSocket Push Engine (0ms Latency)">
+        <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px;" title="WebSocket connection status only; scanner snapshot status is shown above the table">
           <span id="wsStatusDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#16a34a;"></span>
           <span id="wsStatusText">WS: Connecting...</span>
         </span>
@@ -1375,6 +1375,7 @@
           </div>
         </div>
 
+        <div id="scannerDataStatus" role="status" aria-live="polite" style="padding:10px 16px; font-size:12px; color:#64748b; overflow-wrap:anywhere;">Scanner data: loading…</div>
         <div class="table-wrapper">
           <table class="vc-table">
             <thead>
@@ -2448,7 +2449,10 @@
     }).slice(0, MAX_DISPLAY_ROWS);
 
     if (!Array.isArray(rows) || rows.length === 0) {
-      body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:30px; color:var(--text-muted);">No candidates matching filter right now.</td></tr>`;
+      const opposite = _activeTab === "bullish" ? _currentBearish : _currentBullish;
+      const label = _activeTab === "bullish" ? "bullish" : "bearish";
+      const hint = opposite.length ? ` Check Top ${_activeTab === "bullish" ? "Losers" : "Gainers"} (${opposite.length} candidates).` : "";
+      body.innerHTML = `<tr><td colspan="10" style="text-align:left; padding:16px; color:var(--text-muted);">No qualifying ${label} candidates in this snapshot.${hint}</td></tr>`;
       return;
     }
 
@@ -2527,15 +2531,39 @@
 
   /* ── Master Render Function ── */
   let _lastGoodRenderAt = 0;
+  let _lastScannerPayload = null;
+  let _scannerLoadPromise = null;
+  let _scannerRetryTimer = null;
+  let _scannerRetryDelay = 5000;
+
+  function scannerDataStatus(message, warning = false) {
+    const el = document.getElementById("scannerDataStatus");
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = warning ? "#b45309" : "#475569";
+  }
+
+  function scannerSnapshotStatus(payload, warning = "") {
+    const stamp = payload?.generated_at_ist;
+    const when = stamp ? new Date(stamp).toLocaleString("en-IN", {timeZone:"Asia/Kolkata", hour12:false}) + " IST" : "time unavailable";
+    const stale = Boolean(payload?._stale_kept || payload?._refresh?.kept_last_good);
+    const old = stamp && Date.now() - Date.parse(stamp) > 10 * 60 * 1000;
+    const mode = isMarketHours() ? (old || stale ? "Delayed snapshot — NOT live" : "Scanner snapshot") : "Market-closed snapshot — NOT live";
+    scannerDataStatus(`${warning ? warning + " · " : ""}${mode} · Scan generated ${when} · ${payload?.bullish?.length || 0} bullish / ${payload?.bearish?.length || 0} bearish`, Boolean(warning || stale || (old && isMarketHours())));
+  }
+
   function renderAll(payload) {
-    if (!payload || !payload.ok) return;
+    if (!payload || !payload.ok || !Array.isArray(payload.bullish) || !Array.isArray(payload.bearish)) return false;
+    // An HTTP response started before a newer push must not roll the screen back.
+    if (_lastScannerPayload && Date.parse(payload.generated_at_ist) < Date.parse(_lastScannerPayload.generated_at_ist)) return true;
 
     // Never wipe a populated dashboard with an empty scan (NSE/Yahoo hiccup,
     // rate-limit, cold cache). Keep the last good list on screen instead.
     const hasRows = (payload.bullish && payload.bullish.length) || (payload.bearish && payload.bearish.length);
     const hadRows = (_currentBullish && _currentBullish.length) || (_currentBearish && _currentBearish.length);
     if (!hasRows && hadRows && (Date.now() - _lastGoodRenderAt) < 10 * 60 * 1000) {
-      return;
+      scannerSnapshotStatus(_lastScannerPayload, "Empty scan received; retaining previous snapshot");
+      return true;
     }
     if (hasRows) _lastGoodRenderAt = Date.now();
     window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
@@ -2848,6 +2876,10 @@
       const active = currentRows.find(x => x.symbol === _selectedSymbol) || currentRows[0];
       selectStock(active.symbol, active);
     }
+    _lastScannerPayload = payload;
+    _sectorPayload = payload;
+    scannerSnapshotStatus(payload);
+    return true;
   }
 
   function updateSoundButtonUI() {
@@ -2868,6 +2900,17 @@
 
   /* ── Data Fetcher ── */
   async function loadData({ refresh = false } = {}) {
+    if (_scannerLoadPromise) return _scannerLoadPromise;
+    _scannerLoadPromise = fetchScannerData(refresh);
+    try { return await _scannerLoadPromise; }
+    finally { _scannerLoadPromise = null; }
+  }
+
+  async function fetchScannerData(refresh) {
+    clearTimeout(_scannerRetryTimer);
+    _scannerRetryTimer = null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 95000);
     if (refreshBtn) {
       refreshBtn.disabled = true;
       refreshBtn.textContent = refresh ? "Fetching NSE..." : "Loading...";
@@ -2876,14 +2919,25 @@
       const ep = refresh ? "/api/stock_suggestions/refresh" : "/api/stock_suggestions";
       const res = await fetch(`${API_BASE}${ep}`, {
         method: refresh ? "POST" : "GET",
-        cache: "no-store"
+        cache: "no-store",
+        signal: controller.signal
       });
+      if (!res.ok) throw new Error(`Scanner HTTP ${res.status}`);
       const data = await res.json();
-      _sectorPayload = data;  // cache for sector view reuse
-      renderAll(data);
+      if (!renderAll(data)) throw new Error("Scanner response unavailable or invalid");
+      _scannerRetryDelay = 5000;
     } catch (e) {
       console.error("Load failed:", e);
+      if (_lastScannerPayload) scannerSnapshotStatus(_lastScannerPayload, "Connection/load failed — retrying; previous data retained");
+      else scannerDataStatus("Scanner data unavailable — retrying automatically. No verified snapshot loaded.", true);
+      // GET retries only: reconnecting a phone must not trigger repeated NSE scans.
+      _scannerRetryTimer = setTimeout(() => {
+        _scannerRetryTimer = null;
+        if (document.visibilityState === "visible") loadData();
+      }, _scannerRetryDelay);
+      _scannerRetryDelay = Math.min(_scannerRetryDelay * 2, 30000);
     } finally {
+      clearTimeout(timeout);
       if (refreshBtn) {
         refreshBtn.disabled = false;
         refreshBtn.textContent = "⚡ Refresh Live";
@@ -2911,6 +2965,11 @@
   });
 
   refreshBtn?.addEventListener("click", () => loadData({ refresh: true }));
+  window.addEventListener("online", () => loadData());
+  window.addEventListener("pageshow", event => { if (event.persisted) loadData(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") loadData();
+  });
 
   document.addEventListener("DOMContentLoaded", () => {
     initChart();
@@ -3094,9 +3153,10 @@
 
   // Auto-refresh live market scanner — ONLY during market hours
   setInterval(() => {
-    if (isMarketHours()) {
+    if (document.visibilityState === "visible" && (isMarketHours() || !_lastScannerPayload)) {
       loadData();
     }
+    if (_lastScannerPayload && !_scannerRetryTimer) scannerSnapshotStatus(_lastScannerPayload);
   }, 45000);
 
   // ── Live NIFTY / BANK NIFTY ticker: refresh every 30s ──
@@ -3166,13 +3226,14 @@
 
     _wsClient.onopen = () => {
       if (dot) dot.style.background = "#16a34a";
-      if (text) text.textContent = "WS: Push Live";
+      if (text) text.textContent = "WS: Connected";
       if (badge) {
         badge.style.background = "#f0fdf4";
         badge.style.color = "#166534";
         badge.style.borderColor = "#bbf7d0";
       }
       _wsReconnectDelay = 2500;   // healthy connection -> reset backoff
+      loadData(); // Socket connectivity does not guarantee an initial scanner snapshot.
       // Immediately subscribe to current active stock
       if (_selectedSymbol) {
         _wsClient.send(JSON.stringify({ action: "subscribe", symbol: _selectedSymbol }));
