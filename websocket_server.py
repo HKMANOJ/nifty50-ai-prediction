@@ -130,13 +130,25 @@ async def ws_handler(ws: WebSocketServerProtocol) -> None:
 
 def broadcast_scanner_update_sync(payload: dict[str, Any]) -> None:
     """Thread-safe broadcast called by 5-minute auto-scanner when a new scan finishes."""
+    import scanner_trace
+    import uuid
+    from datetime import datetime
+    from scanner_telemetry import IST
     if not MAIN_LOOP or not CONNECTED_CLIENTS:
+        scanner_trace.submit_health("ws_delivery_skipped", snapshot_id=payload.get("snapshot_id"),
+                                    reason="no_loop_or_connected_clients")
         return
-    msg = json.dumps({"type": "scanner_update", "payload": payload})
+    delivery = {"delivery_id": "delivery_"+uuid.uuid4().hex, "transport": "websocket",
+                "sent_at_ist": datetime.now(IST).isoformat()}
+    msg = json.dumps({"type": "scanner_update", "payload": {**payload, "_delivery": delivery}})
 
     async def _send_all():
         if CONNECTED_CLIENTS:
-            await asyncio.gather(*[ws.send(msg) for ws in CONNECTED_CLIENTS], return_exceptions=True)
+            clients = list(CONNECTED_CLIENTS)
+            results = await asyncio.gather(*[ws.send(msg) for ws in clients], return_exceptions=True)
+            scanner_trace.submit_health("ws_delivery_completed", snapshot_id=payload.get("snapshot_id"),
+                **delivery, attempted_clients=len(clients), failed_clients=sum(isinstance(r, BaseException) for r in results),
+                note="socket send completion, not browser display")
             logger.info(f"Broadcasted 5-min scanner update to {len(CONNECTED_CLIENTS)} clients.")
 
     asyncio.run_coroutine_threadsafe(_send_all(), MAIN_LOOP)

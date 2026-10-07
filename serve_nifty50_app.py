@@ -153,6 +153,9 @@ def _run_premarket_reset_if_due(now_ist: datetime) -> None:
 def start_background_auto_scanner(interval_seconds: int = 300) -> None:
     """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 5 min during market hours."""
     def _loop() -> None:
+        import scanner_trace
+        scanner_trace.submit_health("scheduler_started", interval_seconds=interval_seconds,
+                                    auto_scan_cutoff_ist="14:45", process_id=os.getpid())
         time.sleep(5)  # Grace period on boot
         while True:
             try:
@@ -163,6 +166,8 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                     if REFRESH_LOCK.acquire(blocking=False):
                         LAST_AUTO_SCAN_INFO["status"] = "running"
                         scan_start = time.time()
+                        attempt_id = scanner_trace.log.new_scan()
+                        scanner_trace.submit_health("scheduled_scan_started", attempt_id=attempt_id)
                         print(f"[{now_ist.strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Executing 5-minute background market scan...")
                         try:
                             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
@@ -170,6 +175,9 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                             dur = round(time.time() - scan_start, 1)
                             scan_payload = res.get("stdout") if isinstance(res.get("stdout"), dict) else {}
                             has_signal = _payload_has_signal(scan_payload)
+                            scanner_trace.submit_health("scheduled_scan_finished", attempt_id=attempt_id,
+                                snapshot_id=scan_payload.get("snapshot_id"), duration_seconds=dur,
+                                subprocess_ok=res.get("ok"), has_signal=has_signal)
                             _SCAN_STATE["ts"] = time.time()
                             LAST_AUTO_SCAN_INFO["last_run_ist"] = get_ist_now().strftime("%I:%M:%S %p IST")
                             LAST_AUTO_SCAN_INFO["last_duration_seconds"] = dur
@@ -188,11 +196,14 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                                     except Exception as bc_err:
                                         print(f"[WS BROADCAST ERROR] {bc_err}")
                         except Exception as scan_err:
+                            scanner_trace.submit_health("scheduled_scan_failed", attempt_id=attempt_id,
+                                                        error_type=type(scan_err).__name__)
                             print(f"[AUTO-SCANNER ERROR] {scan_err}")
                             LAST_AUTO_SCAN_INFO["status"] = f"error: {scan_err}"
                         finally:
                             REFRESH_LOCK.release()
                     else:
+                        scanner_trace.submit_health("scheduled_scan_skipped", reason="refresh_lock_busy")
                         print("[AUTO-SCANNER] Skipping interval: manual refresh or lock is currently active.")
 
                     next_run = get_ist_now() + timedelta(seconds=interval_seconds)
@@ -413,6 +424,18 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed_path = urlparse(self.path)
+        if parsed_path.path == "/api/stock_suggestions/client_events":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 64 * 1024:
+                    raise ValueError("invalid event body length")
+                from scanner_telemetry import record_client_events
+                self._send_json(HTTPStatus.OK, record_client_events(self._read_json_body()))
+            except (ValueError, TypeError):
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid_client_events"})
+            except Exception:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "trace_logging_unavailable"})
+            return
         if parsed_path.path == "/api/stock_suggestions/display_receipts":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -546,13 +569,31 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         }
 
     def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
+        delivery = None
+        if payload.get("snapshot_id") and "bullish" in payload:
+            import uuid
+            delivery = {"delivery_id": "delivery_"+uuid.uuid4().hex, "transport": "http",
+                        "sent_at_ist": get_ist_now().isoformat()}
+            payload = {**payload, "_delivery": delivery}
         encoded = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(status.value)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(encoded)
+        try:
+            self.wfile.write(encoded)
+        except Exception as exc:
+            if delivery:
+                import scanner_trace
+                scanner_trace.submit_health("delivery_failed", snapshot_id=payload["snapshot_id"],
+                                            **delivery, error_type=type(exc).__name__)
+            raise
+        if delivery:
+            import scanner_trace
+            scanner_trace.submit_health("delivery_written", snapshot_id=payload["snapshot_id"],
+                                        **delivery, status_code=status.value, byte_count=len(encoded),
+                                        note="server socket write; browser acknowledgement required")
 
     def _serve_most_active(self) -> None:
         """Serve the Most Active Puts/Index/Volume data."""
@@ -652,7 +693,15 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         try:
             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
             result = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
+            import scanner_trace
+            output = result.get("stdout") if isinstance(result.get("stdout"), dict) else {}
+            scanner_trace.submit_health("requested_scan_finished", snapshot_id=output.get("snapshot_id"),
+                subprocess_ok=result.get("ok"), duration_seconds=result.get("duration_seconds"))
             _SCAN_STATE["ts"] = time.time()
+        except Exception as exc:
+            import scanner_trace
+            scanner_trace.submit_health("requested_scan_failed", error_type=type(exc).__name__)
+            raise
         finally:
             REFRESH_LOCK.release()
 

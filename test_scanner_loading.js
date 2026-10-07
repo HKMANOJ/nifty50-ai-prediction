@@ -3,11 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync('MLAIStockV2.html', 'utf8');
-const statusSource = html.slice(html.indexOf('  let _lastGoodRenderAt'), html.indexOf('  function renderAll(payload)'));
+const statusSource = html.slice(html.indexOf('  let _lastGoodRenderAt'), html.indexOf('  function renderAll('));
 const loaderSource = html.slice(html.indexOf('  async function loadData('), html.indexOf('  /* ── Tab Switchers'));
 const nodes = {scannerDataStatus: {style: {}}, refreshBtn: {}};
 const timers = new Map(); let timerId = 0; let calls = 0; let options; let response;
 const context = vm.createContext({
+  window: {}, performance: {now: () => 1},
   console: {error() {}}, Date, AbortController,
   document: {visibilityState: 'visible', getElementById: id => nodes[id]},
   setTimeout: (fn, delay) => { const id = ++timerId; timers.set(id, {fn, delay}); return id; },

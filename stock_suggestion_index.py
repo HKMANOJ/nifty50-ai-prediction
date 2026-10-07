@@ -391,21 +391,33 @@ def _nse_warm(referer: str, *, force: bool = False) -> None:
 
 
 def nse_get_json(url: str, *, referer: str) -> Any:
+    import scanner_trace
     last_err: Exception | None = None
     for attempt in range(3):
+        trace_start = _time.monotonic()
         _nse_warm(referer, force=(attempt > 0))
         try:
             raw = _nse_fetch(url, referer=referer, timeout=25.0)
-            return json.loads(raw.decode("utf-8"))
+            decoded = json.loads(raw.decode("utf-8"))
+            scanner_trace.safe_source("NSE", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                attempt=attempt+1, upstream_timestamp_raw=scanner_trace.supplied_timestamps(decoded),
+                upstream_timestamp_verified=False)
+            return decoded
         except json.JSONDecodeError as exc:
+            scanner_trace.safe_source("NSE", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                                     status="invalid_json", attempt=attempt+1)
             raise LiveDataError(f"NSE returned non-JSON for {url}: {raw[:120]!r}") from exc
         except Exception as exc:  # noqa: BLE001 - retry with a fresh handshake
+            scanner_trace.safe_source("NSE", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                                     status="fetch_failed", attempt=attempt+1, error_type=type(exc).__name__)
             last_err = exc
             _time.sleep(0.4 * (attempt + 1))
     raise LiveDataError(str(last_err) or f"NSE request failed: {url}")
 
 
 def nse_get_csv(url: str, *, referer: str) -> list[dict[str, Any]]:
+    import scanner_trace
+    trace_start = _time.monotonic()
     request = urllib.request.Request(
         url,
         headers={
@@ -415,9 +427,17 @@ def nse_get_csv(url: str, *, referer: str) -> list[dict[str, Any]]:
             "Referer": referer,
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        text = response.read().decode("utf-8-sig")
-    return [dict(row) for row in csv.DictReader(text.splitlines())]
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            text = response.read().decode("utf-8-sig")
+        rows = [dict(row) for row in csv.DictReader(text.splitlines())]
+        scanner_trace.safe_source("NSE_csv", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                                 row_count=len(rows), upstream_timestamp_verified=False)
+        return rows
+    except Exception as exc:
+        scanner_trace.safe_source("NSE_csv", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                                 status="fetch_failed", error_type=type(exc).__name__)
+        raise
 
 
 def rows_from_any_payload(payload: Any) -> list[dict[str, Any]]:
@@ -568,6 +588,7 @@ def normalize_index_row(index_name: str, payload: Any) -> dict[str, Any]:
 
 
 def fetch_index_context() -> tuple[dict[str, dict[str, Any]], list[str]]:
+    import scanner_trace
     referer = f"{NSE_BASE}/market-data/live-equity-market"
     errors: list[str] = []
     indexes: dict[str, dict[str, Any]] = {}
@@ -600,6 +621,7 @@ def fetch_index_context() -> tuple[dict[str, dict[str, Any]], list[str]]:
         for index_name, ticker in mapping.items():
             if index_name in indexes:
                 continue
+            trace_start = _time.monotonic()
             try:
                 url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(ticker)}?interval=5m&range=1d"
                 req = urllib.request.Request(
@@ -614,6 +636,9 @@ def fetch_index_context() -> tuple[dict[str, dict[str, Any]], list[str]]:
                     result = (data.get("chart") or {}).get("result")
                     if result:
                         meta = result[0].get("meta") or {}
+                        scanner_trace.safe_source("Yahoo_index_fallback", symbol=index_name, started=trace_start,
+                            fallback_used=True, quote_market_epoch=meta.get("regularMarketTime"),
+                            upstream_timestamp_verified=False)
                         ltp = meta.get("regularMarketPrice")
                         prev = meta.get("chartPreviousClose") or ltp
                         pct_change = ((ltp - prev) / prev) * 100 if prev else 0.0
@@ -626,6 +651,8 @@ def fetch_index_context() -> tuple[dict[str, dict[str, Any]], list[str]]:
                             "direction": "bullish" if pct_change > 0 else "bearish" if pct_change < 0 else "flat",
                         }
             except Exception as exc:
+                scanner_trace.safe_source("Yahoo_index_fallback", symbol=index_name, started=trace_start,
+                                         fallback_used=True, status="fetch_failed", error_type=type(exc).__name__)
                 errors.append(f"index {index_name}: {exc}")
             
     return indexes, errors
@@ -664,6 +691,8 @@ def pct_from_open(row: dict[str, Any]) -> float | None:
 
 def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
     """Fetches real-time 5-minute OHLCV candles for an NSE stock."""
+    import scanner_trace
+    trace_start = _time.monotonic()
     yahoo_sym = f"{symbol}.NS"
     # Only the current session is needed for the opening-range breakout logic, so
     # ask for range=1d (a much smaller payload) unless a caller wants full history.
@@ -682,8 +711,13 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
             data = json.loads(resp.read().decode("utf-8"))
             result = (data.get("chart") or {}).get("result")
             if not result:
+                scanner_trace.safe_source("Yahoo_candles", symbol=symbol, started=trace_start, status="empty_response")
                 return []
             quote = result[0]
+            scanner_trace.safe_source("Yahoo_candles", symbol=symbol, started=trace_start,
+                quote_market_epoch=(quote.get("meta") or {}).get("regularMarketTime"),
+                latest_bar_start_epoch=max(quote.get("timestamp") or [0]) or None,
+                upstream_timestamp_verified=False)
             timestamps = quote.get("timestamp") or []
             indicators = quote.get("indicators", {})
             quote_data = (indicators.get("quote") or [{}])[0]
@@ -739,6 +773,8 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
             ]
             return day_candles if day_candles else all_candles[-75:]
     except Exception as e:
+        scanner_trace.safe_source("Yahoo_candles", symbol=symbol, started=trace_start,
+                                 status="fetch_failed", error_type=type(e).__name__)
         print(f"fetch_5m_candles_for_symbol error for {symbol}: {type(e)} {e}", file=sys.stderr)
         return []
 
@@ -749,6 +785,8 @@ def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], lis
     intraday chart in one request, using its `previousClose` in the response
     metadata - no dependency on the top-20 feed at all. Used to widen the
     candidate pool beyond NSE's arbitrary top-20 cutoff."""
+    import scanner_trace
+    trace_start = _time.monotonic()
     yahoo_sym = f"{symbol}.NS"
     url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range=1d"
     req = urllib.request.Request(
@@ -764,9 +802,13 @@ def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], lis
             data = json.loads(resp.read().decode("utf-8"))
         result = (data.get("chart") or {}).get("result")
         if not result:
+            scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start, status="empty_response")
             return None
         quote = result[0]
         meta = quote.get("meta") or {}
+        scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start,
+            quote_market_epoch=meta.get("regularMarketTime"),
+            latest_bar_start_epoch=max(quote.get("timestamp") or [0]) or None, upstream_timestamp_verified=False)
         prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
         timestamps = quote.get("timestamp") or []
         indicators = quote.get("indicators", {})
@@ -805,6 +847,8 @@ def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], lis
         }
         return row, candles
     except Exception as e:
+        scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start,
+                                 status="fetch_failed", error_type=type(e).__name__)
         print(f"fetch_quote_and_candles_for_symbol error for {symbol}: {type(e)} {e}", file=sys.stderr)
         return None
 
@@ -859,15 +903,20 @@ def bulk_fetch_candles(
     returned by then are recorded as an empty list and the workers abandoned,
     so one slow upstream response can no longer stall the entire refresh.
     """
+    import scanner_trace
     _load_candle_cache()
     now = _time.time()
     pending: list[str] = []
     for sym in symbols:
         if sym in candles_by_symbol:
+            scanner_trace.safe_source("candle_input", symbol=sym, status="shared_scan_input",
+                                     cache_age_seconds=None, row_count=len(candles_by_symbol[sym]))
             continue
         cached = _CANDLE_CACHE.get(sym)
         if cached and (now - cached[0]) <= CANDLE_CACHE_TTL_SECONDS:
             candles_by_symbol[sym] = cached[1]
+            scanner_trace.safe_source("candle_input", symbol=sym, status="cache_hit",
+                                     cache_age_seconds=round(now-cached[0], 3), row_count=len(cached[1]))
         else:
             pending.append(sym)
 
@@ -897,6 +946,8 @@ def bulk_fetch_candles(
         executor.shutdown(wait=False, cancel_futures=True)
 
     for sym in pending:
+        if sym not in candles_by_symbol:
+            scanner_trace.safe_source("candle_input", symbol=sym, status="batch_timeout_or_missing")
         candles_by_symbol.setdefault(sym, [])
     _save_candle_cache()
     return candles_by_symbol
@@ -2388,9 +2439,11 @@ def compute_pmh_pml_filter(
 
 def build_payload(top: int) -> dict[str, Any]:
     import scanner_telemetry
+    import scanner_trace
     scan_id = scanner_telemetry.new_scan()
     decision_audit: list[dict[str, Any]] = []
     now_ist = datetime.now(INDIA_TZ)
+    scanner_trace.begin(scan_id, now_ist.isoformat())
     errors: list[str] = []
 
     # The three upstream NSE reads are independent - run them concurrently.
@@ -2558,9 +2611,14 @@ def build_payload(top: int) -> dict[str, Any]:
     )
     payload["pmh_pml_filter"] = compute_pmh_pml_filter(bullish, bearish)
     try:
-        scanner_telemetry.prepare_snapshot(payload, decision_audit, scan_id)
+        replay = scanner_trace.replay_inputs(sys.modules[__name__], gainers, losers, oi_by_symbol,
+            index_context, shared_candles, scanner_trace.finish_capture(), extra_symbols)
+        replay["missing_extra_candidates"] = sorted(set(extra_symbols)-{r["symbol"] for r in gainers+losers})
+        replay["missing_candidate_note"] = "requested but no normalized row returned; consult source failures/timeouts"
+        scanner_telemetry.prepare_snapshot(payload, decision_audit, scan_id, replay=replay)
     except Exception as exc:
         print(f"[scanner-telemetry] scan logging skipped: {exc}", file=sys.stderr)
+        scanner_trace.health("trace_failed", snapshot_id=scan_id, error_type=type(exc).__name__)
     return payload
 
 
@@ -2873,6 +2931,8 @@ def main() -> int:
         payload = build_payload(args.top)
         exit_code = 0
     except Exception as exc:  # noqa: BLE001 - the UI needs a clear live-data status
+        import scanner_trace
+        scanner_trace.health("scan_failed", error_type=type(exc).__name__, sources=scanner_trace.finish_capture())
         payload = error_payload(exc)
         exit_code = 1
 

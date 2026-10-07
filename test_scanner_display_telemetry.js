@@ -80,5 +80,17 @@ const settle = async () => { await new Promise(resolve => setImmediate(resolve))
   timers.shift()();
   await settle();
   assert.equal(requests.length, 4, "session rollover must reset visibility deduplication");
+  telemetry.configure({...payload, session_date:"2026-10-08", snapshot_id:"scan_"+"c".repeat(32)}, "");
+  const secondContainer = {querySelectorAll: () => [{...rowElement}, rowElement]};
+  telemetry.bind(secondContainer,"tr",[rows[0],rows[0]],"ranking","bullish");
+  callback([entry]);
+  timers.shift()();
+  await settle();
+  assert.equal(requests[4].body.receipts[0].display_rank,2,"new snapshot captures rank movement");
+  telemetry.trace("load_failed",{transport:"http",reason:"network_error"});
+  timers.shift()();
+  await settle();
+  assert.ok(requests[5].url.endsWith("client_events"));
+  assert.equal(requests[5].body.events[0].kind,"load_failed");
   console.log("PASS: visibility, detached rows, retries, deduplication, panel and session boundaries");
 })().catch(error => { console.error(error); process.exitCode = 1; });

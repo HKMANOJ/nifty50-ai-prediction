@@ -2536,6 +2536,10 @@
   let _scannerRetryTimer = null;
   let _scannerRetryDelay = 5000;
 
+  function scannerTrace(kind, details = {}) {
+    try { window.ScannerDisplayTelemetry?.trace(kind, details); } catch (_) {}
+  }
+
   function scannerDataStatus(message, warning = false) {
     const el = document.getElementById("scannerDataStatus");
     if (!el) return;
@@ -2552,10 +2556,14 @@
     scannerDataStatus(`${warning ? warning + " · " : ""}${mode} · Scan generated ${when} · ${payload?.bullish?.length || 0} bullish / ${payload?.bearish?.length || 0} bearish`, Boolean(warning || stale || (old && isMarketHours())));
   }
 
-  function renderAll(payload) {
+  function renderAll(payload, transport = "http") {
+    const renderStart = performance.now();
     if (!payload || !payload.ok || !Array.isArray(payload.bullish) || !Array.isArray(payload.bearish)) return false;
     // An HTTP response started before a newer push must not roll the screen back.
-    if (_lastScannerPayload && Date.parse(payload.generated_at_ist) < Date.parse(_lastScannerPayload.generated_at_ist)) return true;
+    if (_lastScannerPayload && Date.parse(payload.generated_at_ist) < Date.parse(_lastScannerPayload.generated_at_ist)) {
+      scannerTrace("snapshot_ignored", {snapshot_id:payload.snapshot_id, transport, reason:"older_snapshot"});
+      return true;
+    }
 
     // Never wipe a populated dashboard with an empty scan (NSE/Yahoo hiccup,
     // rate-limit, cold cache). Keep the last good list on screen instead.
@@ -2563,6 +2571,7 @@
     const hadRows = (_currentBullish && _currentBullish.length) || (_currentBearish && _currentBearish.length);
     if (!hasRows && hadRows && (Date.now() - _lastGoodRenderAt) < 10 * 60 * 1000) {
       scannerSnapshotStatus(_lastScannerPayload, "Empty scan received; retaining previous snapshot");
+      scannerTrace("snapshot_ignored", {snapshot_id:payload.snapshot_id, transport, reason:"empty_kept_previous"});
       return true;
     }
     if (hasRows) _lastGoodRenderAt = Date.now();
@@ -2879,6 +2888,11 @@
     _lastScannerPayload = payload;
     _sectorPayload = payload;
     scannerSnapshotStatus(payload);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (_lastScannerPayload?.snapshot_id === payload.snapshot_id)
+        scannerTrace("snapshot_rendered", {snapshot_id:payload.snapshot_id, transport,
+          delivery_id:payload._delivery?.delivery_id, elapsed_ms:Math.round(performance.now()-renderStart)});
+    }));
     return true;
   }
 
@@ -2911,6 +2925,8 @@
     _scannerRetryTimer = null;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 95000);
+    const fetchStarted = performance.now();
+    let failureReason = "network_error";
     if (refreshBtn) {
       refreshBtn.disabled = true;
       refreshBtn.textContent = refresh ? "Fetching NSE..." : "Loading...";
@@ -2922,12 +2938,18 @@
         cache: "no-store",
         signal: controller.signal
       });
-      if (!res.ok) throw new Error(`Scanner HTTP ${res.status}`);
+      if (!res.ok) { failureReason = "http_error"; throw new Error(`Scanner HTTP ${res.status}`); }
+      failureReason = "invalid_payload";
       const data = await res.json();
-      if (!renderAll(data)) throw new Error("Scanner response unavailable or invalid");
+      if (data.snapshot_id) scannerTrace("snapshot_received", {snapshot_id:data.snapshot_id,
+        delivery_id:data._delivery?.delivery_id, transport:"http", elapsed_ms:Math.round(performance.now()-fetchStarted)});
+      failureReason = "render_exception";
+      if (!renderAll(data)) { failureReason = "invalid_payload"; throw new Error("Scanner response unavailable or invalid"); }
       _scannerRetryDelay = 5000;
     } catch (e) {
       console.error("Load failed:", e);
+      scannerTrace(failureReason === "render_exception" ? "render_failed" : "load_failed", {transport:"http", reason:e.name === "AbortError" ? "timeout" : failureReason,
+        elapsed_ms:Math.round(performance.now()-fetchStarted)});
       if (_lastScannerPayload) scannerSnapshotStatus(_lastScannerPayload, "Connection/load failed — retrying; previous data retained");
       else scannerDataStatus("Scanner data unavailable — retrying automatically. No verified snapshot loaded.", true);
       // GET retries only: reconnecting a phone must not trigger repeated NSE scans.
@@ -3225,6 +3247,7 @@
 
 
     _wsClient.onopen = () => {
+      scannerTrace("ws_connected", {transport:"websocket"});
       if (dot) dot.style.background = "#16a34a";
       if (text) text.textContent = "WS: Connected";
       if (badge) {
@@ -3262,7 +3285,9 @@
           }
         } else if (msg.type === "scanner_update" && msg.payload) {
           // Instant full dashboard update from 5-minute auto-scanner push
-          renderAll(msg.payload);
+          scannerTrace("snapshot_received", {snapshot_id:msg.payload.snapshot_id,
+            delivery_id:msg.payload._delivery?.delivery_id, transport:"websocket"});
+          renderAll(msg.payload, "websocket");
         } else if (msg.type === "index_update" && msg.index_context) {
           const n50 = msg.index_context["NIFTY 50"] || {};
           const bnk = msg.index_context["NIFTY BANK"] || {};
@@ -3281,10 +3306,12 @@
         }
       } catch (err) {
         console.warn("[WS message parse error]", err);
+        scannerTrace("render_failed", {transport:"websocket", reason:"render_exception"});
       }
     };
 
     _wsClient.onclose = () => {
+      scannerTrace("ws_disconnected", {transport:"websocket"});
       clearInterval(_wsHeartbeat);
       if (dot) dot.style.background = "#f59e0b";
       if (text) text.textContent = "WS: Reconnecting...";
