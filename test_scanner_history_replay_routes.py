@@ -59,18 +59,21 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(self.payload(h)["error"], "replay_disabled")
         service.sessions.assert_not_called()
 
-    def test_production_needs_valid_token_and_configured_origin(self):
+    def test_production_public_reads_need_no_token_cookie_or_login(self):
         for supplied in (None, "Bearer wrong", TOKEN):
             with self.subTest(supplied=supplied):
                 h, service = self.run_get(env=self.production_env(), authorization=supplied)
-                self.assertEqual(h.status, 401)
-                service.sessions.assert_not_called()
-        h, service = self.run_get(env=self.production_env(), authorization="Bearer "+TOKEN, origin=ORIGIN, site="same-origin")
+                self.assertEqual(h.status, 200)
+                service.sessions.assert_called_once()
+                self.assertNotIn("Set-Cookie", h.sent_headers)
+        env = self.production_env()
+        del env["SCANNER_REPLAY_TOKEN"]
+        h, service = self.run_get(env=env, origin=ORIGIN, site="same-origin")
         self.assertEqual(h.status, 200)
         service.sessions.assert_called_once()
         h._send_json.assert_not_called()
 
-    def test_loopback_alone_cannot_bypass_production_auth(self):
+    def test_loopback_alone_cannot_bypass_production_origin_configuration(self):
         h, _ = self.run_get(env=self.production_env(), host="127.0.0.1:8003")
         self.assertEqual(h.status, 503)
         self.assertEqual(self.payload(h)["error"], "replay_origin_not_configured")
@@ -86,14 +89,21 @@ class RouteTests(unittest.TestCase):
                 self.assertEqual(h.status, 403)
                 service.sessions.assert_not_called()
 
-    def test_duplicate_host_and_auth_headers_rejected(self):
-        for name, value, expected in (("Host", "evil.example", 403), ("Authorization", "Bearer other", 401)):
-            h, service = self.handler("/api/scanner_replay/sessions", authorization="Bearer "+TOKEN)
-            h.headers[name] = value
-            with patch.dict(os.environ, self.production_env(), clear=True):
-                h.do_GET()
-            self.assertEqual(h.status, expected)
-            service.sessions.assert_not_called()
+    def test_duplicate_host_headers_rejected(self):
+        h, service = self.handler("/api/scanner_replay/sessions")
+        h.headers["Host"] = "evil.example"
+        with patch.dict(os.environ, self.production_env(), clear=True):
+            h.do_GET()
+        self.assertEqual(h.status, 403)
+        service.sessions.assert_not_called()
+
+    def test_public_reads_still_check_origin_and_fetch_site(self):
+        for opts in ({"origin": "https://evil.example"}, {"site": "cross-site"},
+                     {"site": "same-site"}):
+            with self.subTest(opts=opts):
+                h, service = self.run_get(env=self.production_env(), **opts)
+                self.assertEqual(h.status, 403)
+                service.sessions.assert_not_called()
 
     def test_no_wildcard_cors_and_response_flag_resets(self):
         h, _ = self.run_get(preview=True)
@@ -133,7 +143,7 @@ class RouteTests(unittest.TestCase):
             self.assertEqual(h.wfile.getvalue().strip(), b"")
             self.assertNotIn("Access-Control-Allow-Origin", h.sent_headers)
 
-    def test_private_static_files_cannot_bypass_archive_auth_get_or_head(self):
+    def test_private_static_files_never_become_public_archive_get_or_head(self):
         paths=("/.env", "/%2eenv", "/.git/config", "/inputs/scanner_telemetry/2026-10-21.jsonl",
                "/inputs/scanner_telemetry/", "/inputs/%73canner_telemetry/x.json", "/foo/../inputs/scanner_telemetry/x",
                "/scanner_history_replay.py", "/venv/lib/site.py", "/__pycache__/x.pyc",
@@ -160,6 +170,32 @@ class RouteTests(unittest.TestCase):
         h.do_GET()
         self.assertEqual(h.status, 503)
         self.assertNotIn("secret", h.wfile.getvalue().decode())
+
+    def test_public_archive_busy_fails_without_reading_source(self):
+        slots = Mock()
+        slots.acquire.return_value = False
+        with patch.object(routes, "READ_SLOTS", slots):
+            h, service = self.run_get(env=self.production_env())
+        self.assertEqual(h.status, 503)
+        self.assertEqual(self.payload(h)["error"], "replay_busy")
+        self.assertFalse(service.mock_calls)
+        slots.acquire.assert_called_once_with(blocking=False)
+        slots.release.assert_not_called()
+
+    def test_public_archive_slot_is_released_on_success_invalid_route_or_failure(self):
+        for path, fail, expected in (("/api/scanner_replay/sessions", False, 200),
+                                      ("/api/scanner_replay/unknown", False, 400),
+                                      ("/api/scanner_replay/sessions", True, 503)):
+            slots = Mock()
+            slots.acquire.return_value = True
+            h, service = self.handler(path)
+            if fail:
+                service.sessions.side_effect = RuntimeError("private driver detail")
+            with patch.object(routes, "READ_SLOTS", slots), \
+                    patch.dict(os.environ, self.production_env(), clear=True):
+                h.do_GET()
+            self.assertEqual(h.status, expected)
+            slots.release.assert_called_once()
 
 
 if __name__ == "__main__":

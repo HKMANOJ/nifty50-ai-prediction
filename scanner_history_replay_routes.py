@@ -1,11 +1,11 @@
 """Isolated read-only history routes. Never use the live delivery JSON helper.
 
-Production requires explicit enablement, a dedicated read DSN and an access
-token. A server-injected local preview is loopback-only, never a DB fallback.
+When enabled, the projected scanner archive is public: no access key or browser
+session is required. A dedicated read DSN remains server-only. A server-injected
+local preview is loopback-only, never a DB fallback.
 """
 from __future__ import annotations
 
-import hmac
 from http import HTTPStatus
 import json
 import os
@@ -20,6 +20,7 @@ ASSETS = {"/scanner_replay.html": ("scanner_replay.html", "text/html; charset=ut
           "/scanner_replay.js": ("scanner_replay.js", "text/javascript; charset=utf-8"),
           "/scanner_replay.css": ("scanner_replay.css", "text/css; charset=utf-8")}
 LOCK = threading.Lock()
+READ_SLOTS = threading.BoundedSemaphore(4)
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; "
        "img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
 
@@ -33,7 +34,7 @@ def _canonical_path(path):
 
 
 def deny_private_static(handler, parsed):
-    """Do not let generic static GET/HEAD bypass archive access controls.
+    """Keep raw telemetry/private files out of the public archive projection.
 
     Existing public input snapshots remain available. Raw telemetry, hidden
     paths and Python sources are not public website assets.
@@ -80,6 +81,7 @@ def _header_values(headers, name):
 
 
 def _access(handler):
+    """Deployment/origin checks, not user authentication: this API is public."""
     from scanner_history_replay import ReplayError
     preview = getattr(handler.server, "scanner_replay_preview", False) is True
     if not preview and os.environ.get("SCANNER_REPLAY_ENABLED") != "1":
@@ -105,15 +107,6 @@ def _access(handler):
             raise ReplayError("replay_origin_not_configured", 503)
     if origins and (len(origins) != 1 or origins[0] != expected_origin):
         raise ReplayError("replay_origin_rejected", 403)
-    if preview:
-        return
-    token = os.environ.get("SCANNER_REPLAY_TOKEN", "")
-    if len(token) < 24:
-        raise ReplayError("replay_access_not_configured", 503)
-    values = _header_values(handler.headers, "Authorization")
-    supplied = values[0] if len(values) == 1 else ""
-    if not hmac.compare_digest(supplied.encode(), ("Bearer " + token).encode()):
-        raise ReplayError("replay_auth_required", 401)
 
 
 def _service(handler):
@@ -144,14 +137,19 @@ def handle_get(handler, parsed):
             respond(handler, HTTPStatus.OK, asset.read_bytes(), mime)
             return True
         _access(handler)
-        if path == PREFIX + "/sessions" and not params:
-            payload = _service(handler).sessions()
-        elif path == PREFIX + "/snapshots" and set(params) == {"date"}:
-            payload = _service(handler).snapshots(params["date"][0])
-        elif path == PREFIX + "/snapshot" and set(params) == {"date", "snapshot_id"}:
-            payload = _service(handler).snapshot(params["date"][0], params["snapshot_id"][0])
-        else:
-            raise ReplayError("invalid_replay_parameters", 400)
+        if not READ_SLOTS.acquire(blocking=False):
+            raise ReplayError("replay_busy", 503)
+        try:
+            if path == PREFIX + "/sessions" and not params:
+                payload = _service(handler).sessions()
+            elif path == PREFIX + "/snapshots" and set(params) == {"date"}:
+                payload = _service(handler).snapshots(params["date"][0])
+            elif path == PREFIX + "/snapshot" and set(params) == {"date", "snapshot_id"}:
+                payload = _service(handler).snapshot(params["date"][0], params["snapshot_id"][0])
+            else:
+                raise ReplayError("invalid_replay_parameters", 400)
+        finally:
+            READ_SLOTS.release()
         respond(handler, HTTPStatus.OK, payload)
     except ReplayError as exc:
         respond(handler, exc.status, {"ok": False, "error": exc.code, "historical": True})
