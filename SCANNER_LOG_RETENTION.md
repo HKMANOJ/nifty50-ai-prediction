@@ -16,7 +16,7 @@ The normal app server starts an app-scoped background maintenance worker at
 startup on the intended Render production hostname
 `nifty50application.onrender.com`. It runs independently of scanner requests,
 without a new OS daemon, Codex automation, database extension or public deletion
-endpoint. It does not wait for a browser to open Replay. No new environment value
+endpoint. It does not depend on a browser session. No new environment value
 is required for that production service.
 
 Default-off in local checkouts, other services and PR previews prevents a local
@@ -26,8 +26,8 @@ non-preview deployment; PR previews always remain disabled. Invalid values fail
 closed. Do not enable this in a development app pointed at production unless
 that destructive maintenance is intentional.
 
-The worker uses the existing server-side writer `DATABASE_URL`, not the public
-Replay reader, its credentials or a process-global connection. The writer must
+The worker uses the existing server-side writer `DATABASE_URL`, not an archive
+reader's credentials or a process-global connection. The writer must
 already have DELETE permission on the table. No role/privilege changes occur.
 TLS, connection/statement/lock limits, an advisory transaction lock and small
 committed batches limit interference with live writes. A pass deletes at most
@@ -56,7 +56,7 @@ python3 scanner_log_retention.py --apply
 
 Do not run apply until the database target and expired coverage are reviewed.
 This code does not export a recoverable backup. Deleted records disappear from
-Replay and online analysis; separate local research artifacts remain, but they
+online analysis; separate local research artifacts remain, but they
 are not guaranteed to be a complete database backup.
 
 ## Storage and limitations
@@ -77,6 +77,5 @@ Sources: [PostgreSQL vacuuming](https://www.postgresql.org/docs/current/routine-
 [Neon branch storage](https://neon.com/docs/manage/branches),
 [Render default environment values](https://render.com/docs/environment-variables).
 
-The separate Replay timeout/connection diagnosis is not automatically resolved
-by retention. It still requires its own tested archive-reader fix if failures
-continue.
+The separate production Replay UI and API were rolled back at the user's
+request. Retention remains enabled independently; it has no Replay dependency.

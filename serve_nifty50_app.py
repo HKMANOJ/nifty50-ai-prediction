@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import posixpath
 import subprocess
 import sys
 import threading
@@ -16,7 +17,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parent
@@ -291,34 +292,39 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         sys.stdout.write("%s - - [%s] %s\n" % (self.client_address[0], self.log_date_time_string(), format % args))
 
     def end_headers(self) -> None:
-        if not getattr(self, "_history_replay_response", False):
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        try:
-            super().end_headers()
-        finally:
-            self._history_replay_response = False
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        super().end_headers()
+
+    def _deny_private_static(self, path: str) -> bool:
+        """Keep existing source/secret/raw-log protection without the Replay feature."""
+        decoded = unquote(path, errors="replace")
+        normalized = "/" + posixpath.normpath(decoded).lstrip("/")
+        lower = normalized.lower()
+        private = (
+            any(part.startswith(".") and part not in (".", "..") for part in decoded.split("/"))
+            or lower == "/inputs/scanner_telemetry"
+            or lower.startswith("/inputs/scanner_telemetry/")
+            or any(part in ("__pycache__", "venv", ".venv") for part in normalized.split("/"))
+            or lower.endswith((".py", ".pyc", ".pyo"))
+        )
+        if private:
+            self.send_error(HTTPStatus.NOT_FOUND)
+        return private
 
     def do_HEAD(self) -> None:
-        from scanner_history_replay_routes import deny_private_static, handle_get
-        parsed_path = urlparse(self.path)
-        if deny_private_static(self, parsed_path) or handle_get(self, parsed_path):
-            return
-        super().do_HEAD()
+        if not self._deny_private_static(urlparse(self.path).path):
+            super().do_HEAD()
 
     def do_OPTIONS(self) -> None:
-        from scanner_history_replay_routes import reject_write
-        if reject_write(self, urlparse(self.path)):
-            return
         self.send_response(HTTPStatus.NO_CONTENT.value)
         self.send_header("Content-Length", "0")
         self.end_headers()
 
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path)
-        from scanner_history_replay_routes import deny_private_static, handle_get
-        if deny_private_static(self, parsed_path) or handle_get(self, parsed_path):
+        if self._deny_private_static(parsed_path.path):
             return
         if parsed_path.path in ("", "/"):
             self.send_response(HTTPStatus.FOUND)
@@ -441,9 +447,6 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed_path = urlparse(self.path)
-        from scanner_history_replay_routes import reject_write
-        if reject_write(self, parsed_path):
-            return
         if parsed_path.path == "/api/stock_suggestions/client_events":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
