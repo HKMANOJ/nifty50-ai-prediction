@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import posixpath
 import subprocess
 import sys
 import threading
@@ -16,7 +17,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parent
@@ -44,6 +45,28 @@ MOST_ACTIVE = ROOT / "inputs" / "most_active.latest.json"
 STOCK_SUGGESTION_SNAPSHOT = ROOT / "inputs" / "stock_suggestion_index.latest.json"
 REFRESH_LOCK = threading.Lock()
 
+# Debounce: collapse a burst of refresh requests (many tabs, reconnects, button
+# spam) into at most one real scan per MIN_SCAN_INTERVAL. Between scans, callers
+# get the last result instead of queueing another subprocess.
+MIN_SCAN_INTERVAL_SECONDS = 45.0
+_SCAN_STATE: dict[str, Any] = {"ts": 0.0, "payload": None, "signature": None}
+
+
+def _payload_has_signal(payload: Any) -> bool:
+    return bool(
+        isinstance(payload, dict)
+        and payload.get("ok")
+        and (payload.get("bullish") or payload.get("bearish"))
+    )
+
+
+def _payload_signature(payload: dict[str, Any]) -> str:
+    rows = list(payload.get("bullish") or []) + list(payload.get("bearish") or [])
+    return "|".join(
+        f"{r.get('symbol')}:{r.get('five_min_status')}:{r.get('is_breakout')}:{r.get('one_side_rally_score')}"
+        for r in rows
+    )
+
 IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
 def get_ist_now() -> datetime:
@@ -65,46 +88,134 @@ LAST_AUTO_SCAN_INFO: dict[str, Any] = {
     "status": "idle",
     "next_run_ist": None,
 }
+# Last automatic scan of the day is at this clock time - after it, the
+# auto-scanner stops entirely (even though NSE itself stays open till 15:30).
+# A manual refresh from the UI still works; this only stops the unattended
+# background loop.
+AUTO_SCAN_LAST_RUN_MINUTES = 14 * 60 + 45  # 2:45 PM IST
+
+# Yesterday's full scan results otherwise sit on screen looking "live" from
+# market close until the first real 9:15+ scan completes (30+ seconds in).
+# Pre-market, clear everything so the dashboard honestly shows "getting
+# ready" instead of stale numbers dressed up as current.
+PREMARKET_RESET_START_MINUTES = 9 * 60       # 9:00 AM IST
+PREMARKET_RESET_END_MINUTES = 9 * 60 + 15    # 9:15 AM IST - real market open
+_premarket_reset_date: str | None = None
+
+
+def _run_premarket_reset_if_due(now_ist: datetime) -> None:
+    global _premarket_reset_date
+    current_minutes = now_ist.hour * 60 + now_ist.minute
+    today_str = now_ist.date().isoformat()
+    if now_ist.weekday() >= 5:  # weekend - nothing to get ready for
+        return
+    # Tightly bounded to the 9:00-9:15 pre-market window only (not "anytime
+    # before 2:45 PM") - a mid-day container restart resets the in-memory
+    # _premarket_reset_date flag too, and this must NOT be able to fire again
+    # after real market open and wipe intraday data that's already been
+    # collected for the day.
+    if current_minutes < PREMARKET_RESET_START_MINUTES or current_minutes >= PREMARKET_RESET_END_MINUTES:
+        return
+    if _premarket_reset_date == today_str:
+        return
+    try:
+        exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
+        res = run_command(
+            [exec_py, "-c",
+             "import json, sys; from datetime import datetime; "
+             "from zoneinfo import ZoneInfo; import stock_suggestion_index as ssi; "
+             "print(json.dumps(ssi.build_premarket_reset_payload(datetime.now(ZoneInfo('Asia/Kolkata')))))"],
+            timeout=30,
+        )
+        empty_payload = res.get("stdout") if isinstance(res.get("stdout"), dict) else None
+        if empty_payload:
+            STOCK_SUGGESTION_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+            STOCK_SUGGESTION_SNAPSHOT.write_text(json.dumps(empty_payload, indent=2), encoding="utf-8")
+            _SCAN_STATE["payload"] = empty_payload
+            _SCAN_STATE["signature"] = None
+            _SCAN_STATE["ts"] = time.time()
+            # Otherwise the Auto-Scan badge keeps showing yesterday's last-run
+            # time/status until the first real 9:15+ scan overwrites it.
+            LAST_AUTO_SCAN_INFO["status"] = "pre_market"
+            LAST_AUTO_SCAN_INFO["last_run_ist"] = None
+            LAST_AUTO_SCAN_INFO["last_duration_seconds"] = None
+            LAST_AUTO_SCAN_INFO["next_run_ist"] = None
+            try:
+                from websocket_server import broadcast_scanner_update_sync
+                broadcast_scanner_update_sync(empty_payload)
+            except Exception as bc_err:
+                print(f"[PREMARKET-RESET] broadcast skipped: {bc_err}")
+            print(f"[{now_ist.strftime('%H:%M:%S IST')}] [PREMARKET-RESET] Cleared yesterday's picks for {today_str}")
+            _premarket_reset_date = today_str
+    except Exception as exc:
+        print(f"[PREMARKET-RESET ERROR] {exc}")
+
 
 def start_background_auto_scanner(interval_seconds: int = 300) -> None:
     """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 5 min during market hours."""
     def _loop() -> None:
+        import scanner_trace
+        scanner_trace.submit_health("scheduler_started", interval_seconds=interval_seconds,
+                                    auto_scan_cutoff_ist="14:45", process_id=os.getpid())
         time.sleep(5)  # Grace period on boot
         while True:
             try:
                 now_ist = get_ist_now()
-                if is_ist_market_hours(now_ist):
+                current_minutes = now_ist.hour * 60 + now_ist.minute
+                _run_premarket_reset_if_due(now_ist)
+                if is_ist_market_hours(now_ist) and current_minutes <= AUTO_SCAN_LAST_RUN_MINUTES:
                     if REFRESH_LOCK.acquire(blocking=False):
                         LAST_AUTO_SCAN_INFO["status"] = "running"
                         scan_start = time.time()
+                        attempt_id = scanner_trace.log.new_scan()
+                        scanner_trace.submit_health("scheduled_scan_started", attempt_id=attempt_id)
                         print(f"[{now_ist.strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Executing 5-minute background market scan...")
                         try:
                             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
                             res = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
                             dur = round(time.time() - scan_start, 1)
-                            is_ok = res.get("ok", False)
+                            scan_payload = res.get("stdout") if isinstance(res.get("stdout"), dict) else {}
+                            has_signal = _payload_has_signal(scan_payload)
+                            scanner_trace.submit_health("scheduled_scan_finished", attempt_id=attempt_id,
+                                snapshot_id=scan_payload.get("snapshot_id"), duration_seconds=dur,
+                                subprocess_ok=res.get("ok"), has_signal=has_signal)
+                            _SCAN_STATE["ts"] = time.time()
                             LAST_AUTO_SCAN_INFO["last_run_ist"] = get_ist_now().strftime("%I:%M:%S %p IST")
                             LAST_AUTO_SCAN_INFO["last_duration_seconds"] = dur
-                            LAST_AUTO_SCAN_INFO["status"] = "success" if is_ok else "failed"
-                            print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Scan completed in {dur}s (ok={is_ok})")
-                            # Real-time WebSocket push to all connected browsers
-                            if is_ok and isinstance(res.get("stdout"), dict):
-                                try:
-                                    from websocket_server import broadcast_scanner_update_sync
-                                    broadcast_scanner_update_sync(res["stdout"])
-                                except Exception as bc_err:
-                                    print(f"[WS BROADCAST ERROR] {bc_err}")
+                            LAST_AUTO_SCAN_INFO["status"] = "success" if has_signal else "failed"
+                            print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Scan completed in {dur}s (signal={has_signal})")
+                            # Push to browsers only when the scan has real data AND
+                            # it changed - prevents blank/flicker broadcast storms.
+                            if has_signal:
+                                _SCAN_STATE["payload"] = scan_payload
+                                sig = _payload_signature(scan_payload)
+                                if sig != _SCAN_STATE.get("signature"):
+                                    _SCAN_STATE["signature"] = sig
+                                    try:
+                                        from websocket_server import broadcast_scanner_update_sync
+                                        broadcast_scanner_update_sync(scan_payload)
+                                    except Exception as bc_err:
+                                        print(f"[WS BROADCAST ERROR] {bc_err}")
                         except Exception as scan_err:
+                            scanner_trace.submit_health("scheduled_scan_failed", attempt_id=attempt_id,
+                                                        error_type=type(scan_err).__name__)
                             print(f"[AUTO-SCANNER ERROR] {scan_err}")
                             LAST_AUTO_SCAN_INFO["status"] = f"error: {scan_err}"
                         finally:
                             REFRESH_LOCK.release()
                     else:
+                        scanner_trace.submit_health("scheduled_scan_skipped", reason="refresh_lock_busy")
                         print("[AUTO-SCANNER] Skipping interval: manual refresh or lock is currently active.")
 
                     next_run = get_ist_now() + timedelta(seconds=interval_seconds)
                     LAST_AUTO_SCAN_INFO["next_run_ist"] = next_run.strftime("%I:%M:%S %p IST")
                     time.sleep(interval_seconds)
+                elif is_ist_market_hours(now_ist):
+                    # Past our 2:45 PM cutoff but NSE itself is still open till 15:30 -
+                    # the auto-scanner is done for the day; no more background scans.
+                    LAST_AUTO_SCAN_INFO["status"] = "scan_window_closed"
+                    LAST_AUTO_SCAN_INFO["next_run_ist"] = None
+                    time.sleep(30)
                 else:
                     LAST_AUTO_SCAN_INFO["status"] = "market_closed"
                     time.sleep(30)
@@ -186,6 +297,26 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         super().end_headers()
 
+    def _deny_private_static(self, path: str) -> bool:
+        """Keep existing source/secret/raw-log protection without the Replay feature."""
+        decoded = unquote(path, errors="replace")
+        normalized = "/" + posixpath.normpath(decoded).lstrip("/")
+        lower = normalized.lower()
+        private = (
+            any(part.startswith(".") and part not in (".", "..") for part in decoded.split("/"))
+            or lower == "/inputs/scanner_telemetry"
+            or lower.startswith("/inputs/scanner_telemetry/")
+            or any(part in ("__pycache__", "venv", ".venv") for part in normalized.split("/"))
+            or lower.endswith((".py", ".pyc", ".pyo"))
+        )
+        if private:
+            self.send_error(HTTPStatus.NOT_FOUND)
+        return private
+
+    def do_HEAD(self) -> None:
+        if not self._deny_private_static(urlparse(self.path).path):
+            super().do_HEAD()
+
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT.value)
         self.send_header("Content-Length", "0")
@@ -193,6 +324,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path)
+        if self._deny_private_static(parsed_path.path):
+            return
         if parsed_path.path in ("", "/"):
             self.send_response(HTTPStatus.FOUND)
             self.send_header("Location", "/MLAIStockV2.html")
@@ -314,6 +447,31 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed_path = urlparse(self.path)
+        if parsed_path.path == "/api/stock_suggestions/client_events":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 64 * 1024:
+                    raise ValueError("invalid event body length")
+                from scanner_telemetry import record_client_events
+                self._send_json(HTTPStatus.OK, record_client_events(self._read_json_body()))
+            except (ValueError, TypeError):
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid_client_events"})
+            except Exception:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "trace_logging_unavailable"})
+            return
+        if parsed_path.path == "/api/stock_suggestions/display_receipts":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0 or length > 128 * 1024:
+                    raise ValueError("invalid receipt body length")
+                from scanner_telemetry import record_display_receipts
+                result = record_display_receipts(self._read_json_body())
+                self._send_json(HTTPStatus.OK, result)
+            except (ValueError, TypeError) as exc:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            except Exception:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "receipt_logging_unavailable"})
+            return
         if parsed_path.path == "/api/ai_options":
             self._record_ai_option()
             return
@@ -434,13 +592,31 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         }
 
     def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
+        delivery = None
+        if payload.get("snapshot_id") and "bullish" in payload:
+            import uuid
+            delivery = {"delivery_id": "delivery_"+uuid.uuid4().hex, "transport": "http",
+                        "sent_at_ist": get_ist_now().isoformat()}
+            payload = {**payload, "_delivery": delivery}
         encoded = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(status.value)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(encoded)
+        try:
+            self.wfile.write(encoded)
+        except Exception as exc:
+            if delivery:
+                import scanner_trace
+                scanner_trace.submit_health("delivery_failed", snapshot_id=payload["snapshot_id"],
+                                            **delivery, error_type=type(exc).__name__)
+            raise
+        if delivery:
+            import scanner_trace
+            scanner_trace.submit_health("delivery_written", snapshot_id=payload["snapshot_id"],
+                                        **delivery, status_code=status.value, byte_count=len(encoded),
+                                        note="server socket write; browser acknowledgement required")
 
     def _serve_most_active(self) -> None:
         """Serve the Most Active Puts/Index/Volume data."""
@@ -472,40 +648,65 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
         today_str = now_ist.date().isoformat()
 
-        if STOCK_SUGGESTION_SNAPSHOT.exists():
+        # Prefer the freshest thing we already have (in-memory scan, else disk),
+        # and serve it immediately. A GET must never block on a live scan - that
+        # is what caused every tab load to trigger a scan + broadcast storm.
+        best = None
+        if _payload_has_signal(_SCAN_STATE.get("payload")):
+            best = dict(_SCAN_STATE["payload"])
+        elif STOCK_SUGGESTION_SNAPSHOT.exists():
             try:
-                payload = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
-                snapshot_date = payload.get("session_date")
-                # Attach live auto-scanner telemetry
-                payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
-                # If snapshot is from previous date or marked failed, auto-refresh live
-                if payload.get("ok") and snapshot_date == today_str:
-                    self._send_json(HTTPStatus.OK, payload)
-                    return
-                status, refreshed = self._refresh_stock_suggestions_payload()
-                refreshed["_auto_refresh_reason"] = "stale_session_auto_refreshed"
-                refreshed["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
-                self._send_json(status, refreshed)
-                return
-            except Exception as e:
-                self._send_json(
-                    HTTPStatus.INTERNAL_SERVER_ERROR,
-                    {
-                        "ok": False,
-                        "error": "stock_suggestions_load_failed",
-                        "message": f"Failed to load stock suggestion data: {str(e)}",
-                    },
-                )
-                return
+                best = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
+            except Exception:
+                best = None
 
+        if _payload_has_signal(best):
+            best["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
+            if best.get("session_date") != today_str:
+                best["_auto_refresh_reason"] = "stale_session_background_refresh"
+                self._kick_background_refresh()
+            self._send_json(HTTPStatus.OK, best)
+            return
+
+        # Nothing usable on hand - do one synchronous (debounced) scan.
         status, payload = self._refresh_stock_suggestions_payload()
-        payload["_auto_refresh_reason"] = "snapshot_missing"
+        payload["_auto_refresh_reason"] = "no_snapshot"
         payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
         self._send_json(status, payload)
 
+    def _kick_background_refresh(self) -> None:
+        """Fire a debounced refresh in a daemon thread (never blocks the GET)."""
+        def _run():
+            try:
+                self._refresh_stock_suggestions_payload()
+            except Exception:
+                pass
+        threading.Thread(target=_run, name="BgSuggestionRefresh", daemon=True).start()
+
+    def _cached_or_snapshot(self) -> dict[str, Any] | None:
+        """Best available payload without running a scan: in-memory last result,
+        else the on-disk snapshot."""
+        if _payload_has_signal(_SCAN_STATE.get("payload")):
+            return dict(_SCAN_STATE["payload"])
+        if STOCK_SUGGESTION_SNAPSHOT.exists():
+            try:
+                return json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+        return None
+
     def _refresh_stock_suggestions_payload(self) -> tuple[HTTPStatus, dict[str, Any]]:
-        """Refresh only the new stock suggestion index, independent of old NIFTY flows."""
-        if not REFRESH_LOCK.acquire(blocking=False):
+        """Refresh the stock suggestion index, debounced and non-blocking-safe."""
+        now = time.time()
+
+        # Debounce: within the cooldown, or if a scan is already running, hand
+        # back the last good result instead of launching another subprocess.
+        too_soon = (now - _SCAN_STATE["ts"]) < MIN_SCAN_INTERVAL_SECONDS
+        if too_soon or not REFRESH_LOCK.acquire(blocking=False):
+            cached = self._cached_or_snapshot()
+            if cached is not None:
+                cached["_refresh"] = {"debounced": True, "reason": "cooldown" if too_soon else "scan_in_progress"}
+                return HTTPStatus.OK, cached
             return HTTPStatus.CONFLICT, {
                 "ok": False,
                 "error": "refresh_in_progress",
@@ -515,6 +716,15 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         try:
             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
             result = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
+            import scanner_trace
+            output = result.get("stdout") if isinstance(result.get("stdout"), dict) else {}
+            scanner_trace.submit_health("requested_scan_finished", snapshot_id=output.get("snapshot_id"),
+                subprocess_ok=result.get("ok"), duration_seconds=result.get("duration_seconds"))
+            _SCAN_STATE["ts"] = time.time()
+        except Exception as exc:
+            import scanner_trace
+            scanner_trace.submit_health("requested_scan_failed", error_type=type(exc).__name__)
+            raise
         finally:
             REFRESH_LOCK.release()
 
@@ -525,14 +735,29 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "duration_seconds": result["duration_seconds"],
                 "stderr": result.get("stderr"),
             }
-            # Real-time WebSocket push to all open tabs
-            try:
-                from websocket_server import broadcast_scanner_update_sync
-                broadcast_scanner_update_sync(payload)
-            except Exception:
-                pass
-            status = HTTPStatus.OK if payload.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE
-            return status, payload
+
+            if _payload_has_signal(payload):
+                _SCAN_STATE["payload"] = payload
+                signature = _payload_signature(payload)
+                # Only push to open tabs when the scan actually has data AND
+                # something changed - stops the blank/flicker broadcast storm.
+                if signature != _SCAN_STATE.get("signature"):
+                    _SCAN_STATE["signature"] = signature
+                    try:
+                        from websocket_server import broadcast_scanner_update_sync
+                        broadcast_scanner_update_sync(payload)
+                    except Exception:
+                        pass
+                return HTTPStatus.OK, payload
+
+            # Empty / failed scan: never broadcast it, never return blank -
+            # fall back to the last good result if we have one.
+            cached = self._cached_or_snapshot()
+            if _payload_has_signal(cached):
+                cached["_refresh"] = {"ok": False, "kept_last_good": True,
+                                      "scan_error": payload.get("message") or payload.get("error")}
+                return HTTPStatus.OK, cached
+            return HTTPStatus.SERVICE_UNAVAILABLE, payload
 
         return HTTPStatus.INTERNAL_SERVER_ERROR, {
             "ok": False,
@@ -559,17 +784,31 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 })
                 return
             
+            # This endpoint fetches 5 DAYS of candles (for the "5-Day Historical
+            # Candles" chart toggle), but PMH/PML/day-high/day-low are about the
+            # CURRENT session only - restrict to the most recent trading day's
+            # candles before computing them, else candles[:6] silently means
+            # "the opening range from 5 days ago" instead of today's.
+            from zoneinfo import ZoneInfo as _ZoneInfo
+            _ist = _ZoneInfo("Asia/Kolkata")
+            last_day = datetime.fromtimestamp(candles[-1]["timestamp"], tz=_ist).date()
+            today_candles = [
+                c for c in candles
+                if datetime.fromtimestamp(c["timestamp"], tz=_ist).date() == last_day
+            ] or candles
+
             # Compute PDH (Prior Day High), PDL (Prior Day Low), Open, High, Low
-            opens = [c["open"] for c in candles if c.get("open") is not None]
-            highs = [c["high"] for c in candles if c.get("high") is not None]
-            lows = [c["low"] for c in candles if c.get("low") is not None]
+            opens = [c["open"] for c in today_candles if c.get("open") is not None]
+            highs = [c["high"] for c in today_candles if c.get("high") is not None]
+            lows = [c["low"] for c in today_candles if c.get("low") is not None]
             closes = [c["close"] for c in candles if c.get("close") is not None]
             volumes = [c["volume"] for c in candles if c.get("volume") is not None]
 
             # Morning opening range (first 3 to 6 candles e.g. 09:15 - 09:45)
-            base_count = min(len(candles), 6)
-            orb_high = max(c["high"] for c in candles[:base_count]) if candles else None
-            orb_low = min(c["low"] for c in candles[:base_count]) if candles else None
+            # of TODAY specifically, not the oldest day in the 5-day fetch.
+            base_count = min(len(today_candles), 6)
+            orb_high = max(c["high"] for c in today_candles[:base_count]) if today_candles else None
+            orb_low = min(c["low"] for c in today_candles[:base_count]) if today_candles else None
 
             # Calculate 9 EMA line
             ema9_series = []
@@ -894,6 +1133,18 @@ def main() -> None:
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(json.dumps({"ok": True, "url": f"http://{args.host}:{args.port}/MLAIStockV2.html"}, indent=2))
+
+    # Production-only archive maintenance, isolated from request/scanner work.
+    # Local checkouts and PR previews must not silently prune a shared database.
+    retention_stop = threading.Event()
+    retention_thread = None
+    try:
+        from scanner_log_retention import retention_enabled, start_retention_worker
+        if retention_enabled():
+            retention_thread = start_retention_worker(stop_event=retention_stop)
+    except Exception:
+        # Do not expose connection details or stop the market app on maintenance failure.
+        print("[scanner-retention] worker_start_failed", file=sys.stderr)
     
     # Launch autonomous 5-minute background auto-scanner
     start_background_auto_scanner(interval_seconds=300)
@@ -911,6 +1162,9 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nShutting down stock suggestion live server...")
     finally:
+        retention_stop.set()
+        if retention_thread is not None:
+            retention_thread.join(timeout=1)
         server.server_close()
 
 

@@ -130,13 +130,25 @@ async def ws_handler(ws: WebSocketServerProtocol) -> None:
 
 def broadcast_scanner_update_sync(payload: dict[str, Any]) -> None:
     """Thread-safe broadcast called by 5-minute auto-scanner when a new scan finishes."""
+    import scanner_trace
+    import uuid
+    from datetime import datetime
+    from scanner_telemetry import IST
     if not MAIN_LOOP or not CONNECTED_CLIENTS:
+        scanner_trace.submit_health("ws_delivery_skipped", snapshot_id=payload.get("snapshot_id"),
+                                    reason="no_loop_or_connected_clients")
         return
-    msg = json.dumps({"type": "scanner_update", "payload": payload})
+    delivery = {"delivery_id": "delivery_"+uuid.uuid4().hex, "transport": "websocket",
+                "sent_at_ist": datetime.now(IST).isoformat()}
+    msg = json.dumps({"type": "scanner_update", "payload": {**payload, "_delivery": delivery}})
 
     async def _send_all():
         if CONNECTED_CLIENTS:
-            await asyncio.gather(*[ws.send(msg) for ws in CONNECTED_CLIENTS], return_exceptions=True)
+            clients = list(CONNECTED_CLIENTS)
+            results = await asyncio.gather(*[ws.send(msg) for ws in clients], return_exceptions=True)
+            scanner_trace.submit_health("ws_delivery_completed", snapshot_id=payload.get("snapshot_id"),
+                **delivery, attempted_clients=len(clients), failed_clients=sum(isinstance(r, BaseException) for r in results),
+                note="socket send completion, not browser display")
             logger.info(f"Broadcasted 5-min scanner update to {len(CONNECTED_CLIENTS)} clients.")
 
     asyncio.run_coroutine_threadsafe(_send_all(), MAIN_LOOP)
@@ -158,13 +170,19 @@ def broadcast_index_update_sync(index_context: dict[str, Any]) -> None:
 def start_websocket_server_thread(host: str = WS_HOST, port: int = WS_PORT) -> threading.Thread:
     """Starts the WebSocket server in a background daemon thread."""
     def _run():
-        global MAIN_LOOP
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        MAIN_LOOP = loop
 
         async def _main():
-            async with websockets.serve(ws_handler, host, port):
+            global MAIN_LOOP
+            # ping_interval/ping_timeout are generous so a browser busy repainting
+            # the dashboard does not get its socket dropped (which used to cause a
+            # reconnect storm). max_queue caps a slow client's backlog.
+            async with websockets.serve(
+                ws_handler, host, port,
+                ping_interval=30, ping_timeout=90, max_queue=48, close_timeout=5,
+            ):
+                MAIN_LOOP = loop  # only publish the loop once the bind succeeded
                 logger.info(f"WebSocket push engine listening on ws://{host}:{port}")
                 asyncio.create_task(candle_streaming_loop())
                 await asyncio.Future()
@@ -172,6 +190,7 @@ def start_websocket_server_thread(host: str = WS_HOST, port: int = WS_PORT) -> t
         try:
             loop.run_until_complete(_main())
         except Exception as e:
+            MAIN_LOOP = None
             logger.error(f"WebSocket server exited: {e}")
 
     thread = threading.Thread(target=_run, name="WebSocketServerThread", daemon=True)
