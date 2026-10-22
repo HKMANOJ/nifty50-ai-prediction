@@ -1130,6 +1130,18 @@ def main() -> None:
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(json.dumps({"ok": True, "url": f"http://{args.host}:{args.port}/MLAIStockV2.html"}, indent=2))
+
+    # Production-only archive maintenance, isolated from request/scanner work.
+    # Local checkouts and PR previews must not silently prune a shared database.
+    retention_stop = threading.Event()
+    retention_thread = None
+    try:
+        from scanner_log_retention import retention_enabled, start_retention_worker
+        if retention_enabled():
+            retention_thread = start_retention_worker(stop_event=retention_stop)
+    except Exception:
+        # Do not expose connection details or stop the market app on maintenance failure.
+        print("[scanner-retention] worker_start_failed", file=sys.stderr)
     
     # Launch autonomous 5-minute background auto-scanner
     start_background_auto_scanner(interval_seconds=300)
@@ -1147,6 +1159,9 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nShutting down stock suggestion live server...")
     finally:
+        retention_stop.set()
+        if retention_thread is not None:
+            retention_thread.join(timeout=1)
         server.server_close()
 
 

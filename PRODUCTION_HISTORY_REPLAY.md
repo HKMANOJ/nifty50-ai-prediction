@@ -92,6 +92,11 @@ market-hours collection. Missing completion markers or partial batches are
 labelled unknown/incomplete. Source freshness and option profitability are not
 established by an archived ranking or its historical BO/BD candle label.
 
+The app's separate [14-calendar-day scanner-log maintenance policy](SCANNER_LOG_RETENTION.md)
+removes expired database records after deployment. Replay cannot show deleted
+sessions and does not recover them from local files or live snapshots. Its reader
+remains SELECT-only; cleanup uses a separate writer connection outside Replay.
+
 ## Safe local preview and verification
 
 The development workspace has a separate foreground loopback-only preview using
