@@ -24,29 +24,17 @@ It first filters candidates and then ranks only the valid ones.
 
 ---
 
-## 2. Hard filters currently used
+## 2. Layer 1: Independent Universe & Liquidity Filters
 
-These are active in the current implementation:
+The system screens the **entire NSE F&O universe** independently, rather than relying on external Top 20 tables:
 
-- Symbol must exist in OI data
-- Symbol must not be an index-like symbol
-- Lot size must be within allowed limit
-- Volume participation must be strong enough
-- Score must clear minimum threshold
-- Breakout structure must be valid
-- Price must hold beyond opening-range level
-- Price must be above/below previous close as applicable
-
-From the code:
-
-- `MIN_ONE_SIDE_SCORE = 65`
-- `MIN_VC_RANKING = 0.5`
-- `MAX_ALLOWED_LOT_SIZE = 1000`
-- `MIN_BULLISH_CHANGE = 0.65`
-- `MIN_BEARISH_CHANGE = -0.65`
-- `MIN_RANGE_EXTREME = 0.55`
-
-These thresholds are the minimum qualification bar before a candidate is allowed to rank.
+- **Source of Truth**: Official NSE F&O Master list (`inputs/fo_lot_sizes.csv`) with ~205 underlyings.
+- **Lot Size Gate**: `MAX_ALLOWED_LOT_SIZE = 650` (filters out giant illiquid contracts, keeping liquid stocks).
+- **No Arbitrary 20-Row Cutoff**: The scanner inspects all qualified F&O securities. A stock down -2.5% will never vanish just because other stocks pushed it to rank 21 on NSE.
+- **Decoupled OI Requirement**: OI data enriches the score (+20 pts for buildup/liquidation), but missing an external "OI Spurt" flag no longer eliminates a high-volume stock.
+- **Index Exclusions**: Index symbols (`NIFTY`, `BANKNIFTY`, `FINNIFTY`) are excluded from stock lists.
+- **Liquidity Filter**: `MIN_VC_RANKING = 0.5` (Volume Confluence / RVOL minimum).
+- **Minimum Move Threshold**: `MIN_BULLISH_CHANGE = +0.65%`, `MIN_BEARISH_CHANGE = -0.65%`.
 
 ---
 
@@ -111,6 +99,14 @@ This filters out weak-looking moves:
 - also required to remain above/below previous close depending on side
 
 This prevents ranking a stock that only looks good on paper.
+
+### 4.1 Two-Tier 3-Bar Impulse Cascade (Approach A)
+To eliminate wick traps and false breakouts:
+- **Tier 1 (Foundation Readiness)**: Evaluates volume, OI setup, day range position, and move from open.
+- **Tier 2 (Micro Execution Trigger)**: Evaluates 3 consecutive 5-minute candles:
+  - Bearish: 3 consecutive Red candles, consecutive Lower Lows, average body $\ge 60\%$, closed below PML, volume ratio $\ge 0.70\times$. Triggers `⚡ Active Waterfall`.
+  - Bullish: 3 consecutive Green candles, consecutive Higher Highs, average body $\ge 60\%$, closed above PMH, volume ratio $\ge 0.70\times$. Triggers `⚡ Impulse Breakout`.
+- **Score Boost**: Awards $+15$ points and promotes confirmed candidates to `Priority Rally` with immediate dashboard bell notification.
 
 ---
 

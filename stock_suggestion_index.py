@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import csv
+import fcntl
 import gzip
 import http.cookiejar
 import json
 import math
+import os
 import sys
 import time as _time
 import urllib.parse
@@ -28,7 +31,9 @@ from zoneinfo import ZoneInfo
 
 
 ROOT = Path(__file__).resolve().parent
-INPUT_DIR = ROOT / "inputs"
+# Support Render persistent disk via PERSISTENT_DATA_DIR / DATA_DIR environment variables
+PERSISTENT_DISK = os.environ.get("PERSISTENT_DATA_DIR") or os.environ.get("DATA_DIR")
+INPUT_DIR = Path(PERSISTENT_DISK) if PERSISTENT_DISK else (ROOT / "inputs")
 OUTPUT_PATH = INPUT_DIR / "stock_suggestion_index.latest.json"
 NSE_BASE = "https://www.nseindia.com"
 YAHOO_CHART_BASE = "https://query2.finance.yahoo.com/v8/finance/chart"
@@ -70,42 +75,83 @@ DAILY_TOP5_MAX_BREAKOUT_MINUTES = 14 * 60 + 45  # 2:45 PM IST
 # MLAIStockV2.html (kept in sync manually; both sides use it only to group
 # stocks for a same-sector agreement check, not for anything load-bearing).
 SECTOR_MAP: dict[str, str] = {
-    "TCS": "IT", "INFY": "IT", "WIPRO": "IT", "HCLTECH": "IT", "TECHM": "IT", "LTIM": "IT",
+    # Information Technology
+    "TCS": "IT", "INFY": "IT", "WIPRO": "IT", "HCLTECH": "IT", "TECHM": "IT", "LTIM": "IT", "LTM": "IT",
     "MPHASIS": "IT", "COFORGE": "IT", "PERSISTENT": "IT", "LTTS": "IT", "KPITTECH": "IT",
-    "BIRLASOFT": "IT", "HEXAWARE": "IT",
+    "BIRLASOFT": "IT", "HEXAWARE": "IT", "OFSS": "IT", "TATAELXSI": "IT",
+    # Banking
     "HDFCBANK": "Banks", "ICICIBANK": "Banks", "KOTAKBANK": "Banks", "AXISBANK": "Banks",
     "SBIN": "Banks", "INDUSINDBK": "Banks", "BANDHANBNK": "Banks", "IDFCFIRSTB": "Banks",
     "FEDERALBNK": "Banks", "RBLBANK": "Banks", "AUBANK": "Banks", "PNB": "Banks",
-    "CANBK": "Banks", "UNIONBANK": "Banks",
+    "CANBK": "Banks", "UNIONBANK": "Banks", "BANKBARODA": "Banks", "BANKINDIA": "Banks",
+    "INDIANB": "Banks", "MAHABANK": "Banks", "YESBANK": "Banks",
+    # Financial Services & Exchanges
     "BAJFINANCE": "Fin Serv", "BAJAJFINSV": "Fin Serv", "MUTHOOTFIN": "Fin Serv",
     "CHOLAFIN": "Fin Serv", "IIFL": "Fin Serv", "ABCAPITAL": "Fin Serv",
     "MANAPPURAM": "Fin Serv", "MOTILALOFS": "Fin Serv", "ANGELONE": "Fin Serv",
+    "360ONE": "Fin Serv", "BSE": "Fin Serv", "MCX": "Fin Serv", "CAMS": "Fin Serv", "CDSL": "Fin Serv",
+    "KFINTECH": "Fin Serv", "HDFCAMC": "Fin Serv", "NAM-INDIA": "Fin Serv", "HDFCLIFE": "Fin Serv",
+    "ICICIGI": "Fin Serv", "ICICIPRULI": "Fin Serv", "SBILIFE": "Fin Serv", "LICI": "Fin Serv",
+    "SBICARD": "Fin Serv", "SHRIRAMFIN": "Fin Serv", "PFC": "Fin Serv", "RECLTD": "Fin Serv",
+    "IREDA": "Fin Serv", "JIOFIN": "Fin Serv", "LICHSGFIN": "Fin Serv", "PNBHOUSING": "Fin Serv",
+    "LTF": "Fin Serv", "MFSL": "Fin Serv", "BAJAJHLDNG": "Fin Serv",
+    # Consumer Durables & Electricals
+    "BLUESTARCO": "Consumer Durables", "VOLTAS": "Consumer Durables", "HAVELLS": "Consumer Durables",
+    "CROMPTON": "Consumer Durables", "DIXON": "Consumer Durables", "AMBER": "Consumer Durables",
+    "POLYCAB": "Consumer Durables", "KEI": "Consumer Durables", "PGEL": "Consumer Durables",
+    "VMM": "Consumer Durables", "ASTRAL": "Consumer Durables", "SUPREMEIND": "Consumer Durables",
+    "APLAPOLLO": "Consumer Durables",
+    # Pharmaceuticals & Healthcare
     "SUNPHARMA": "Pharma", "DRREDDY": "Pharma", "CIPLA": "Pharma", "DIVISLAB": "Pharma",
     "APOLLOHOSP": "Pharma", "LUPIN": "Pharma", "BIOCON": "Pharma", "TORNTPHARM": "Pharma",
     "GLENMARK": "Pharma", "AUROPHARMA": "Pharma", "ABBOTINDIA": "Pharma", "SAGILITY": "Pharma",
+    "ALKEM": "Pharma", "FORTIS": "Pharma", "MAXHEALTH": "Pharma", "MANKIND": "Pharma",
+    "ZYDUSLIFE": "Pharma", "LAURUSLABS": "Pharma",
+    # Automobiles & Ancillaries
     "TATAMOTORS": "Auto", "MARUTI": "Auto", "EICHERMOT": "Auto", "BAJAJ-AUTO": "Auto",
     "HEROMOTOCO": "Auto", "M&M": "Auto", "TVSMOTOR": "Auto", "ASHOKLEY": "Auto",
+    "BHARATFORG": "Auto", "BOSCHLTD": "Auto", "FORCEMOT": "Auto", "HYUNDAI": "Auto",
+    "MOTHERSON": "Auto", "SONACOMS": "Auto", "TIINDIA": "Auto", "TMPV": "Auto", "UNOMINDA": "Auto",
+    # Metals & Mining
     "TATASTEEL": "Metal", "HINDALCO": "Metal", "JSWSTEEL": "Metal", "SAIL": "Metal",
     "VEDL": "Metal", "NMDC": "Metal", "HINDZINC": "Metal", "NATIONALUM": "Metal",
+    "JINDALSTEL": "Metal",
+    # Energy, Oil & Gas
     "RELIANCE": "Energy", "BPCL": "Energy", "ONGC": "Energy", "IOC": "Energy", "COALINDIA": "Energy",
     "HINDPETRO": "Energy", "GAIL": "Energy", "PETRONET": "Energy", "MGL": "Energy",
-    "ATGL": "Energy", "ADANIGREEN": "Energy", "TATAPOWER": "Energy",
+    "ATGL": "Energy", "ADANIGREEN": "Energy", "TATAPOWER": "Energy", "OIL": "Energy",
+    # FMCG & Consumption
     "HINDUNILVR": "FMCG", "NESTLEIND": "FMCG", "BRITANNIA": "FMCG", "DABUR": "FMCG",
     "MARICO": "FMCG", "GODREJCP": "FMCG", "ITC": "FMCG", "COLPAL": "FMCG",
-    "TATACONSUM": "FMCG", "EMAMILTD": "FMCG",
-    "LT": "Infra", "LODHA": "Infra", "DLF": "Infra",
-    "GODREJPROP": "Infra", "PRESTIGE": "Infra", "PHOENIXLTD": "Infra",
-    "ULTRACEMCO": "Infra", "AMBUJACEM": "Infra", "SHREECEM": "Infra",
+    "TATACONSUM": "FMCG", "EMAMILTD": "FMCG", "ASIANPAINT": "FMCG", "GODFRYPHLP": "FMCG",
+    "JUBLFOOD": "FMCG", "KALYANKJIL": "FMCG", "PAGEIND": "FMCG", "PATANJALI": "FMCG",
+    "RADICO": "FMCG", "TITAN": "FMCG", "UNITDSPR": "FMCG", "VBL": "FMCG",
+    # Infrastructure, Real Estate & Cement
+    "LT": "Infra", "LODHA": "Infra", "DLF": "Infra", "GODREJPROP": "Infra", "PRESTIGE": "Infra",
+    "PHOENIXLTD": "Infra", "ULTRACEMCO": "Infra", "AMBUJACEM": "Infra", "SHREECEM": "Infra",
+    "OBEROIRLTY": "Infra", "NBCC": "Infra", "RVNL": "Infra", "GMRAIRPORT": "Infra",
+    "GRASIM": "Infra", "ADANIENT": "Infra",
+    # Capital Goods, Power Equipment & Defence
     "SIEMENS": "Capital Goods", "ABB": "Capital Goods", "BHEL": "Capital Goods",
-    "KAYNES": "Capital Goods",
+    "KAYNES": "Capital Goods", "CGPOWER": "Capital Goods", "CUMMINSIND": "Capital Goods",
+    "POWERINDIA": "Capital Goods", "SOLARINDS": "Capital Goods",
+    "HAL": "Defence", "BEL": "Defence", "BDL": "Defence", "COCHINSHIP": "Defence", "MAZDOCK": "Defence",
+    # Power & Green Energy
+    "NTPC": "Power", "POWERGRID": "Power", "TORNTPOWER": "Power", "CESC": "Power",
+    "ADANIPOWER": "Power", "ADANIENSOL": "Power", "INOXWIND": "Power", "JSWENERGY": "Power",
+    "NHPC": "Power", "PREMIERENE": "Power", "SUZLON": "Power", "WAAREEENER": "Power",
+    # Chemicals & Agrochemicals
+    "ATUL": "Chemicals", "PIDILITIND": "Chemicals", "NAVINFLUOR": "Chemicals",
+    "PIIND": "Chemicals", "SRF": "Chemicals", "UPL": "Chemicals",
+    # Telecom & Media
     "BHARTIARTL": "Telecom", "IDEA": "Telecom", "INDUSTOWER": "Telecom",
     "ZEEL": "Media", "PVRINOX": "Media",
+    # Logistics, Aviation & Hotels
     "CONCOR": "Logistics", "IRFC": "Logistics", "IRCTC": "Logistics", "ADANIPORTS": "Logistics",
-    "NTPC": "Power", "POWERGRID": "Power", "TORNTPOWER": "Power",
-    "CESC": "Power", "ADANIPOWER": "Power",
-    "ATUL": "Chemicals", "PIDILITIND": "Chemicals", "NAVINFLUOR": "Chemicals",
-    "HAL": "Defence", "BEL": "Defence",
+    "DELHIVERY": "Logistics", "INDHOTEL": "Hotels", "INDIGO": "Aviation",
+    # Retail & Internet
     "ZOMATO": "Internet", "POLICYBZR": "Internet", "NYKAA": "Internet", "PAYTM": "Internet",
+    "NAUKRI": "Internet", "SWIGGY": "Internet", "ETERNAL": "Internet", "IEX": "Internet",
     "DMART": "Retail", "TRENT": "Retail",
     "ATHERENERG": "EV/Energy", "OLECTRA": "EV/Energy",
 }
@@ -115,10 +161,10 @@ def get_sector(symbol: str) -> str:
     return SECTOR_MAP.get(symbol, "Other")
 # Any stock with a lot size above this is excluded entirely - too much
 # capital per contract to be a practical suggestion.
-MAX_ALLOWED_LOT_SIZE = 1000
+MAX_ALLOWED_LOT_SIZE = 650
 # Every F&O stock with a lot size below this is scanned directly every cycle,
 # independent of NSE's top-20 gainers/losers or its OI-spurts feed.
-LOT_SCAN_THRESHOLD = 1000
+LOT_SCAN_THRESHOLD = 650
 FO_LOT_SIZES_PATH = INPUT_DIR / "fo_lot_sizes.csv"
 _FO_LOT_SIZES_CACHE: dict[str, int] | None = None
 
@@ -126,13 +172,20 @@ _FO_LOT_SIZES_CACHE: dict[str, int] | None = None
 # Candles only change every 5 minutes, so a short TTL cache lets back-to-back
 # refreshes (manual "Refresh Live" spam, or bullish+bearish in the same scan)
 # reuse the same download instead of re-hitting the slow upstream chart API.
-CANDLE_CACHE_TTL_SECONDS = 90
+def get_candle_cache_ttl() -> float:
+    """Dynamic cache TTL: strict 90 seconds during live NSE market hours to prevent stale data;
+    24 hours outside market hours to preserve closed session snapshots between restarts.
+    """
+    now_ist = datetime.now(INDIA_TZ)
+    current_minutes = now_ist.hour * 60 + now_ist.minute
+    is_live_market = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+    return 90.0 if is_live_market else 86400.0
+
+
+CANDLE_CACHE_TTL_SECONDS = 90.0     # Default market-hours fallback
 CANDLE_FETCH_TIMEOUT = 3.5          # per-request socket timeout
 CANDLE_POOL_WAIT_SECONDS = 9.0     # hard cap on the whole batch; stragglers are abandoned
 CANDLE_POOL_MAX_WORKERS = 24
-# The live refresh runs this module as a fresh subprocess each time, so the
-# candle cache is persisted to disk (keyed by symbol -> [epoch, candles]) to
-# survive between runs and let back-to-back refreshes skip the upstream fetch.
 CANDLE_CACHE_PATH = INPUT_DIR / "candle_cache.json"
 _CANDLE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _CANDLE_CACHE_LOADED = False
@@ -145,7 +198,7 @@ def _load_candle_cache() -> None:
     _CANDLE_CACHE_LOADED = True
     try:
         raw = json.loads(CANDLE_CACHE_PATH.read_text(encoding="utf-8"))
-        cutoff = _time.time() - CANDLE_CACHE_TTL_SECONDS
+        cutoff = _time.time() - get_candle_cache_ttl()
         for sym, entry in raw.items():
             if isinstance(entry, list) and len(entry) == 2 and entry[0] >= cutoff:
                 _CANDLE_CACHE[sym] = (float(entry[0]), entry[1])
@@ -157,7 +210,7 @@ def _load_candle_cache() -> None:
 
 def _save_candle_cache() -> None:
     try:
-        cutoff = _time.time() - CANDLE_CACHE_TTL_SECONDS
+        cutoff = _time.time() - get_candle_cache_ttl()
         fresh = {s: [ts, c] for s, (ts, c) in _CANDLE_CACHE.items() if ts >= cutoff}
         tmp = CANDLE_CACHE_PATH.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(fresh), encoding="utf-8")
@@ -232,6 +285,7 @@ class Suggestion:
     reason: str
     vc_ranking: float = 1.0
     mp_score: float = 3.0
+    money_flow_percentage: float = 0.0
     five_min_status: str = "Consolidating"
     breakout_time: str | None = None
     is_breakout: bool = False
@@ -242,6 +296,30 @@ class Suggestion:
     bell_rang: bool = False
     day_range_percent: float | None = None
     prev_close: float | None = None
+    is_cascade: bool = False
+    cascade_type: str | None = None
+    cascade_time: str | None = None
+    cascade_body_pct: float = 0.0
+    cascade_vol_ratio: float = 1.0
+    breakout_freshness: str = "PENDING"
+    breakout_age_minutes: int | None = None
+    first_qualified_at: str | None = None
+    first_top5_at: str | None = None
+    first_rank1_at: str | None = None
+    first_alerted_at: str | None = None
+    should_alert: bool = False
+    alert_count: int = 0
+    alert_event_id: str | None = None
+    alert_created_at: str | None = None
+    alert_delivered_at: str | None = None
+    alert_acknowledged_at: str | None = None
+    completed_candle_close: float | None = None
+    is_stale_data: bool = False
+    is_stale_fallback: bool = False
+    delivery_status: str = "PENDING"
+    claimed_by: str | None = None
+    claimed_at: float | None = None
+    is_failed_trend: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -270,6 +348,7 @@ class Suggestion:
             "reason": self.reason,
             "vc_ranking": self.vc_ranking,
             "mp_score": self.mp_score,
+            "money_flow_percentage": self.money_flow_percentage,
             "five_min_status": self.five_min_status,
             "breakout_time": self.breakout_time,
             "is_breakout": self.is_breakout,
@@ -280,6 +359,30 @@ class Suggestion:
             "bell_rang": self.bell_rang,
             "day_range_percent": self.day_range_percent,
             "prev_close": self.prev_close,
+            "is_cascade": self.is_cascade,
+            "cascade_type": self.cascade_type,
+            "cascade_time": self.cascade_time,
+            "cascade_body_pct": self.cascade_body_pct,
+            "cascade_vol_ratio": self.cascade_vol_ratio,
+            "breakout_freshness": self.breakout_freshness,
+            "breakout_age_minutes": self.breakout_age_minutes,
+            "first_qualified_at": self.first_qualified_at,
+            "first_top5_at": self.first_top5_at,
+            "first_rank1_at": self.first_rank1_at,
+            "first_alerted_at": self.first_alerted_at,
+            "should_alert": self.should_alert,
+            "alert_count": self.alert_count,
+            "alert_event_id": self.alert_event_id,
+            "alert_created_at": self.alert_created_at,
+            "alert_delivered_at": self.alert_delivered_at,
+            "alert_acknowledged_at": self.alert_acknowledged_at,
+            "completed_candle_close": self.completed_candle_close,
+            "is_stale_data": self.is_stale_data,
+            "is_stale_fallback": self.is_stale_fallback,
+            "delivery_status": self.delivery_status,
+            "claimed_by": self.claimed_by,
+            "claimed_at": self.claimed_at,
+            "is_failed_trend": self.is_failed_trend,
         }
 
 
@@ -465,9 +568,9 @@ def extract_fno_variation(payload: Any, *, side: str) -> list[dict[str, Any]]:
     filtered = [row for row in normalized if row["symbol"] and row["percent_change"] is not None]
     if side == "gainer":
         filtered = [row for row in filtered if row["percent_change"] >= 0]
-        return sorted(filtered, key=lambda row: row["percent_change"] or 0, reverse=True)[:NSE_TOP_ROWS]
+        return sorted(filtered, key=lambda row: row["percent_change"] or 0, reverse=True)
     filtered = [row for row in filtered if row["percent_change"] <= 0]
-    return sorted(filtered, key=lambda row: row["percent_change"] or 0)[:NSE_TOP_ROWS]
+    return sorted(filtered, key=lambda row: row["percent_change"] or 0)
 
 
 def normalize_variation_row(row: dict[str, Any], *, side: str) -> dict[str, Any]:
@@ -689,13 +792,29 @@ def pct_from_open(row: dict[str, Any]) -> float | None:
     return ((ltp - open_price) / open_price) * 100
 
 
-def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
-    """Fetches real-time 5-minute OHLCV candles for an NSE stock."""
+def fetch_5m_candles_pipeline(symbol: str, full_range: bool = False) -> dict[str, Any]:
+    """Hierarchical, verified 5-minute candle engine:
+    1. Upstox API v2 (Primary Fast Path) -> validate completed/fresh candles
+    2. Yahoo Finance (Secondary Fallback) -> validate completed/fresh candles
+    3. Short-Lived Local Cache (TTL 90s market hours) -> explicitly tagged as STALE
+    4. Unavailable / Error status
+    """
+    now_ist = datetime.now(INDIA_TZ)
+    now_epoch = _time.time()
+
+    # 1. Primary: Official Upstox Provider
+    try:
+        import upstox_provider
+        upstox_res = upstox_provider.fetch_5m_candles_with_telemetry(symbol)
+        if upstox_res.get("ok") and upstox_res.get("completed_candles"):
+            return upstox_res
+    except Exception as exc:
+        pass
+
+    # 2. Secondary Fallback: Yahoo Finance
     import scanner_trace
     trace_start = _time.monotonic()
     yahoo_sym = f"{symbol}.NS"
-    # Only the current session is needed for the opening-range breakout logic, so
-    # ask for range=1d (a much smaller payload) unless a caller wants full history.
     chart_range = "5d" if full_range else "1d"
     url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range={chart_range}"
     req = urllib.request.Request(
@@ -710,73 +829,132 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
         with urllib.request.urlopen(req, timeout=CANDLE_FETCH_TIMEOUT) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             result = (data.get("chart") or {}).get("result")
-            if not result:
-                scanner_trace.safe_source("Yahoo_candles", symbol=symbol, started=trace_start, status="empty_response")
-                return []
-            quote = result[0]
-            scanner_trace.safe_source("Yahoo_candles", symbol=symbol, started=trace_start,
-                quote_market_epoch=(quote.get("meta") or {}).get("regularMarketTime"),
-                latest_bar_start_epoch=max(quote.get("timestamp") or [0]) or None,
-                upstream_timestamp_verified=False)
-            timestamps = quote.get("timestamp") or []
-            indicators = quote.get("indicators", {})
-            quote_data = (indicators.get("quote") or [{}])[0]
-            opens = quote_data.get("open") or []
-            highs = quote_data.get("high") or []
-            lows = quote_data.get("low") or []
-            closes = quote_data.get("close") or []
-            volumes = quote_data.get("volume") or []
-            all_candles: list[dict[str, Any]] = []
-            for i, ts in enumerate(timestamps):
-                if i < len(opens) and i < len(highs) and i < len(lows) and i < len(closes):
-                    o, h, l, c = opens[i], highs[i], lows[i], closes[i]
-                    v = volumes[i] if i < len(volumes) else 0
-                    if None not in (o, h, l, c):
-                        all_candles.append({
-                            "timestamp": int(ts),
-                            "open": float(o),
-                            "high": float(h),
-                            "low": float(l),
-                            "close": float(c),
-                            "volume": float(v or 0),
-                        })
-            if not all_candles:
-                return []
+            if result:
+                quote = result[0]
+                scanner_trace.safe_source("Yahoo_candles", symbol=symbol, started=trace_start,
+                    quote_market_epoch=(quote.get("meta") or {}).get("regularMarketTime"),
+                    latest_bar_start_epoch=max(quote.get("timestamp") or [0]) or None,
+                    upstream_timestamp_verified=False)
+                timestamps = quote.get("timestamp") or []
+                indicators = quote.get("indicators", {})
+                quote_data = (indicators.get("quote") or [{}])[0]
+                opens = quote_data.get("open") or []
+                highs = quote_data.get("high") or []
+                lows = quote_data.get("low") or []
+                closes = quote_data.get("close") or []
+                volumes = quote_data.get("volume") or []
+                all_candles: list[dict[str, Any]] = []
+                for i, ts in enumerate(timestamps):
+                    if i < len(opens) and i < len(highs) and i < len(lows) and i < len(closes):
+                        o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+                        v = volumes[i] if i < len(volumes) else 0
+                        if None not in (o, h, l, c):
+                            all_candles.append({
+                                "timestamp": int(ts),
+                                "open": float(o),
+                                "high": float(h),
+                                "low": float(l),
+                                "close": float(c),
+                                "volume": float(v or 0),
+                            })
+                if all_candles:
+                    # Collapse multi-ticks in the same 5-minute bucket
+                    merged_candles: list[dict[str, Any]] = []
+                    for c in all_candles:
+                        bucket_ts = (c["timestamp"] // 300) * 300
+                        if merged_candles and (merged_candles[-1]["timestamp"] // 300) * 300 == bucket_ts:
+                            prev = merged_candles[-1]
+                            prev["high"] = max(prev["high"], c["high"])
+                            prev["low"] = min(prev["low"], c["low"])
+                            prev["close"] = c["close"]
+                            prev["volume"] += c["volume"]
+                        else:
+                            merged_candles.append(dict(c))
+                    all_candles = merged_candles
 
-            # Yahoo's still-forming last bar is sometimes returned as several
-            # near-tick entries (each with open==high==low==close) instead of
-            # one evolving OHLC candle. Collapse any entries that fall in the
-            # same 5-minute bucket so every consumer (chart, WS push, ORB/PMH
-            # calculations) sees one real candle per bucket.
-            merged_candles: list[dict[str, Any]] = []
-            for c in all_candles:
-                bucket_ts = (c["timestamp"] // 300) * 300
-                if merged_candles and (merged_candles[-1]["timestamp"] // 300) * 300 == bucket_ts:
-                    prev = merged_candles[-1]
-                    prev["high"] = max(prev["high"], c["high"])
-                    prev["low"] = min(prev["low"], c["low"])
-                    prev["close"] = c["close"]
-                    prev["volume"] += c["volume"]
-                else:
-                    merged_candles.append(dict(c))
-            all_candles = merged_candles
+                    # Isolate current session if not full_range
+                    if not full_range:
+                        from datetime import datetime as dt_cls
+                        latest_dt = dt_cls.fromtimestamp(all_candles[-1]["timestamp"], tz=INDIA_TZ).date()
+                        all_candles = [
+                            c for c in all_candles
+                            if dt_cls.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == latest_dt
+                        ] or all_candles[-75:]
 
-            if full_range:
-                return all_candles
-
-            # Isolate the latest trading session candles (same date as latest timestamp)
-            from datetime import datetime as dt_cls
-            latest_dt = dt_cls.fromtimestamp(all_candles[-1]["timestamp"], tz=INDIA_TZ).date()
-            day_candles = [
-                c for c in all_candles
-                if dt_cls.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == latest_dt
-            ]
-            return day_candles if day_candles else all_candles[-75:]
+                    import upstox_provider
+                    is_valid, _ = upstox_provider.validate_candles_integrity(all_candles, now_ist, allow_multi_day=full_range)
+                    if is_valid:
+                        completed, forming = upstox_provider.separate_completed_and_forming(all_candles, now_ist)
+                        if completed:
+                            lat_ms = int((_time.monotonic() - trace_start) * 1000)
+                            latest_epoch = completed[-1]["timestamp"]
+                            latest_ist = datetime.fromtimestamp(latest_epoch, tz=INDIA_TZ).strftime("%I:%M %p")
+                            return {
+                                "ok": True,
+                                "symbol": symbol,
+                                "provider": "Yahoo (Fallback)",
+                                "completed_candles": completed,
+                                "forming_candle": forming,
+                                "all_candles": all_candles,
+                                "latest_completed_candle_ist": latest_ist,
+                                "latest_completed_candle_epoch": latest_epoch,
+                                "observed_latency_ms": lat_ms,
+                                "fallback_used": True,
+                                "is_stale": False,
+                                "error": None,
+                            }
     except Exception as e:
         scanner_trace.safe_source("Yahoo_candles", symbol=symbol, started=trace_start,
                                  status="fetch_failed", error_type=type(e).__name__)
-        print(f"fetch_5m_candles_for_symbol error for {symbol}: {type(e)} {e}", file=sys.stderr)
-        return []
+
+    # 3. Tertiary: Short-Lived Local Disk Cache (explicitly marked STALE)
+    _load_candle_cache()
+    cached = _CANDLE_CACHE.get(symbol)
+    if cached and (now_epoch - cached[0]) <= get_candle_cache_ttl():
+        c_candles = cached[1]
+        if c_candles:
+            latest_epoch = c_candles[-1]["timestamp"]
+            latest_ist = datetime.fromtimestamp(latest_epoch, tz=INDIA_TZ).strftime("%I:%M %p")
+            return {
+                "ok": True,
+                "symbol": symbol,
+                "provider": "Cache (Stale)",
+                "completed_candles": c_candles,
+                "forming_candle": None,
+                "all_candles": c_candles,
+                "latest_completed_candle_ist": latest_ist,
+                "latest_completed_candle_epoch": latest_epoch,
+                "observed_latency_ms": 0,
+                "fallback_used": True,
+                "is_stale": True,
+                "error": "Upstream feeds unavailable, serving short-lived local cache",
+            }
+
+    # 4. Quaternary: Unavailable / Stale Status
+    return {
+        "ok": False,
+        "symbol": symbol,
+        "provider": "Unavailable",
+        "completed_candles": [],
+        "forming_candle": None,
+        "all_candles": [],
+        "latest_completed_candle_ist": None,
+        "latest_completed_candle_epoch": None,
+        "observed_latency_ms": 0,
+        "fallback_used": True,
+        "is_stale": True,
+        "error": "All data providers failed/unauthorized and local cache is expired or empty",
+    }
+
+
+def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
+    """Fetches real-time 5-minute OHLCV candles for an NSE stock.
+    Executes the validated hierarchical pipeline and returns completed candles only.
+    """
+    pipe_res = fetch_5m_candles_pipeline(symbol, full_range=full_range)
+    if pipe_res.get("ok"):
+        return pipe_res.get("completed_candles", [])
+    return []
 
 
 def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
@@ -953,6 +1131,150 @@ def bulk_fetch_candles(
     return candles_by_symbol
 
 
+def detect_3bar_impulse_cascade(
+    candles: list[dict[str, Any]],
+    side: str,
+    *,
+    key_level: float | None = None,
+    avg_5m_vol: float | None = None,
+) -> dict[str, Any]:
+    """Detects 3 consecutive 5-minute candles making continuous lower lows (bearish)
+    or higher highs (bullish) with >= 60% directional body ratio beyond PML/PMH.
+    Serves as the high-conviction micro execution trigger for Two-Tier Approach A."""
+    if len(candles) < 3:
+        return {
+            "is_cascade": False,
+            "cascade_type": None,
+            "cascade_time": None,
+            "cascade_body_pct": 0.0,
+            "cascade_vol_ratio": 1.0,
+        }
+
+    def eval_trio(trio: list[dict[str, Any]]) -> tuple[bool, float, float]:
+        vol_sum = sum(c.get("volume", 0) for c in trio)
+        v_ratio = (vol_sum / (3.0 * avg_5m_vol)) if (avg_5m_vol and avg_5m_vol > 0) else 1.0
+        if v_ratio < 0.65:
+            return False, 0.0, 0.0
+
+        if side == "bearish":
+            # Pattern A: 3 Consecutive Red Waterfall
+            is_3red = all(c["close"] < c["open"] for c in trio) and (trio[1]["low"] < trio[0]["low"] and trio[2]["low"] < trio[1]["low"])
+            # Pattern B: Base-and-Breakdown (Pole -> Pause Flag -> Continuation Breakdown)
+            c0_red = trio[0]["close"] < trio[0]["open"]
+            c1_pause = trio[1]["high"] <= trio[0]["high"] * 1.002
+            c2_break = trio[2]["close"] < trio[2]["open"] and trio[2]["low"] < min(trio[0]["low"], trio[1]["low"])
+            is_base_break = c0_red and c1_pause and c2_break
+
+            if not (is_3red or is_base_break):
+                return False, 0.0, 0.0
+
+            # Body Dominance Check
+            body_ratios = []
+            for c in trio:
+                rng = c["high"] - c["low"]
+                body = c["open"] - c["close"]
+                body_ratios.append(body / rng if rng > 0 else 0.0)
+            avg_body = sum(body_ratios) / 3.0
+            if is_3red and (avg_body < 0.55 or any(b < 0.25 for b in body_ratios)):
+                return False, 0.0, 0.0
+            if is_base_break and (body_ratios[0] < 0.40 or body_ratios[2] < 0.40):
+                return False, 0.0, 0.0
+
+            # Level check: price below key level / PML
+            if key_level is not None and trio[2]["close"] > key_level * 1.002:
+                return False, 0.0, 0.0
+
+            return True, avg_body, v_ratio
+        else:
+            # Bullish
+            # Pattern A: 3 Consecutive Green Impulse
+            is_3green = all(c["close"] > c["open"] for c in trio) and (trio[1]["high"] > trio[0]["high"] and trio[2]["high"] > trio[1]["high"])
+            # Pattern B: Base-and-Breakout (Pole -> Pause Flag -> Continuation Breakout)
+            c0_green = trio[0]["close"] > trio[0]["open"]
+            c1_pause = trio[1]["low"] >= trio[0]["low"] * 0.998
+            c2_break = trio[2]["close"] > trio[2]["open"] and trio[2]["high"] > max(trio[0]["high"], trio[1]["high"])
+            is_base_break = c0_green and c1_pause and c2_break
+
+            if not (is_3green or is_base_break):
+                return False, 0.0, 0.0
+
+            body_ratios = []
+            for c in trio:
+                rng = c["high"] - c["low"]
+                body = c["close"] - c["open"]
+                body_ratios.append(body / rng if rng > 0 else 0.0)
+            avg_body = sum(body_ratios) / 3.0
+            if is_3green and (avg_body < 0.55 or any(b < 0.25 for b in body_ratios)):
+                return False, 0.0, 0.0
+            if is_base_break and (body_ratios[0] < 0.40 or body_ratios[2] < 0.40):
+                return False, 0.0, 0.0
+
+            if key_level is not None and trio[2]["close"] < key_level * 0.998:
+                return False, 0.0, 0.0
+
+            return True, avg_body, v_ratio
+
+    # 1. Check latest 3 completed candles
+    is_valid, avg_b, v_r = eval_trio(candles[-3:])
+    confirmed_candle = candles[-1]
+
+    # 2. If latest bar is consolidating or paused right after an active cascade,
+    # evaluate recent candles (last 4 to 5) so an active waterfall isn't lost on 1 neutral bar
+    if not is_valid and len(candles) >= 4:
+        is_valid, avg_b, v_r = eval_trio(candles[-4:-1])
+        confirmed_candle = candles[-2]
+        if is_valid:
+            if side == "bearish" and candles[-1]["close"] > confirmed_candle["high"]:
+                is_valid = False
+            elif side == "bullish" and candles[-1]["close"] < confirmed_candle["low"]:
+                is_valid = False
+
+    # 3. Wave-level cascade tracking (scanning backwards from most recent):
+    # Ensures we find an active cascade that has NOT dumped or failed.
+    if not is_valid and len(candles) >= 3:
+        for idx in range(len(candles) - 1, 1, -1):
+            trio = candles[idx-2:idx+1]
+            trio_valid, t_avg_b, t_v_r = eval_trio(trio)
+            if trio_valid:
+                # Invalidation check: did any subsequent candle dump or reverse?
+                subsequent = candles[idx+1:]
+                dumped = False
+                if side == "bullish":
+                    impulse_low = trio[2]["low"]
+                    if any(c["close"] < impulse_low * 0.998 for c in subsequent):
+                        dumped = True
+                else:
+                    waterfall_high = trio[2]["high"]
+                    if any(c["close"] > waterfall_high * 1.002 for c in subsequent):
+                        dumped = True
+
+                if not dumped:
+                    is_valid = True
+                    avg_b = t_avg_b
+                    v_r = t_v_r
+                    confirmed_candle = trio[2]
+                    break
+
+    if is_valid:
+        cascade_type = "Waterfall Breakdown" if side == "bearish" else "Impulse Breakout"
+        cascade_time = datetime.fromtimestamp(confirmed_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+        return {
+            "is_cascade": True,
+            "cascade_type": cascade_type,
+            "cascade_time": cascade_time,
+            "cascade_body_pct": round(avg_b * 100, 1),
+            "cascade_vol_ratio": round(v_r, 2),
+        }
+
+    return {
+        "is_cascade": False,
+        "cascade_type": None,
+        "cascade_time": None,
+        "cascade_body_pct": 0.0,
+        "cascade_vol_ratio": 1.0,
+    }
+
+
 def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any]) -> dict[str, Any]:
     """Analyzes 5-minute candles using a strict 5-Minute Opening Range Breakout (ORB) and Continuous Wave Tracking."""
     if len(candles) < 2:
@@ -968,6 +1290,11 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             "ema_trend": "bullish" if side == "bullish" else "bearish",
             "chart_structure": "Base Building",
             "no_candle_data": True,
+            "is_cascade": False,
+            "cascade_type": None,
+            "cascade_time": None,
+            "cascade_body_pct": 0.0,
+            "cascade_vol_ratio": 1.0,
         }
 
     # 1. 9-period EMA on 5-minute closes
@@ -992,6 +1319,18 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
     latest_vol = latest["volume"]
     latest_rvol = latest_vol / avg_5m_vol if avg_5m_vol > 0 else 1.0
 
+    # 4. Check 3-Bar Impulse Cascade (Two-Tier Trigger)
+    key_level = morning_low if side == "bearish" else morning_high
+    if len(candles) >= 6:
+        key_level = min(c["low"] for c in candles[:6]) if side == "bearish" else max(c["high"] for c in candles[:6])
+
+    cascade_info = detect_3bar_impulse_cascade(
+        candles,
+        side,
+        key_level=key_level,
+        avg_5m_vol=avg_5m_vol,
+    )
+
     breakout_time = None
     is_breakout = False
     breakout_status = "Consolidating"
@@ -1013,28 +1352,50 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             else:
                 chart_structure = "Pullback to EMA"
 
-        # Continuous Wave Tracker for the Breakout
-        current_wave_start = None
+        # Track earliest decisive breakout from the morning range (origin timestamp)
+        first_breakout_time = None
+        first_breakout_epoch = None
         for c in trading_candles:
-            if c["close"] >= morning_high * 0.999: # breached the first candle's high
-                if not current_wave_start:
-                    current_wave_start = c["timestamp"]
-            else:
-                current_wave_start = None # reset if it drops back below the first candle
-        
-        if current_wave_start:
-            breakout_time = datetime.fromtimestamp(current_wave_start, tz=INDIA_TZ).strftime("%I:%M %p")
+            if c["close"] >= morning_high * 1.001 or (c["close"] > morning_high and c["high"] >= morning_high * 1.002 and c["close"] >= c["open"]):
+                first_breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = c["timestamp"]
+                break
+
+        if first_breakout_time:
+            breakout_time = first_breakout_time
+
+        # Major Structural Rail Breakout (PMH) - check if price broke 30m ORB rail later
+        if len(candles) >= 6:
+            orb_high = max(c["high"] for c in candles[:6])
+            if latest_close >= orb_high * 0.995:
+                for c in candles[6:]:
+                    if c["close"] >= orb_high * 0.999 or c["high"] >= orb_high * 1.001:
+                        if not breakout_time:
+                            breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                            first_breakout_epoch = c["timestamp"]
+                        break
 
         # Active breakout condition
-        if latest_close >= morning_high * 0.998 and latest_close >= ema9:
+        if cascade_info["is_cascade"]:
+            is_breakout = True
+            breakout_status = "Impulse BO"
+            chart_structure = "Impulse Breakout"
+            if not breakout_time:
+                breakout_time = cascade_info["cascade_time"]
+            if not first_breakout_epoch:
+                first_breakout_epoch = latest["timestamp"]
+        elif latest_close >= morning_high * 0.998 and latest_close >= ema9:
             is_breakout = True
             breakout_status = "Breakout"
-            chart_structure = "Breakout Rally"
+            if chart_structure == "Base Building":
+                chart_structure = "Breakout Rally"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
         elif latest_close >= morning_high * 0.992:
             breakout_status = "Near BO"
-            chart_structure = "Testing Resistance"
+            if chart_structure == "Base Building":
+                chart_structure = "Testing Resistance"
 
     else:
         # Bearish Breakdown condition
@@ -1049,34 +1410,118 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             else:
                 chart_structure = "Bounce to EMA"
 
-        # Continuous Wave Tracker for the Breakdown
-        current_wave_start = None
+        # Track earliest decisive breakdown from the morning range (origin timestamp)
+        # Requires close <= morning_low * 0.999 to avoid false 10-paise wick resets (e.g. 923.10 vs 923.20)
+        first_breakout_time = None
+        first_breakout_epoch = None
         for c in trading_candles:
-            if c["close"] <= morning_low * 1.001: # breached the first candle's low
-                if not current_wave_start:
-                    current_wave_start = c["timestamp"]
-            else:
-                current_wave_start = None # reset if it bounces back above
-        
-        if current_wave_start:
-            breakout_time = datetime.fromtimestamp(current_wave_start, tz=INDIA_TZ).strftime("%I:%M %p")
+            if c["close"] <= morning_low * 0.999 or (c["close"] < morning_low and c["low"] <= morning_low * 0.995 and c["close"] <= c["open"]):
+                first_breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = c["timestamp"]
+                break
+
+        if first_breakout_time:
+            breakout_time = first_breakout_time
+
+        # Major Structural Rail Breakdown (PML) - check if price broke 30m ORB rail later
+        if len(candles) >= 6:
+            orb_low = min(c["low"] for c in candles[:6])
+            if latest_close <= orb_low * 1.005:
+                for c in candles[6:]:
+                    if c["low"] <= orb_low * 1.0005 or c["close"] <= orb_low * 1.001:
+                        if not breakout_time:
+                            breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                            first_breakout_epoch = c["timestamp"]
+                        break
 
         # Active breakout condition
-        if latest_close <= morning_low * 1.002 and latest_close <= ema9:
+        if cascade_info["is_cascade"]:
+            is_breakout = True
+            breakout_status = "Waterfall BD"
+            chart_structure = "Active Waterfall"
+            if not breakout_time:
+                breakout_time = cascade_info["cascade_time"]
+            if not first_breakout_epoch:
+                first_breakout_epoch = latest["timestamp"]
+        elif latest_close <= morning_low * 1.002 and latest_close <= ema9:
             is_breakout = True
             breakout_status = "Breakdown"
-            chart_structure = "Breakdown Slide"
+            if chart_structure == "Base Building":
+                chart_structure = "Breakdown Slide"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
         elif latest_close <= morning_low * 1.008:
             breakout_status = "Near BD"
-            chart_structure = "Testing Support"
+            if chart_structure == "Base Building":
+                chart_structure = "Testing Support"
 
+    # Session-wide Trend Invalidation Check (Bull/Bear Trap Protection):
+    # A true One-Side Rally candidate must NEVER breach the opposite rail during the session.
+    # Bullish: if any candle breached below morning_low -> the trend failed / Bull Trap!
+    # Bearish: if any candle breached above morning_high -> the trend failed / Bear Trap!
     is_failed_trend = False
-    if side == "bullish" and latest_close < morning_low:
-        is_failed_trend = True
-    elif side == "bearish" and latest_close > morning_high:
-        is_failed_trend = True
+    if side == "bullish":
+        if latest_close < morning_low or any(c["close"] < morning_low for c in trading_candles):
+            is_failed_trend = True
+            is_breakout = False
+            breakout_status = "Failed Breakout"
+            chart_structure = "Bull Trap Reversal"
+    elif side == "bearish":
+        if latest_close > morning_high or any(c["close"] > morning_high for c in trading_candles):
+            is_failed_trend = True
+            is_breakout = False
+            breakout_status = "Failed Breakdown"
+            chart_structure = "Bear Trap Reversal"
+
+    # 5. Breakout Freshness & Timing Engine (On-Time Actionable Zones)
+    breakout_freshness = "PENDING"
+    breakout_age_minutes = None
+    tight_stop = None
+
+    if is_breakout and first_breakout_epoch:
+        now_ist = datetime.now(INDIA_TZ)
+        current_minutes = now_ist.hour * 60 + now_ist.minute
+        is_live_market = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+
+        ref_epoch = int(now_ist.timestamp()) if is_live_market else (latest["timestamp"] + 300)
+        breakout_close_epoch = first_breakout_epoch + 300
+        breakout_age_minutes = max(0, int((ref_epoch - breakout_close_epoch) / 60))
+
+        if side == "bullish":
+            tight_stop = max(morning_high * 0.996, ema9 * 0.997)
+            move_past_bo_pct = ((latest_close - morning_high) / morning_high) * 100 if morning_high else 0.0
+
+            recent_4 = candles[-min(len(candles), 4):]
+            touched_retest = any(c["low"] <= morning_high * 1.003 or c["low"] <= ema9 * 1.002 for c in recent_4)
+            holding_retest = latest_close >= morning_high * 0.998 and latest_close >= ema9 and latest_close >= latest["open"]
+
+            if breakout_age_minutes <= 15 and move_past_bo_pct <= 1.5:
+                breakout_freshness = "FRESH"
+            elif breakout_age_minutes > 15 and touched_retest and holding_retest:
+                breakout_freshness = "RETEST"
+            elif breakout_age_minutes > 45 or move_past_bo_pct > 2.5:
+                breakout_freshness = "EXTENDED"
+            else:
+                breakout_freshness = "ACTIVE"
+        else:
+            tight_stop = min(morning_low * 1.004, ema9 * 1.003)
+            move_past_bd_pct = ((morning_low - latest_close) / morning_low) * 100 if morning_low else 0.0
+
+            recent_4 = candles[-min(len(candles), 4):]
+            touched_retest = any(c["high"] >= morning_low * 0.997 or c["high"] >= ema9 * 0.998 for c in recent_4)
+            holding_retest = latest_close <= morning_low * 1.002 and latest_close <= ema9 and latest_close <= latest["open"]
+
+            if breakout_age_minutes <= 15 and move_past_bd_pct <= 1.5:
+                breakout_freshness = "FRESH"
+            elif breakout_age_minutes > 15 and touched_retest and holding_retest:
+                breakout_freshness = "RETEST"
+            elif breakout_age_minutes > 45 or move_past_bd_pct > 2.5:
+                breakout_freshness = "EXTENDED"
+            else:
+                breakout_freshness = "ACTIVE"
+    elif "near" in breakout_status.lower():
+        breakout_freshness = "COILING"
 
     return {
         "is_breakout": is_breakout,
@@ -1086,6 +1531,14 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
         "ema_trend": "bullish" if latest_close >= ema9 else "bearish",
         "chart_structure": chart_structure,
         "is_failed_trend": is_failed_trend,
+        "is_cascade": cascade_info["is_cascade"],
+        "cascade_type": cascade_info["cascade_type"],
+        "cascade_time": cascade_info["cascade_time"],
+        "cascade_body_pct": cascade_info["cascade_body_pct"],
+        "cascade_vol_ratio": cascade_info["cascade_vol_ratio"],
+        "breakout_freshness": breakout_freshness,
+        "breakout_age_minutes": breakout_age_minutes,
+        "tight_stop": tight_stop,
     }
 
 def index_context_note(row: dict[str, Any], side: str, index_context: dict[str, dict[str, Any]]) -> tuple[str, int]:
@@ -1120,6 +1573,45 @@ def index_context_note(row: dict[str, Any], side: str, index_context: dict[str, 
     if stock_change <= -1.25:
         return f"{note} | stock falling despite firm index", 4
     return f"{note} | market not supportive", -4
+
+
+def compute_money_flow_percentage(
+    row: dict[str, Any],
+    oi: dict[str, Any] | None,
+    *,
+    side: str,
+    vc_ranking: float,
+    sector_alignment: float | None = None,
+) -> float:
+    """Computes money-flow percentage.
+    Prioritizes real Level-2 order-book buying/selling depth from Upstox if authenticated,
+    falling back to derived volume + OI + sector participation proxy.
+    """
+    sym = row.get("symbol")
+    if sym:
+        try:
+            import upstox_provider
+            depth = upstox_provider.fetch_market_depth(sym)
+            if depth and "buying_pressure_pct" in depth:
+                return float(depth["buying_pressure_pct"])
+        except Exception:
+            pass
+
+    score = 0.0
+    score += min(vc_ranking, 3.0) / 3.0 * 45.0
+
+    oi_change = abs(float((oi or {}).get("oi_change_percent") or 0.0))
+    score += min(oi_change, 25.0) / 25.0 * 35.0
+
+    if sector_alignment is not None:
+        score += max(0.0, min(20.0, abs(sector_alignment - 50.0) * 0.4))
+
+    pct_change = row.get("percent_change")
+    if pct_change is not None:
+        direction_match = 1.0 if ((side == "bullish" and pct_change >= 0) or (side == "bearish" and pct_change <= 0)) else 0.0
+        score += direction_match * 10.0
+
+    return round(min(100.0, max(0.0, score)), 1)
 
 
 def calc_stock_activity(row: dict[str, Any], oi: dict[str, Any] | None) -> float:
@@ -1253,6 +1745,13 @@ def assess_one_side_rally(
             else:
                 score += 15
                 tags.append("short covering rally")
+        elif setup in ("Volume / Price Lead", "OI not confirmed", "Flat OI"):
+            if activity_ratio >= 1.2:
+                score += 15
+                tags.append("volume-driven rally")
+            else:
+                score += 10
+                tags.append("price momentum lead")
         else:
             blockers.append("OI setup not bullish")
     else:
@@ -1266,6 +1765,13 @@ def assess_one_side_rally(
             else:
                 score += 15
                 tags.append("long unwinding slide")
+        elif setup in ("Volume / Price Lead", "OI not confirmed", "Flat OI"):
+            if activity_ratio >= 1.2:
+                score += 15
+                tags.append("volume-driven slide")
+            else:
+                score += 10
+                tags.append("downside price lead")
         else:
             blockers.append("OI setup not bearish")
 
@@ -1329,7 +1835,12 @@ def assess_one_side_rally(
     }
 
 
-def build_trade_levels(row: dict[str, Any], *, side: str) -> tuple[float | None, float | None, float | None, str]:
+def build_trade_levels(
+    row: dict[str, Any],
+    *,
+    side: str,
+    bo_info: dict[str, Any] | None = None
+) -> tuple[float | None, float | None, float | None, str]:
     ltp = row.get("ltp")
     high = row.get("high")
     low = row.get("low")
@@ -1339,19 +1850,43 @@ def build_trade_levels(row: dict[str, Any], *, side: str) -> tuple[float | None,
 
     buffer = max(round(ltp * 0.0008, 2), 0.5)
     if side == "bullish":
-        entry = round((high if high is not None else ltp) + buffer, 2)
-        base_stop = low if low is not None else min(open_price or ltp, ltp - buffer)
-        risk = max(entry - base_stop, max(ltp * 0.004, 3.0))
-        stop = round(entry - risk, 2)
-        target = round(entry + (risk * 1.7), 2)
-        plan = "Buy only if price breaks above the morning high and holds above it."
+        entry = round((ltp if ltp is not None else high) + buffer, 2)
+        tight = bo_info.get("tight_stop") if bo_info else None
+        if tight and tight < entry:
+            risk = entry - tight
+            if risk < ltp * 0.004:
+                stop = round(entry - max(ltp * 0.005, 3.0), 2)
+            elif risk > ltp * 0.015:
+                stop = round(entry - (ltp * 0.008), 2)
+            else:
+                stop = round(tight, 2)
+        else:
+            base_stop = low if low is not None else min(open_price or ltp, ltp - buffer)
+            risk = min(max(entry - base_stop, max(ltp * 0.004, 3.0)), ltp * 0.010)
+            stop = round(entry - risk, 2)
+
+        final_risk = max(entry - stop, max(ltp * 0.003, 1.0))
+        target = round(entry + (final_risk * 2.0), 2)
+        plan = "Buy on confirmed breakout; SL below breakout rail/EMA9."
     else:
-        entry = round((low if low is not None else ltp) - buffer, 2)
-        base_stop = high if high is not None else max(open_price or ltp, ltp + buffer)
-        risk = max(base_stop - entry, max(ltp * 0.004, 3.0))
-        stop = round(entry + risk, 2)
-        target = round(entry - (risk * 1.7), 2)
-        plan = "Sell only if price breaks below the morning low and holds below it."
+        entry = round((ltp if ltp is not None else low) - buffer, 2)
+        tight = bo_info.get("tight_stop") if bo_info else None
+        if tight and tight > entry:
+            risk = tight - entry
+            if risk < ltp * 0.004:
+                stop = round(entry + max(ltp * 0.005, 3.0), 2)
+            elif risk > ltp * 0.015:
+                stop = round(entry + (ltp * 0.008), 2)
+            else:
+                stop = round(tight, 2)
+        else:
+            base_stop = high if high is not None else max(open_price or ltp, ltp + buffer)
+            risk = min(max(base_stop - entry, max(ltp * 0.004, 3.0)), ltp * 0.010)
+            stop = round(entry + risk, 2)
+
+        final_risk = max(stop - entry, max(ltp * 0.003, 1.0))
+        target = round(entry - (final_risk * 2.0), 2)
+        plan = "Sell on confirmed breakdown; SL above breakdown rail/EMA9."
     return entry, stop, target, plan
 
 
@@ -1374,6 +1909,7 @@ def build_suggestions(
     index_context: dict[str, dict[str, Any]],
     candles_by_symbol: dict[str, list[dict[str, Any]]] | None = None,
     audit: list[dict[str, Any]] | None = None,
+    market_universe: list[dict[str, Any]] | None = None,
 ) -> tuple[list[Suggestion], int]:
     def record(row, decision_reason, **details):
         if audit is not None:
@@ -1385,17 +1921,17 @@ def build_suggestions(
 
     for row in rows:
         symbol = row["symbol"]
-        if symbol not in oi_by_symbol:
-            record(row, "oi_data_unavailable")
-        elif symbol in INDEX_LIKE_SYMBOLS:
+        lot_size = get_fo_lot_size(symbol)
+        if symbol in INDEX_LIKE_SYMBOLS:
             record(row, "index_symbol_excluded")
-        elif get_fo_lot_size(symbol) > MAX_ALLOWED_LOT_SIZE:
-            record(row, "lot_size_above_limit", lot_size=get_fo_lot_size(symbol))
+        elif lot_size <= 0:
+            record(row, "non_fno_symbol_excluded")
+        elif lot_size > MAX_ALLOWED_LOT_SIZE:
+            record(row, "lot_size_above_limit", lot_size=lot_size)
     matched_rows = [
         row for row in rows
-        if row["symbol"] in oi_by_symbol
-        and row["symbol"] not in INDEX_LIKE_SYMBOLS
-        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+        if row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and 0 < get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
     ]
     
     # Calculate activities across candidates to compute true relative volume (RVOL)
@@ -1416,18 +1952,32 @@ def build_suggestions(
     if candidate_symbols:
         bulk_fetch_candles(candidate_symbols, candles_by_symbol)
 
+    # Compute true sector alignment across the broader market universe once,
+    # rather than with a single-stock list inside the loop (which broke money flow).
+    universe_for_sector = market_universe if market_universe is not None else rows
+    sector_alignments = compute_sector_alignment(universe_for_sector)
+
     suggestions: list[Suggestion] = []
     assessments: dict[str, dict[str, Any]] = {}
     breakout_assessments: dict[str, dict[str, Any]] = {}
     for row in matched_rows:
         symbol = row["symbol"]
-        oi = oi_by_symbol[symbol]
+        oi = oi_by_symbol.get(symbol, {})
         row_act = calc_stock_activity(row, oi)
         activity_ratio = (row_act / median_act) if median_act > 0 else 1.0
         vc_ranking = round(max(0.1, activity_ratio), 2)
         if vc_ranking <= MIN_VC_RANKING:
             record(row, "volume_confluence_below_minimum", vc_ranking=vc_ranking)
             continue
+
+        stock_sector_align = sector_alignments.get(symbol, 50.0)
+        money_flow_percentage = compute_money_flow_percentage(
+            row,
+            oi,
+            side=side,
+            vc_ranking=vc_ranking,
+            sector_alignment=stock_sector_align,
+        )
 
         setup = classify_oi(row.get("percent_change"), oi.get("oi_change"))
         base_score = calc_score(row, oi, side=side, activity_ratio=activity_ratio)
@@ -1488,10 +2038,14 @@ def build_suggestions(
             record(row, "consolidating", rally=rally, breakout=bo_info)
             continue
 
-        # Boost score and tag if active 5m breakout is confirmed
+        # Boost score and tag if active 3-bar cascade or 5m breakout is confirmed
         rally_score = rally["score"]
         quality_tags = list(rally["quality_tags"])
-        if is_breakout:
+        if bo_info.get("is_cascade"):
+            rally_score = min(100, rally_score + 15)
+            c_label = "3-Bar Waterfall" if side == "bearish" else "3-Bar Impulse"
+            quality_tags.insert(0, f"⚡ {c_label} ({bo_info.get('cascade_time') or 'Active'}, {bo_info.get('cascade_body_pct', 0):.0f}% body)")
+        elif is_breakout:
             rally_score = min(100, rally_score + 8)
             quality_tags.insert(0, f"5m Breakout ({breakout_time or 'Active'})")
         elif "near" in five_min_status.lower():
@@ -1499,7 +2053,23 @@ def build_suggestions(
         elif bo_info.get("no_candle_data"):
             quality_tags.insert(0, "5m data pending (kept on OI + rally strength)")
 
-        entry, stop, target, plan = build_trade_levels(row, side=side)
+        # Freshness bonuses / penalties for on-time prioritization
+        freshness = bo_info.get("breakout_freshness", "PENDING")
+        age_m = bo_info.get("breakout_age_minutes")
+        if freshness == "FRESH":
+            rally_score = min(100, rally_score + 10)
+            age_str = f"{age_m}m ago" if age_m is not None else "Just now"
+            quality_tags.insert(0, f"⚡ Fresh Breakout ({age_str})")
+        elif freshness == "RETEST":
+            rally_score = min(100, rally_score + 8)
+            quality_tags.insert(0, "🔄 Retest Hold")
+        elif freshness == "EXTENDED":
+            rally_score = max(50, rally_score - 8)
+            quality_tags.append("⚠️ Extended (Late move)")
+        elif freshness == "COILING":
+            quality_tags.insert(0, "⏳ Coiling Near Rail")
+
+        entry, stop, target, plan = build_trade_levels(row, side=side, bo_info=bo_info)
         oi_change_percent = oi.get("oi_change_percent")
         oi_change = oi.get("oi_change")
         display_volume = row.get("volume") or oi.get("volume_contracts")
@@ -1531,12 +2101,14 @@ def build_suggestions(
             reason_parts.append(f"volume {int(display_volume):,}")
 
         status_val = rally["status"] or status_from_score(rally_score, setup)
+        if bo_info.get("is_cascade") and rally_score >= 70:
+            status_val = "Priority Rally"
         # Matches the frontend bell (MLAIStockV2.html checkAndTriggerBellAlerts):
         # rings on confirmed breakout alone, no longer waits for Priority Rally -
         # that used to delay Tracked Breakouts pins by 20-30+ min on real cases.
         # status_val can still separately reach "Priority Rally" later once the
         # score catches up; this flag just no longer waits for it.
-        bell_rang = bool(is_breakout and "near" not in five_min_status.lower())
+        bell_rang = bool((is_breakout or bo_info.get("is_cascade")) and "near" not in five_min_status.lower())
 
         _high, _low, _prev_close = row.get("high"), row.get("low"), row.get("prev_close")
         day_range_percent = (
@@ -1571,6 +2143,7 @@ def build_suggestions(
                 reason=" | ".join(reason_parts),
                 vc_ranking=vc_ranking,
                 mp_score=mp_score,
+                money_flow_percentage=money_flow_percentage,
                 five_min_status=five_min_status,
                 breakout_time=breakout_time,
                 is_breakout=is_breakout,
@@ -1581,6 +2154,13 @@ def build_suggestions(
                 bell_rang=bell_rang,
                 day_range_percent=day_range_percent,
                 prev_close=row.get("prev_close"),
+                is_cascade=bool(bo_info.get("is_cascade")),
+                cascade_type=bo_info.get("cascade_type"),
+                cascade_time=bo_info.get("cascade_time"),
+                cascade_body_pct=float(bo_info.get("cascade_body_pct") or 0.0),
+                cascade_vol_ratio=float(bo_info.get("cascade_vol_ratio") or 1.0),
+                breakout_freshness=bo_info.get("breakout_freshness", "PENDING"),
+                breakout_age_minutes=bo_info.get("breakout_age_minutes"),
             )
         )
 
@@ -1623,12 +2203,602 @@ def phase_for_time(now_ist: datetime) -> str:
     return "Market closed: today's list is archived/reset on next session"
 
 
-def _passes_base_filter(symbol: str, oi_by_symbol: dict[str, dict[str, Any]]) -> bool:
+def _passes_base_filter(symbol: str, oi_by_symbol: dict[str, dict[str, Any]] | None = None) -> bool:
+    lot = get_fo_lot_size(symbol)
     return (
-        symbol in oi_by_symbol
-        and symbol not in INDEX_LIKE_SYMBOLS
-        and get_fo_lot_size(symbol) <= MAX_ALLOWED_LOT_SIZE
+        symbol not in INDEX_LIKE_SYMBOLS
+        and 0 < lot <= MAX_ALLOWED_LOT_SIZE
     )
+
+
+CANDIDATE_LIFECYCLE_PATH = INPUT_DIR / "candidate_lifecycle.json"
+
+
+def _lifecycle_paths() -> tuple[Path, Path, Path]:
+    base = CANDIDATE_LIFECYCLE_PATH
+    bak = base.with_name(f"{base.stem}.bak")
+    lock = base.with_name(f"{base.stem}.lock")
+    return base, bak, lock
+
+
+@contextlib.contextmanager
+def _lifecycle_file_lock():
+    base, bak, lock = _lifecycle_paths()
+    base.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = open(lock, "a+")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
+        lock_file.close()
+
+
+def _load_lifecycle_state() -> dict[str, Any]:
+    base, bak, _ = _lifecycle_paths()
+    if base.exists():
+        try:
+            content = base.read_text(encoding="utf-8")
+            if content.strip():
+                return json.loads(content)
+        except Exception as exc:
+            print(f"[lifecycle] Primary state corrupted ({exc}), attempting backup...", file=sys.stderr)
+            if bak.exists():
+                try:
+                    bak_content = bak.read_text(encoding="utf-8")
+                    if bak_content.strip():
+                        print("[lifecycle] Successfully recovered state from backup file.", file=sys.stderr)
+                        return json.loads(bak_content)
+                except Exception as bak_exc:
+                    print(f"[lifecycle] Backup state also unreadable ({bak_exc}).", file=sys.stderr)
+
+    return {"session_date": None, "candidates": {}}
+
+
+def _save_lifecycle_state(state: dict[str, Any]) -> None:
+    try:
+        base, bak, _ = _lifecycle_paths()
+        base.parent.mkdir(parents=True, exist_ok=True)
+        # 1. Update backup copy if valid primary file currently exists
+        if base.exists():
+            try:
+                raw_primary = base.read_text(encoding="utf-8")
+                if raw_primary.strip():
+                    bak.write_text(raw_primary, encoding="utf-8")
+            except Exception:
+                pass
+
+        # 2. Atomic write of primary file using unique temporary file + os.replace
+        temp_path = base.with_name(
+            f"{base.name}.{os.getpid()}.{_time.time_ns()}.tmp"
+        )
+        temp_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        os.replace(temp_path, base)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[lifecycle] save skipped: {exc}", file=sys.stderr)
+
+
+def _parse_time_minutes(time_str: str | None) -> int:
+    """Parses 'HH:MM AM/PM' or 'HH:MM:SS' into minutes from midnight."""
+    if not time_str or not isinstance(time_str, str):
+        return -1
+    s = time_str.strip().upper()
+    try:
+        if "AM" in s or "PM" in s:
+            dt = datetime.strptime(s, "%I:%M %p")
+            return dt.hour * 60 + dt.minute
+        parts = s.split(":")
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return -1
+
+
+def evaluate_direction_evidence(item: Suggestion, opposite_item: Suggestion) -> float:
+    """Computes an evidence score for resolving concurrent bullish/bearish collisions.
+    Evidence hierarchy:
+    1. Invalidation of old setup (if opposite is failed_trend, candidate gets +1000 pts).
+    2. Completed-bar structure strength (Waterfall/Impulse cascade: +60 pts, Clean BO: +40 pts).
+    3. Newest confirmed reversal timestamp (recency: more recent breakout/cascade wins).
+    4. Confirmation / quality score (one_side_rally_score / score + volume activity).
+    5. Net percentage change magnitude as final tie-breaker."""
+    score = 0.0
+
+    # 1. Invalidation of old setup
+    if getattr(opposite_item, "is_failed_trend", False):
+        score += 1000.0
+    if getattr(item, "is_failed_trend", False):
+        score -= 1000.0
+
+    # 2. Completed-bar structure strength
+    structure_weights = {
+        "Waterfall Breakdown": 60.0,
+        "Impulse Breakout": 60.0,
+        "Clean Breakdown": 40.0,
+        "Clean Breakout": 40.0,
+        "Base Breakdown": 20.0,
+        "Base Breakout": 20.0,
+        "Active Waterfall": 50.0,
+        "Active Rally": 30.0,
+    }
+    score += structure_weights.get(item.chart_structure, 10.0)
+    score -= structure_weights.get(opposite_item.chart_structure, 10.0)
+
+    if item.is_cascade:
+        score += 30.0
+    if opposite_item.is_cascade:
+        score -= 30.0
+
+    # 3. Newest confirmed reversal timestamp (minutes from midnight)
+    t_item = max(_parse_time_minutes(item.breakout_time), _parse_time_minutes(item.cascade_time))
+    t_opp = max(_parse_time_minutes(opposite_item.breakout_time), _parse_time_minutes(opposite_item.cascade_time))
+    if t_item > t_opp and t_opp > 0:
+        score += 25.0
+    elif t_opp > t_item and t_item > 0:
+        score -= 25.0
+
+    # 4. Confirmation / quality score & volume activity
+    q_item = float(item.one_side_rally_score or item.score or 0) + (item.vc_ranking * 2.0)
+    q_opp = float(opposite_item.one_side_rally_score or opposite_item.score or 0) + (opposite_item.vc_ranking * 2.0)
+    score += (q_item - q_opp) * 0.2
+
+    # 5. Net percentage change magnitude as final tie-breaker
+    chg_item = abs(item.percent_change or 0.0)
+    chg_opp = abs(opposite_item.percent_change or 0.0)
+    score += (chg_item - chg_opp) * 2.0
+
+    return score
+
+
+def claim_alert_delivery(
+    alert_event_id: str,
+    worker_id: str,
+    lease_seconds: float = 30.0,
+    now_epoch: float | None = None,
+) -> bool:
+    """Atomic claim state machine: PENDING -> CLAIMED -> DELIVERED -> ACKNOWLEDGED.
+    Guarantees that between multiple concurrent workers (e.g. 2 WebSocket workers),
+    only the worker that successfully claims PENDING -> CLAIMED may broadcast the alert."""
+    if not alert_event_id:
+        return False
+    if now_epoch is None:
+        now_epoch = _time.time()
+
+    with _lifecycle_file_lock():
+        state = _load_lifecycle_state()
+        candidates = state.get("candidates", {})
+        target_entry = None
+        for entry in candidates.values():
+            if entry.get("alert_event_id") == alert_event_id:
+                target_entry = entry
+                break
+
+        if not target_entry:
+            return False
+
+        if target_entry.get("alert_acknowledged_at"):
+            return False
+
+        status = target_entry.get("delivery_status", "PENDING")
+
+        if status == "PENDING":
+            target_entry["delivery_status"] = "CLAIMED"
+            target_entry["claimed_by"] = worker_id
+            target_entry["claimed_at"] = now_epoch
+            target_entry["claim_expires_at"] = now_epoch + lease_seconds
+            _save_lifecycle_state(state)
+            return True
+        elif status == "CLAIMED":
+            # Check if lease expired (worker crashed or timed out)
+            expires_at = target_entry.get("claim_expires_at", 0.0)
+            if now_epoch > expires_at:
+                target_entry["claimed_by"] = worker_id
+                target_entry["claimed_at"] = now_epoch
+                target_entry["claim_expires_at"] = now_epoch + lease_seconds
+                _save_lifecycle_state(state)
+                return True
+            return False
+        elif status in ("DELIVERED", "ACKNOWLEDGED"):
+            return False
+
+        return False
+
+
+def mark_alert_delivered(
+    alert_event_id: str,
+    worker_id: str | None = None,
+    delivered_at_ist: str | None = None,
+) -> bool:
+    """Transitions state from CLAIMED -> DELIVERED after successful transmission."""
+    with _lifecycle_file_lock():
+        state = _load_lifecycle_state()
+        candidates = state.get("candidates", {})
+        found = False
+        if delivered_at_ist is None:
+            delivered_at_ist = datetime.now(INDIA_TZ).strftime("%H:%M:%S")
+        for entry in candidates.values():
+            if entry.get("alert_event_id") == alert_event_id:
+                entry["delivery_status"] = "DELIVERED"
+                entry["alert_delivered_at"] = delivered_at_ist
+                found = True
+        if found:
+            _save_lifecycle_state(state)
+        return found
+
+
+def acknowledge_alert(
+    alert_event_id: str,
+    acknowledged_at_ist: str | None = None,
+    client_id: str | None = None,
+) -> bool:
+    """Marks an alert event as delivered and acknowledged by the UI client.
+    Guarantees 'one logical alert' delivery semantics even if UI was disconnected.
+    Strictly validates alert_event_id format and existence in candidate lifecycle store."""
+    if not alert_event_id or not isinstance(alert_event_id, str):
+        return False
+
+    import re
+    if not re.match(r"^evt_[A-Za-z0-9_-]+$", alert_event_id):
+        return False
+
+    with _lifecycle_file_lock():
+        state = _load_lifecycle_state()
+        candidates = state.get("candidates", {})
+        found = False
+        if acknowledged_at_ist is None:
+            acknowledged_at_ist = datetime.now(INDIA_TZ).strftime("%H:%M:%S")
+        for entry in candidates.values():
+            if entry.get("alert_event_id") == alert_event_id:
+                entry["delivery_status"] = "ACKNOWLEDGED"
+                entry["alert_acknowledged_at"] = acknowledged_at_ist
+                entry["alert_delivered_at"] = entry.get("alert_delivered_at") or acknowledged_at_ist
+                if client_id:
+                    entry.setdefault("acknowledged_by_clients", []).append(client_id)
+                found = True
+                break
+        if found:
+            _save_lifecycle_state(state)
+        return found
+
+
+def _invalidate_lifecycle_entry(
+    cands_store: dict[str, dict[str, Any]],
+    symbol: str,
+    side: str,
+    market_clock_ist: str,
+    now_epoch: float,
+    reason: str,
+) -> None:
+    key = f"{symbol}_{side}"
+    entry = cands_store.get(key)
+    if entry:
+        entry["is_active"] = False
+        entry["is_invalidated"] = True
+        entry["invalidated_at"] = market_clock_ist
+        entry["invalidated_epoch"] = now_epoch
+        entry["invalidation_reason"] = reason
+        entry["delivery_status"] = "PENDING"
+        entry["claimed_by"] = None
+        entry["claimed_at"] = None
+        entry["claim_expires_at"] = None
+        # 3 completed 5m candles = 15 minutes cooldown (900 seconds)
+        entry["cooldown_until_epoch"] = now_epoch + 900.0
+    else:
+        cands_store[key] = {
+            "symbol": symbol,
+            "side": side,
+            "first_qualified_at": None,
+            "first_top5_at": None,
+            "first_rank1_at": None,
+            "first_alerted_at": None,
+            "alert_fired": False,
+            "alert_count": 0,
+            "alert_event_id": None,
+            "alert_created_at": None,
+            "alert_delivered_at": None,
+            "alert_acknowledged_at": None,
+            "delivery_status": "PENDING",
+            "claimed_by": None,
+            "claimed_at": None,
+            "claim_expires_at": None,
+            "current_rank": 99,
+            "is_active": False,
+            "is_invalidated": True,
+            "invalidated_at": market_clock_ist,
+            "invalidated_epoch": now_epoch,
+            "invalidation_reason": reason,
+            "cooldown_until_epoch": now_epoch + 900.0,
+            "last_breakout_level": 0.0,
+            "last_structure": None,
+        }
+
+
+def _process_candidate_lifecycle(
+    cands_store: dict[str, dict[str, Any]],
+    item: Suggestion,
+    side: str,
+    rank: int,
+    market_clock_ist: str,
+    now_epoch: float,
+) -> Suggestion:
+    key = f"{item.symbol}_{side}"
+    entry = cands_store.get(key)
+
+    # Rule 8: Stale fallback data CANNOT invalidate or requalify setups
+    if getattr(item, "is_stale_data", False) or getattr(item, "is_stale_fallback", False):
+        d = item.to_dict()
+        if entry:
+            d["first_qualified_at"] = entry.get("first_qualified_at")
+            d["first_top5_at"] = entry.get("first_top5_at")
+            d["first_rank1_at"] = entry.get("first_rank1_at")
+            d["first_alerted_at"] = entry.get("first_alerted_at")
+            d["alert_event_id"] = entry.get("alert_event_id")
+            d["alert_created_at"] = entry.get("alert_created_at")
+            d["alert_delivered_at"] = entry.get("alert_delivered_at")
+            d["alert_acknowledged_at"] = entry.get("alert_acknowledged_at")
+            d["alert_count"] = entry.get("alert_count", 0)
+            d["delivery_status"] = entry.get("delivery_status", "PENDING")
+            d["claimed_by"] = entry.get("claimed_by")
+            d["claimed_at"] = entry.get("claimed_at")
+        d["should_alert"] = False
+        d["bell_rang"] = False
+        return Suggestion(**d)
+
+    is_qualified = bool(item.is_breakout or item.is_cascade or "near" in (item.five_min_status or "").lower())
+    is_confirmed_breakout = bool(item.is_breakout or item.is_cascade)
+    breakout_level = item.entry or item.ltp or 0.0
+
+    if entry is None:
+        # First time seen this session
+        alert_fired = bool(item.bell_rang)
+        alert_count = 1 if alert_fired else 0
+        event_id = f"evt_{item.symbol}_{side}_w1_{int(now_epoch)}" if alert_fired else None
+        created_at = market_clock_ist if alert_fired else None
+
+        entry = {
+            "symbol": item.symbol,
+            "side": side,
+            "first_qualified_at": market_clock_ist if is_qualified else None,
+            "first_top5_at": market_clock_ist if rank <= 5 else None,
+            "first_rank1_at": market_clock_ist if rank == 1 else None,
+            "first_alerted_at": market_clock_ist if alert_fired else None,
+            "alert_fired": alert_fired,
+            "alert_count": alert_count,
+            "alert_event_id": event_id,
+            "alert_created_at": created_at,
+            "alert_delivered_at": None,
+            "alert_acknowledged_at": None,
+            "delivery_status": "PENDING" if alert_fired else "ACKNOWLEDGED",
+            "claimed_by": None,
+            "claimed_at": None,
+            "claim_expires_at": None,
+            "current_rank": rank,
+            "is_active": True,
+            "is_invalidated": False,
+            "invalidated_at": None,
+            "invalidation_reason": None,
+            "cooldown_until_epoch": 0.0,
+            "last_breakout_level": breakout_level,
+            "last_structure": item.chart_structure,
+        }
+        cands_store[key] = entry
+    else:
+        # Candidate already exists in lifecycle store
+        entry["is_active"] = True
+
+        # Rule 9: Preserve original timestamps; do not overwrite during refreshes
+        if is_qualified and not entry.get("first_qualified_at"):
+            entry["first_qualified_at"] = market_clock_ist
+
+        # Rule 3: Rank movement or leaving/returning to Top 5 does not overwrite first_top5_at
+        if rank <= 5 and not entry.get("first_top5_at"):
+            entry["first_top5_at"] = market_clock_ist
+
+        # Rule 2: Rank movement to #1 records first_rank1_at once
+        if rank == 1 and not entry.get("first_rank1_at"):
+            entry["first_rank1_at"] = market_clock_ist
+
+        entry["current_rank"] = rank
+
+        # Rule 9 Check: Close-based stop-loss evaluation
+        # Completed candle close is checked; if not available, fallback to ltp.
+        # Intrabar low/high wick touches that recover by completed candle close do NOT invalidate.
+        if getattr(item, "is_failed_trend", False):
+            _invalidate_lifecycle_entry(cands_store, item.symbol, side, market_clock_ist, now_epoch, "Trend Invalidation / Trap")
+        elif item.stop_loss is not None:
+            check_price = getattr(item, "completed_candle_close", None)
+            if check_price is None:
+                check_price = item.ltp
+
+            if check_price is not None:
+                if side == "bullish" and check_price < item.stop_loss:
+                    _invalidate_lifecycle_entry(cands_store, item.symbol, side, market_clock_ist, now_epoch, "Stop Loss Breached")
+                elif side == "bearish" and check_price > item.stop_loss:
+                    _invalidate_lifecycle_entry(cands_store, item.symbol, side, market_clock_ist, now_epoch, "Stop Loss Breached")
+
+        if entry.get("is_invalidated"):
+            # Setup was previously invalidated.
+            # Rules 6 & 7: Check if eligible for a SECOND same-direction alert
+            cooldown_passed = now_epoch >= entry.get("cooldown_until_epoch", 0.0)
+            
+            # Genuinely new structure check:
+            old_level = entry.get("last_breakout_level", 0.0)
+            if side == "bullish":
+                new_structure = (breakout_level > old_level * 1.002) and is_confirmed_breakout
+            else:
+                new_structure = (breakout_level < old_level * 0.998) and is_confirmed_breakout
+
+            if cooldown_passed and new_structure:
+                # Genuinely new structure formed after cooldown!
+                new_count = entry.get("alert_count", 1) + 1
+                entry["is_invalidated"] = False
+                entry["invalidated_at"] = None
+                entry["invalidation_reason"] = None
+                entry["last_breakout_level"] = breakout_level
+                entry["last_structure"] = item.chart_structure
+                entry["alert_count"] = new_count
+                entry["alert_fired"] = True
+                entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w{new_count}_{int(now_epoch)}"
+                entry["alert_created_at"] = market_clock_ist
+                entry["alert_delivered_at"] = None
+                entry["alert_acknowledged_at"] = None
+                entry["delivery_status"] = "PENDING"
+                entry["claimed_by"] = None
+                entry["claimed_at"] = None
+                entry["claim_expires_at"] = None
+        else:
+            # Active, valid setup
+            if not entry.get("alert_fired") and item.bell_rang:
+                # Rule 1: Alert ONLY ONCE when first qualified
+                entry["first_alerted_at"] = market_clock_ist
+                entry["alert_fired"] = True
+                entry["alert_count"] = 1
+                entry["last_breakout_level"] = breakout_level
+                entry["last_structure"] = item.chart_structure
+                entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w1_{int(now_epoch)}"
+                entry["alert_created_at"] = market_clock_ist
+                entry["alert_delivered_at"] = None
+                entry["alert_acknowledged_at"] = None
+                entry["delivery_status"] = "PENDING"
+                entry["claimed_by"] = None
+                entry["claimed_at"] = None
+                entry["claim_expires_at"] = None
+
+    # An alert remains active/deliverable as long as it was created and has not been acknowledged
+    should_alert = bool(
+        entry.get("alert_event_id")
+        and entry.get("alert_created_at")
+        and not entry.get("alert_acknowledged_at")
+    )
+
+    # Return updated Suggestion with lifecycle attributes
+    d = item.to_dict()
+    d["rank"] = rank
+    d["first_qualified_at"] = entry.get("first_qualified_at")
+    d["first_top5_at"] = entry.get("first_top5_at")
+    d["first_rank1_at"] = entry.get("first_rank1_at")
+    d["first_alerted_at"] = entry.get("first_alerted_at")
+    d["alert_event_id"] = entry.get("alert_event_id")
+    d["alert_created_at"] = entry.get("alert_created_at")
+    d["alert_delivered_at"] = entry.get("alert_delivered_at")
+    d["alert_acknowledged_at"] = entry.get("alert_acknowledged_at")
+    d["delivery_status"] = entry.get("delivery_status", "PENDING")
+    d["claimed_by"] = entry.get("claimed_by")
+    d["claimed_at"] = entry.get("claimed_at")
+    d["should_alert"] = should_alert
+    d["alert_count"] = entry.get("alert_count", 0)
+    d["bell_rang"] = should_alert
+
+    return Suggestion(**d)
+
+
+def enforce_candidate_lifecycle_and_mutual_exclusion(
+    session_date: str,
+    market_clock_ist: str,
+    bullish: list[Suggestion],
+    bearish: list[Suggestion],
+    now_epoch: float | None = None,
+    is_trading_session: bool | None = None,
+) -> tuple[list[Suggestion], list[Suggestion]]:
+    if now_epoch is None:
+        now_epoch = _time.time()
+
+    with _lifecycle_file_lock():
+        state = _load_lifecycle_state()
+
+        # Check if date is a weekend (Saturday=5, Sunday=6)
+        is_weekend = False
+        try:
+            is_weekend = datetime.fromisoformat(session_date).weekday() >= 5
+        except Exception:
+            pass
+
+        if is_trading_session is False or is_weekend:
+            # Rule 7: Weekend / holiday / closed market refresh must NOT create a fake new session
+            # Keep previous active session candidates intact
+            if state.get("candidates"):
+                cands_store = state.get("candidates", {})
+            else:
+                cands_store = {}
+        else:
+            if state.get("session_date") != session_date:
+                state = {"session_date": session_date, "candidates": {}}
+            cands_store: dict[str, dict[str, Any]] = state.get("candidates", {})
+
+        # Step 1: Evidence-Based Mutual Exclusion between Bullish and Bearish (Rule 8 & Concern 3)
+        bull_map = {item.symbol: item for item in bullish}
+        bear_map = {item.symbol: item for item in bearish}
+        overlap_symbols = set(bull_map.keys()) & set(bear_map.keys())
+
+        for sym in overlap_symbols:
+            b_item = bull_map[sym]
+            br_item = bear_map[sym]
+            evidence = evaluate_direction_evidence(b_item, br_item)
+            if evidence >= 0:
+                del bear_map[sym]
+                _invalidate_lifecycle_entry(cands_store, sym, "bearish", market_clock_ist, now_epoch, "Direction reversed to Bullish (Evidence resolved)")
+            else:
+                del bull_map[sym]
+                _invalidate_lifecycle_entry(cands_store, sym, "bullish", market_clock_ist, now_epoch, "Direction reversed to Bearish (Evidence resolved)")
+
+        # Step 2: Check Direction Reversals against historical session state
+        for sym in list(bull_map.keys()):
+            opposite_key = f"{sym}_bearish"
+            if opposite_key in cands_store and not cands_store[opposite_key].get("is_invalidated"):
+                _invalidate_lifecycle_entry(cands_store, sym, "bearish", market_clock_ist, now_epoch, "Direction reversed to Bullish")
+
+        for sym in list(bear_map.keys()):
+            opposite_key = f"{sym}_bullish"
+            if opposite_key in cands_store and not cands_store[opposite_key].get("is_invalidated"):
+                _invalidate_lifecycle_entry(cands_store, sym, "bullish", market_clock_ist, now_epoch, "Direction reversed to Bearish")
+            if opposite_key in cands_store and not cands_store[opposite_key].get("is_invalidated"):
+                _invalidate_lifecycle_entry(cands_store, sym, "bearish", market_clock_ist, now_epoch, "Direction reversed to Bullish")
+
+        for sym in list(bear_map.keys()):
+            opposite_key = f"{sym}_bullish"
+            if opposite_key in cands_store and not cands_store[opposite_key].get("is_invalidated"):
+                _invalidate_lifecycle_entry(cands_store, sym, "bullish", market_clock_ist, now_epoch, "Direction reversed to Bearish")
+
+        # Step 3: Process Bullish Candidates Lifecycle
+        final_bullish = []
+        for rank, item in enumerate(bull_map.values(), start=1):
+            enriched_item = _process_candidate_lifecycle(
+                cands_store=cands_store,
+                item=item,
+                side="bullish",
+                rank=rank,
+                market_clock_ist=market_clock_ist,
+                now_epoch=now_epoch,
+            )
+            final_bullish.append(enriched_item)
+
+        # Step 4: Process Bearish Candidates Lifecycle
+        final_bearish = []
+        for rank, item in enumerate(bear_map.values(), start=1):
+            enriched_item = _process_candidate_lifecycle(
+                cands_store=cands_store,
+                item=item,
+                side="bearish",
+                rank=rank,
+                market_clock_ist=market_clock_ist,
+                now_epoch=now_epoch,
+            )
+            final_bearish.append(enriched_item)
+
+        # Mark candidates not present in this snapshot as not currently active
+        active_keys = {f"{sym}_bullish" for sym in bull_map} | {f"{sym}_bearish" for sym in bear_map}
+        for k, v in cands_store.items():
+            if k not in active_keys:
+                v["is_active"] = False
+
+        state["candidates"] = cands_store
+        if not is_weekend and is_trading_session is not False:
+            state["session_date"] = session_date
+        _save_lifecycle_state(state)
+
+        return final_bullish, final_bearish
 
 
 # ── Tracked breakouts (pinned once alerted, tracked until a real outcome) ───
@@ -2472,7 +3642,7 @@ def build_payload(top: int) -> dict[str, Any]:
         sym for sym, lot in load_fo_lot_sizes().items()
         if sym not in known_symbols
         and sym not in INDEX_LIKE_SYMBOLS
-        and lot < LOT_SCAN_THRESHOLD
+        and 0 < lot <= MAX_ALLOWED_LOT_SIZE
     ]
     if extra_symbols:
         extra_rows = fetch_extra_candidates(extra_symbols, shared_candles)
@@ -2489,25 +3659,35 @@ def build_payload(top: int) -> dict[str, Any]:
     if union_symbols:
         bulk_fetch_candles(sorted(union_symbols), shared_candles)
 
+    market_universe_rows = list((*gainers, *losers))
     bullish, gainer_stock_overlap = build_suggestions(
         gainers, oi_by_symbol, side="bullish", top=top,
         index_context=index_context, candles_by_symbol=shared_candles, audit=decision_audit,
+        market_universe=market_universe_rows,
     )
     bearish, loser_stock_overlap = build_suggestions(
         losers, oi_by_symbol, side="bearish", top=top,
         index_context=index_context, candles_by_symbol=shared_candles, audit=decision_audit,
+        market_universe=market_universe_rows,
+    )
+    # Enforce candidate lifecycle rules and mutual exclusion
+    session_date = now_ist.date().isoformat()
+    market_clock_ist = now_ist.strftime("%H:%M:%S")
+    bullish, bearish = enforce_candidate_lifecycle_and_mutual_exclusion(
+        session_date=session_date,
+        market_clock_ist=market_clock_ist,
+        bullish=bullish,
+        bearish=bearish,
     )
     gainers_with_oi = sum(
         1 for row in gainers
-        if row["symbol"] in oi_by_symbol
-        and row["symbol"] not in INDEX_LIKE_SYMBOLS
-        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+        if row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and 0 < get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
     )
     losers_with_oi = sum(
         1 for row in losers
-        if row["symbol"] in oi_by_symbol
-        and row["symbol"] not in INDEX_LIKE_SYMBOLS
-        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+        if row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and 0 < get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
     )
     oi_matched = gainers_with_oi + losers_with_oi
 
@@ -2683,6 +3863,7 @@ def build_premarket_reset_payload(now_ist: datetime) -> dict[str, Any]:
     })
     _save_instant_triggers_state({"session_date": session_date, "items": []})
     _save_top5_eligible_state({"session_date": session_date, "first_seen": {}})
+    _save_lifecycle_state({"session_date": session_date, "candidates": {}})
     # Deliberately NOT touching the Outcome Tracker's pending state - those
     # items are still waiting on in-progress +15/30/60min checks from the
     # prior session and must be left alone to finish naturally.

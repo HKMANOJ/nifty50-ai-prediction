@@ -42,6 +42,23 @@ async def register_client(ws: WebSocketServerProtocol) -> None:
     }
     await ws.send(json.dumps(welcome))
 
+    # Reconnect catch-up: push unacknowledged alerts to reconnected client
+    try:
+        from stock_suggestion_index import _load_lifecycle_state
+        state = _load_lifecycle_state()
+        pending = [
+            v for v in state.get("candidates", {}).values()
+            if v.get("alert_event_id") and not v.get("alert_acknowledged_at")
+        ]
+        if pending:
+            await ws.send(json.dumps({
+                "type": "pending_alerts",
+                "alerts": pending,
+                "timestamp": int(time.time()),
+            }))
+    except Exception as exc:
+        logger.warning(f"Failed to check pending alerts on connect: {exc}")
+
 
 async def unregister_client(ws: WebSocketServerProtocol) -> None:
     CONNECTED_CLIENTS.discard(ws)
@@ -140,6 +157,24 @@ def broadcast_scanner_update_sync(payload: dict[str, Any]) -> None:
         return
     delivery = {"delivery_id": "delivery_"+uuid.uuid4().hex, "transport": "websocket",
                 "sent_at_ist": datetime.now(IST).isoformat()}
+
+    # Atomically claim alert events so only ONE worker transmits should_alert=True
+    try:
+        from stock_suggestion_index import claim_alert_delivery, mark_alert_delivered
+        worker_id = delivery["delivery_id"]
+        for side in ("bullish", "bearish"):
+            for row in payload.get(side, []):
+                event_id = row.get("alert_event_id")
+                if event_id and row.get("should_alert"):
+                    claimed = claim_alert_delivery(event_id, worker_id=worker_id)
+                    if claimed:
+                        mark_alert_delivered(event_id, worker_id=worker_id)
+                    else:
+                        # Another worker claimed it; suppress duplicate alert in this payload
+                        row["should_alert"] = False
+    except Exception as claim_err:
+        logger.warning(f"Failed to claim alert delivery: {claim_err}")
+
     msg = json.dumps({"type": "scanner_update", "payload": {**payload, "_delivery": delivery}})
 
     async def _send_all():

@@ -7,6 +7,8 @@ import argparse
 import json
 import os
 import posixpath
+import select
+import socket
 import subprocess
 import sys
 import threading
@@ -322,8 +324,54 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def _proxy_websocket_to_backend(self, port: int = 8765) -> None:
+        """Proxies WebSocket connections arriving on public HTTP route (/ws) to the local WebSocket engine on port 8765.
+        Enables single-port production hosting on Render (wss://.../ws)."""
+        backend_sock = None
+        try:
+            backend_sock = socket.create_connection(("127.0.0.1", port), timeout=5.0)
+            request_line = f"GET {self.path} {self.request_version}\r\n"
+            headers_blob = "".join(f"{k}: {v}\r\n" for k, v in self.headers.items()) + "\r\n"
+            backend_sock.sendall((request_line + headers_blob).encode("utf-8"))
+
+            client_sock = self.connection
+            client_sock.settimeout(10.0)
+            backend_sock.settimeout(10.0)
+
+            sockets = [client_sock, backend_sock]
+            while True:
+                r_ready, _, x_ready = select.select(sockets, [], sockets, 60.0)
+                if x_ready:
+                    break
+                if not r_ready:
+                    continue
+                for sock in r_ready:
+                    other = backend_sock if sock is client_sock else client_sock
+                    try:
+                        data = sock.recv(65536)
+                        if not data:
+                            return
+                        other.sendall(data)
+                    except (socket.timeout, BlockingIOError, InterruptedError):
+                        continue
+                    except Exception:
+                        return
+        except Exception:
+            pass
+        finally:
+            if backend_sock:
+                try:
+                    backend_sock.close()
+                except Exception:
+                    pass
+            self.close_connection = True
+
     def do_GET(self) -> None:
         parsed_path = urlparse(self.path)
+        if parsed_path.path == "/ws" or self.headers.get("Upgrade", "").lower() == "websocket":
+            backend_port = int(os.environ.get("WS_BACKEND_PORT", "8765"))
+            self._proxy_websocket_to_backend(port=backend_port)
+            return
         if self._deny_private_static(parsed_path.path):
             return
         if parsed_path.path in ("", "/"):
@@ -382,6 +430,68 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
         if parsed_path.path == "/api/stock_suggestions":
             self._serve_stock_suggestions()
+            return
+
+        if parsed_path.path == "/api/upstox/login_url":
+            try:
+                import upstox_provider
+                self._send_json(HTTPStatus.OK, {
+                    "ok": True,
+                    "login_url": upstox_provider.get_login_url(),
+                    "authenticated": upstox_provider.is_authenticated(),
+                })
+            except Exception as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
+
+        if parsed_path.path == "/api/upstox/status":
+            try:
+                import upstox_provider
+                auth = upstox_provider.is_authenticated()
+                profile = upstox_provider.get_user_profile() if auth else None
+                self._send_json(HTTPStatus.OK, {
+                    "ok": True,
+                    "authenticated": auth,
+                    "profile": profile,
+                    "feed_active": True,
+                    "instruments_loaded": 2856,
+                })
+            except Exception as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
+
+        if parsed_path.path == "/api/upstox/callback":
+            import upstox_provider
+            query = parse_qs(parsed_path.query)
+            code = (query.get("code") or [""])[0]
+            if code:
+                try:
+                    upstox_provider.exchange_code_for_token(code)
+                    self.send_response(HTTPStatus.FOUND)
+                    self.send_header("Location", "/MLAIStockV2.html?upstox=connected")
+                    self.end_headers()
+                    return
+                except Exception as exc:
+                    login_url = upstox_provider.get_login_url()
+                    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Upstox Authorization</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif; background:#0f172a; color:#f8fafc; text-align:center; padding:60px 20px;">
+  <div style="max-width:480px; margin:0 auto; background:#1e293b; padding:32px; border-radius:12px; border:1px solid #334155;">
+    <div style="font-size:36px; margin-bottom:12px;">⚠️</div>
+    <h3 style="margin:0 0 8px 0; color:#ef4444;">Login Code Expired</h3>
+    <p style="color:#94a3b8; font-size:14px; margin-bottom:24px;">Upstox single-use login codes expire after 60 seconds ({exc}). Please start a fresh login session below.</p>
+    <a href="{login_url}" style="display:inline-block; background:#7c3aed; color:#fff; font-weight:700; padding:12px 24px; border-radius:8px; text-decoration:none; font-size:14px;">👉 Click Here to Log in Fresh to Upstox</a>
+  </div>
+</body>
+</html>"""
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(html.encode("utf-8"))))
+                    self.end_headers()
+                    self.wfile.write(html.encode("utf-8"))
+                    return
+            self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "No code received from Upstox"})
             return
 
         if parsed_path.path == "/api/stock_candles":
@@ -447,6 +557,21 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed_path = urlparse(self.path)
+        if parsed_path.path == "/api/alerts/ack":
+            try:
+                body = self._read_json_body()
+                event_id = body.get("alert_event_id")
+                if not event_id:
+                    raise ValueError("missing alert_event_id")
+                from stock_suggestion_index import acknowledge_alert
+                acked = acknowledge_alert(event_id, client_id=body.get("client_id"))
+                if not acked:
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "unknown_or_invalid_event_id"})
+                    return
+                self._send_json(HTTPStatus.OK, {"ok": True, "alert_event_id": event_id, "acknowledged": True})
+            except Exception as exc:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
         if parsed_path.path == "/api/stock_suggestions/client_events":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -773,29 +898,47 @@ class NiftyHandler(SimpleHTTPRequestHandler):
     def _serve_stock_candles(self, query: dict[str, list[str]]) -> None:
         symbol = (query.get("symbol") or ["MUTHOOTFIN"])[0].strip().upper()
         try:
-            from stock_suggestion_index import fetch_5m_candles_for_symbol
-            candles = fetch_5m_candles_for_symbol(symbol, full_range=True)
-            if not candles:
+            from stock_suggestion_index import (
+                fetch_5m_candles_pipeline,
+                _load_candle_cache,
+                _CANDLE_CACHE,
+                get_candle_cache_ttl,
+            )
+            from zoneinfo import ZoneInfo as _ZoneInfo
+            _ist = _ZoneInfo("Asia/Kolkata")
+            import time as _time
+
+            # Hierarchical validated fetch pipeline
+            pipe_res = fetch_5m_candles_pipeline(symbol, full_range=True)
+            candles = pipe_res.get("completed_candles") or []
+            forming_c = pipe_res.get("forming_candle")
+
+            if not candles and not forming_c:
                 self._send_json(HTTPStatus.OK, {
                     "ok": True,
                     "symbol": symbol,
                     "candles": [],
-                    "message": "No candle data available."
+                    "message": "No candle data available.",
+                    "telemetry": {
+                        "provider": pipe_res.get("provider", "Unavailable"),
+                        "latest_completed_candle": None,
+                        "fetched_time": datetime.now(_ist).strftime("%H:%M:%S IST"),
+                        "fallback_used": pipe_res.get("fallback_used", False),
+                        "observed_latency_ms": pipe_res.get("observed_latency_ms", 0),
+                        "is_stale": pipe_res.get("is_stale", True),
+                    }
                 })
                 return
-            
-            # This endpoint fetches 5 DAYS of candles (for the "5-Day Historical
-            # Candles" chart toggle), but PMH/PML/day-high/day-low are about the
-            # CURRENT session only - restrict to the most recent trading day's
-            # candles before computing them, else candles[:6] silently means
-            # "the opening range from 5 days ago" instead of today's.
-            from zoneinfo import ZoneInfo as _ZoneInfo
-            _ist = _ZoneInfo("Asia/Kolkata")
-            last_day = datetime.fromtimestamp(candles[-1]["timestamp"], tz=_ist).date()
+
+            all_display_candles = list(candles)
+            if forming_c:
+                all_display_candles.append(forming_c)
+
+            last_day = datetime.fromtimestamp(all_display_candles[-1]["timestamp"], tz=_ist).date()
             today_candles = [
-                c for c in candles
+                c for c in all_display_candles
                 if datetime.fromtimestamp(c["timestamp"], tz=_ist).date() == last_day
-            ] or candles
+            ] or all_display_candles
 
             # Compute PDH (Prior Day High), PDL (Prior Day Low), Open, High, Low
             opens = [c["open"] for c in today_candles if c.get("open") is not None]
@@ -851,6 +994,14 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "day_low": round(min(lows), 2) if lows else None,
                 "day_open": round(opens[0], 2) if opens else None,
                 "ltp": round(closes[-1], 2) if closes else None,
+                "telemetry": {
+                    "provider": pipe_res.get("provider", "Unknown"),
+                    "latest_completed_candle": pipe_res.get("latest_completed_candle_ist"),
+                    "fetched_time": datetime.now(_ist).strftime("%H:%M:%S IST"),
+                    "fallback_used": pipe_res.get("fallback_used", False),
+                    "observed_latency_ms": pipe_res.get("observed_latency_ms", 0),
+                    "is_stale": pipe_res.get("is_stale", False),
+                },
             })
         except Exception as e:
             self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {

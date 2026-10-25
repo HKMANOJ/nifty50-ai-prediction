@@ -205,7 +205,7 @@ class ScannerAuditTests(unittest.TestCase):
         self.assertEqual(matched, matched_after)
         reasons = {r["symbol"]: r["reason"] for r in audit}
         self.assertEqual(reasons, {"WIN": "included", "QUIET": "volume_confluence_below_minimum",
-                                   "FAIL": "rally_gate_failed", "NOOI": "oi_data_unavailable"})
+                                   "FAIL": "rally_gate_failed", "NOOI": "included"})
 
 
 if __name__ == "__main__":

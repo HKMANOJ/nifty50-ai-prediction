@@ -903,6 +903,18 @@
     }
     .bo-status-pill.bo { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
     .bo-status-pill.bd { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+    .bo-status-pill.waterfall {
+      background: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fca5a5;
+      font-weight: 800;
+    }
+    .bo-status-pill.impulse {
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #86efac;
+      font-weight: 800;
+    }
     .bo-status-pill.near { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
     .bo-status-pill.wait { background: #f1f5f9; color: var(--text-muted); }
 
@@ -1199,6 +1211,10 @@
       </div>
 
       <div class="navbar-status">
+        <button id="upstoxAuthBtn" onclick="handleUpstoxAuthClick()" style="background:#f5f3ff; color:#6d28d9; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #ddd6fe; cursor:pointer; display:inline-flex; align-items:center; gap:5px; flex-shrink:0;" title="Connect Upstox for official high-speed candles and Level-2 depth">
+          <span id="upstoxDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#8b5cf6;"></span>
+          <span id="upstoxBtnText">⚡ Upstox: Connect</span>
+        </button>
         <button id="soundToggleBtn" style="background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #bfdbfe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Toggle breakout & breakdown bell audio chime">🔔 Bell Sound: ON</button>
         <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Click to test the bell rang sound and alert">🧪 Test Bell</button>
         <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px;" title="WebSocket connection status only; scanner snapshot status is shown above the table">
@@ -1346,6 +1362,7 @@
               <span class="chart-stat-chip" id="chartPmhPmlStatus" style="display:none;"></span>
               <span class="chart-stat-chip" id="chartPdh">Structure: Breakout Rally</span>
               <span class="chart-stat-chip" style="background:#eff6ff; color:#2563eb; font-weight:700;">📅 5-Day Historical Candles</span>
+              <span class="chart-stat-chip" id="chartTelemetryChip" style="font-weight:700; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;" title="Live candle feed provider, latest completed bar, fetched time, and observed latency">⚡ Feed: Checking...</span>
             </div>
             <div class="chart-toolbar">
               <button class="tf-btn active" id="btnTf5m">5m (5-Day)</button>
@@ -1382,7 +1399,7 @@
               <tr>
                 <th># Rank</th>
                 <th>Stock</th>
-                <th>Price</th>
+                <th>Money Flow %</th>
                 <th>Change %</th>
                 <th>Volume</th>
                 <th>VC Ranking (RVOL)</th>
@@ -1618,6 +1635,36 @@
   let _hasEvaluatedInitialBell = false;
   const _alertedBreakouts = new Set();
 
+  /* Persisted Alert Event IDs: prevents duplicate audible chimes across restarts & reconnects */
+  const _PERSISTED_SEEN_KEY = "mlai_seen_alert_event_ids_v1";
+  function _loadPersistedAlertIds() {
+    try {
+      const raw = localStorage.getItem(_PERSISTED_SEEN_KEY);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch (e) {
+      return new Set();
+    }
+  }
+  const _persistedSeenEventIds = _loadPersistedAlertIds();
+
+  function _savePersistedAlertId(eventId) {
+    if (!eventId) return;
+    try {
+      _persistedSeenEventIds.add(eventId);
+      const arr = Array.from(_persistedSeenEventIds).slice(-200);
+      localStorage.setItem(_PERSISTED_SEEN_KEY, JSON.stringify(arr));
+    } catch (e) {}
+  }
+
+  function _getClientId() {
+    let cid = localStorage.getItem("mlai_client_id");
+    if (!cid) {
+      cid = "cli_" + Math.random().toString(36).substring(2, 10) + "_" + Date.now();
+      localStorage.setItem("mlai_client_id", cid);
+    }
+    return cid;
+  }
+
   /* ── IST time helpers (FIX 1 bell freshness + FIX 2 pick lock window) ──
      All timing is done in "minutes since IST midnight", read from the payload's
      own IST clock, so it never depends on the viewer's browser timezone. */
@@ -1638,7 +1685,7 @@
   const MAX_DISPLAY_ROWS = 500;
   // Any stock with a lot size above this is excluded - matches the server's
   // MAX_ALLOWED_LOT_SIZE so client and server agree on what "too big" means.
-  const MAX_LOT_SIZE_DISPLAY = 1000;
+  const MAX_LOT_SIZE_DISPLAY = 650;
   let _lockedPick = null;        // { symbol, score, boMin, expiresMin, type, row }
   // Previous scan's Top 5 Eligible symbols per side, so a freshly-added
   // stock (not seen last render) can get the new-entry blink treatment.
@@ -1779,7 +1826,8 @@
     if (existing) existing.remove();
 
     const type = isPE ? "bearish" : "bullish";
-    const statusText = isPE ? `🔴 BREAKDOWN ${x.breakout_time || ''}` : `🟢 BREAKOUT ${x.breakout_time || ''}`;
+    const freshTag = x.breakout_freshness === "FRESH" ? " · ⚡ FRESH" : (x.breakout_freshness === "RETEST" ? " · 🔄 RETEST" : "");
+    const statusText = isPE ? `🔴 BREAKDOWN ${x.breakout_time || ''}${freshTag}` : `🟢 BREAKOUT ${x.breakout_time || ''}${freshTag}`;
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
     toast.setAttribute("data-sym", x.symbol);
@@ -1833,21 +1881,51 @@
       // and can separately upgrade to "Priority Rally" once it catches up.
       if (!isActualBreakout) return;
 
-      const alertKey = `${row.symbol}_${row.breakout_time || 'BO'}_${row.side || ''}`;
+      // Unique alert key per candidate identity, side, and wave (alert_count)
+      const sideKey = row.side || (isBreakdown ? 'bearish' : 'bullish');
+      const wave = row.alert_count || 1;
+      const alertKey = `${row.symbol}_${sideKey}_wave${wave}`;
       if (_alertedBreakouts.has(alertKey)) return;   // already handled -> stay silent
+      if (row.alert_event_id && _persistedSeenEventIds.has(row.alert_event_id)) return; // already chimed in this browser
 
-      // FIX 1: only ring if the breakout is FRESH (happened within the last
+      // Only ring if the breakout is FRESH (happened within the last
       // FRESH_WINDOW_MIN minutes). Anything older is seeded silently so it can
       // never replay later.
       const boMin = breakoutMinutes(row.breakout_time);
       const ageMin = (boMin == null) ? null : (nowMin - boMin);
       const isFresh = (ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN;
 
-      _alertedBreakouts.add(alertKey);   // seed regardless, so it fires at most once
+      // When backend lifecycle engine is active, respect row.should_alert; fallback to isFresh
+      const shouldTrigger = (row.should_alert !== undefined) ? Boolean(row.should_alert) : isFresh;
 
-      if (isFresh && _hasEvaluatedInitialBell) {
+      _alertedBreakouts.add(alertKey);   // seed regardless, so this wave fires at most once
+
+      if (shouldTrigger && _hasEvaluatedInitialBell) {
+        // If direction reversed or re-alerting, remove any opposite/stale toast
+        const oppToast = document.querySelector(`.toast[data-sym="${row.symbol}"]`);
+        if (oppToast) oppToast.remove();
+
+        if (row.alert_event_id) {
+          _savePersistedAlertId(row.alert_event_id);
+        }
+
         playBellRangSound();
         showStickyToast(row, isBreakdown);
+
+        // Acknowledge alert delivery to backend state machine
+        if (row.alert_event_id) {
+          fetch('/api/alerts/ack', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              alert_event_id: row.alert_event_id,
+              symbol: row.symbol,
+              client_id: _getClientId()
+            })
+          }).catch(err => console.warn('Alert ack error:', err));
+        }
+      } else if (row.alert_event_id) {
+        _savePersistedAlertId(row.alert_event_id);
       }
     });
 
@@ -2014,7 +2092,15 @@
       pctEl.textContent = `${isUp ? "+" : ""}${meta.percent_change.toFixed(2)}% ${isUp ? "LEADING" : "LAGGING"}`;
     }
     if (pdhEl && meta.chart_structure) {
-      pdhEl.textContent = `Structure: ${meta.chart_structure}`;
+      const isCascade = meta.chart_structure.toLowerCase().includes("waterfall") || meta.chart_structure.toLowerCase().includes("impulse");
+      pdhEl.textContent = `Structure: ${isCascade ? '⚡ ' : ''}${meta.chart_structure}`;
+      if (isCascade) {
+        pdhEl.style.fontWeight = "800";
+        pdhEl.style.color = meta.chart_structure.toLowerCase().includes("waterfall") ? "var(--red)" : "var(--green)";
+      } else {
+        pdhEl.style.fontWeight = "";
+        pdhEl.style.color = "";
+      }
     }
 
     // Highlight in left list and table
@@ -2041,6 +2127,39 @@
 
       if (orbEl && (data.orb_high || data.day_high)) {
         orbEl.textContent = `PMH: ₹${(data.orb_high || data.day_high).toFixed(2)}`;
+      }
+
+      const telemEl = document.getElementById("chartTelemetryChip");
+      if (telemEl && data.telemetry) {
+        const t = data.telemetry;
+        const prov = t.provider || "Unknown";
+        const bar = t.latest_completed_candle || "--";
+        const fetched = t.fetched_time || "";
+        const lat = (t.observed_latency_ms !== undefined && t.observed_latency_ms > 0) ? `${t.observed_latency_ms}ms` : "";
+        const isFallback = Boolean(t.fallback_used);
+        const isStale = Boolean(t.is_stale);
+
+        if (prov === "Upstox" && !isFallback && !isStale) {
+          telemEl.textContent = `⚡ Feed: Upstox | Bar: ${bar} | Fetched: ${fetched}${lat ? " (" + lat + ")" : ""}`;
+          telemEl.style.background = "#f0fdf4";
+          telemEl.style.color = "#166534";
+          telemEl.style.borderColor = "#bbf7d0";
+        } else if (isFallback && !isStale) {
+          telemEl.textContent = `⚠️ Feed: ${prov} | Bar: ${bar} | Fetched: ${fetched}${lat ? " (" + lat + ")" : ""}`;
+          telemEl.style.background = "#fffbeb";
+          telemEl.style.color = "#b45309";
+          telemEl.style.borderColor = "#fde68a";
+        } else if (isStale) {
+          telemEl.textContent = `⏳ Feed: Cache (Stale) | Bar: ${bar} | Cached`;
+          telemEl.style.background = "#fef2f2";
+          telemEl.style.color = "#991b1b";
+          telemEl.style.borderColor = "#fecaca";
+        } else {
+          telemEl.textContent = `Feed: ${prov} | Bar: ${bar}`;
+          telemEl.style.background = "#f8fafc";
+          telemEl.style.color = "#475569";
+          telemEl.style.borderColor = "#e2e8f0";
+        }
       }
 
       if (_candleSeries && _tvChart) {
@@ -2123,11 +2242,20 @@
       const st = (it.five_min_status || "").toLowerCase();
       const isNear = st.includes("near");
       const isConsolidating = st.includes("consolidating");
+      const isCascade = Boolean(it.is_cascade || st.includes("waterfall") || st.includes("impulse"));
       const isBreakout = Boolean(it.is_breakout || st.includes("breakout"));
       const isBreakdown = Boolean(st.includes("breakdown") || ((it.percent_change || 0) < 0 && it.is_breakout));
-      const timeStr = it.breakout_time ? ` ${it.breakout_time}` : "";
+      const timeStr = (it.breakout_time || it.cascade_time) ? ` ${it.breakout_time || it.cascade_time}` : "";
       let boBadge = "", boCls = "wait";
-      if (!isNear && !isConsolidating && (isBreakout || isBreakdown)) {
+      if (isCascade) {
+        if (!isUp || isBreakdown) {
+          boBadge = `⚡ WATERFALL${timeStr}`;
+          boCls = "waterfall";
+        } else {
+          boBadge = `⚡ IMPULSE${timeStr}`;
+          boCls = "impulse";
+        }
+      } else if (!isNear && !isConsolidating && (isBreakout || isBreakdown)) {
         boBadge = isBreakdown ? `🔴 BREAKDOWN${timeStr}` : `🟢 BREAKOUT${timeStr}`;
         boCls = isBreakdown ? "bd" : "bo";
       } else if (isNear) {
@@ -2467,14 +2595,23 @@
       const st = (row.five_min_status || "").toLowerCase();
       const isNear = st.includes("near");
       const isConsolidating = st.includes("consolidating");
+      const isCascade = Boolean(row.is_cascade || st.includes("waterfall") || st.includes("impulse"));
       const isBreakout = Boolean(row.is_breakout || st.includes("breakout"));
       const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
-      const timeStr = row.breakout_time ? ` ${row.breakout_time}` : "";
+      const timeStr = (row.breakout_time || row.cascade_time) ? ` ${row.breakout_time || row.cascade_time}` : "";
 
       let statusBadge = "";
       let boCls = "wait";
 
-      if (!isNear && !isConsolidating && (isBreakout || isBreakdown)) {
+      if (isCascade) {
+        if (!isUp || isBreakdown) {
+          statusBadge = `⚡ WATERFALL${timeStr}`;
+          boCls = "waterfall";
+        } else {
+          statusBadge = `⚡ IMPULSE${timeStr}`;
+          boCls = "impulse";
+        }
+      } else if (!isNear && !isConsolidating && (isBreakout || isBreakdown)) {
         if (isBreakdown) {
           statusBadge = `🔴 BREAKDOWN${timeStr}`;
           boCls = "bd";
@@ -2490,6 +2627,21 @@
         boCls = "wait";
       }
 
+      // On-Time Breakout Freshness Badge
+      const freshness = (row.breakout_freshness || "").toUpperCase();
+      const ageM = row.breakout_age_minutes;
+      let freshBadge = "";
+      if (freshness === "FRESH") {
+        const ageLabel = (ageM != null && ageM > 0) ? `${ageM}m ago` : "Just now";
+        freshBadge = `<span style="background:#dcfce7; color:#15803d; border:1px solid #86efac; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px; margin-left:5px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle;" title="Breakout occurred within last 15 mins - Immediate On-Time Entry Zone">⚡ FRESH (${ageLabel})</span>`;
+      } else if (freshness === "RETEST") {
+        freshBadge = `<span style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px; margin-left:5px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle;" title="Pulled back to EMA9/PMH and held - Secondary Safe Entry Zone">🔄 RETEST</span>`;
+      } else if (freshness === "EXTENDED") {
+        freshBadge = `<span style="background:#fff1f2; color:#be123c; border:1px solid #fecdd3; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px; margin-left:5px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle;" title="Mature move (>45m or >2.5% run) - High Risk of Mean Reversion / Do Not Chase">⚠️ EXTENDED</span>`;
+      } else if (freshness === "COILING") {
+        freshBadge = `<span style="background:#fefce8; color:#a16207; border:1px solid #fde047; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px; margin-left:5px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle;" title="Price compressing within 0.3% of PMH/PML - Pre-Breakout Early Warning">⏳ COILING</span>`;
+      }
+
       return `
         <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">${idx + 1}</td>
@@ -2499,7 +2651,7 @@
               <span class="sub">${row.setup || "F&O Active"}</span>
             </div>
           </td>
-          <td style="font-weight:700; font-family:var(--font-mono);">₹${n(row.ltp)}</td>
+          <td style="font-weight:700; font-family:var(--font-mono); color:${(row.money_flow_percentage ?? 0) >= 70 ? 'var(--green)' : (row.money_flow_percentage ?? 0) >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${(row.money_flow_percentage ?? 0).toFixed(1)}%</td>
           <td style="font-weight:800; font-family:var(--font-mono); color:${isUp ? 'var(--green)' : 'var(--red)'};">${pct(row.percent_change)}</td>
           <td style="font-family:var(--font-mono); color:var(--text-muted);">${n0(row.volume)}</td>
           <td><span class="vc-pill ${vcCls}">${vc.toFixed(2)}x</span></td>
@@ -2510,7 +2662,7 @@
             </span>
           </td>
           <td>
-            <span class="bo-status-pill ${boCls}">${statusBadge}</span>
+            <span class="bo-status-pill ${boCls}">${statusBadge}</span>${freshBadge}
           </td>
           <td>
             <div class="score-meter">
@@ -2808,13 +2960,16 @@
         pickBadge.style.background = "#ffe4e6";
         pickBadge.style.color = "#be123c";
         
+        const freshPickTag = finalTopPick.breakout_freshness === "FRESH" ? " ⚡ FRESH" : (finalTopPick.breakout_freshness === "RETEST" ? " 🔄 RETEST" : (finalTopPick.breakout_freshness === "EXTENDED" ? " ⚠️ EXTENDED" : ""));
         document.getElementById("topPickSym").textContent = finalTopPick.symbol;
         document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
-        document.getElementById("topPickTime").textContent = finalTopPick.breakout_time || "--";
+        document.getElementById("topPickTime").textContent = `${finalTopPick.breakout_time || "--"}${freshPickTag}`;
         document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}${_lockTillStr ? " · " + _lockTillStr : ""}`;
         
         if (pickCriteria) {
+          const freshCriteria = finalTopPick.breakout_freshness === "FRESH" ? [["⚡ Fresh Breakout", "#dcfce7", "#15803d"]] : (finalTopPick.breakout_freshness === "RETEST" ? [["🔄 Retest Hold", "#eff6ff", "#1d4ed8"]] : []);
           pickCriteria.innerHTML = [
+            ...freshCriteria,
             ["📉 Breakdown",                                      "#ffe4e6", "#be123c"],
             [`📉 RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x`,   "#ffe4e6", "#be123c"],
             ["📉 Short Buildup",                                  "#ffe4e6", "#be123c"],
@@ -2829,13 +2984,16 @@
         pickBadge.style.background = "#dcfce7";
         pickBadge.style.color = "#15803d";
         
+        const freshPickTag = finalTopPick.breakout_freshness === "FRESH" ? " ⚡ FRESH" : (finalTopPick.breakout_freshness === "RETEST" ? " 🔄 RETEST" : (finalTopPick.breakout_freshness === "EXTENDED" ? " ⚠️ EXTENDED" : ""));
         document.getElementById("topPickSym").textContent = finalTopPick.symbol;
         document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
-        document.getElementById("topPickTime").textContent = finalTopPick.breakout_time || "--";
+        document.getElementById("topPickTime").textContent = `${finalTopPick.breakout_time || "--"}${freshPickTag}`;
         document.getElementById("topPickReason").textContent = `AI Score: ${scoreStr} · RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x · ${trendStr}${_lockTillStr ? " · " + _lockTillStr : ""}`;
         
         if (pickCriteria) {
+          const freshCriteria = finalTopPick.breakout_freshness === "FRESH" ? [["⚡ Fresh Breakout", "#dcfce7", "#15803d"]] : (finalTopPick.breakout_freshness === "RETEST" ? [["🔄 Retest Hold", "#eff6ff", "#1d4ed8"]] : []);
           pickCriteria.innerHTML = [
+            ...freshCriteria,
             ["📈 Breakout",                                      "#dcfce7", "#166534"],
             [`📈 RVOL ${(finalTopPick.vc_ranking||0).toFixed(1)}x`,   "#dcfce7", "#166534"],
             ["📈 Long Buildup",                                  "#dcfce7", "#166534"],
@@ -2993,7 +3151,49 @@
     if (document.visibilityState === "visible") loadData();
   });
 
+  async function checkUpstoxStatus() {
+    try {
+      const res = await fetch("/api/upstox/status");
+      const data = await res.json();
+      const btn = document.getElementById("upstoxAuthBtn");
+      const text = document.getElementById("upstoxBtnText");
+      const dot = document.getElementById("upstoxDot");
+      if (!btn || !text || !dot) return;
+      if (data.feed_active) {
+        text.textContent = data.authenticated ? `🟢 Upstox L2: ${(data.profile && data.profile.user_name ? data.profile.user_name.split(" ")[0] : "Active")}` : `🟢 Upstox Feed: Active`;
+        dot.style.background = "#16a34a";
+        btn.style.background = "#f0fdf4";
+        btn.style.color = "#166534";
+        btn.style.borderColor = "#bbf7d0";
+        btn.title = data.authenticated ? "Upstox Level-2 Market Depth Active" : "Upstox High-Speed Market Feed Active (2,856 NSE instruments loaded).";
+      } else {
+        text.textContent = "⚡ Connect Upstox";
+        dot.style.background = "#8b5cf6";
+        btn.style.background = "#f5f3ff";
+        btn.style.color = "#6d28d9";
+        btn.style.borderColor = "#ddd6fe";
+      }
+    } catch (e) {
+      console.warn("Upstox status check failed", e);
+    }
+  }
+
+  async function handleUpstoxAuthClick() {
+    try {
+      const res = await fetch("/api/upstox/login_url");
+      const data = await res.json();
+      if (data.login_url) {
+        window.location.href = data.login_url;
+      } else {
+        alert("Upstox API credentials not found.");
+      }
+    } catch (e) {
+      alert("Could not fetch Upstox login URL: " + e);
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
+    checkUpstoxStatus();
     initChart();
     updateSoundButtonUI();
 
@@ -3223,16 +3423,20 @@
   let _wsHeartbeat = null;
   let _wsReconnectDelay = 2500;   // grows on repeated failures, resets on success
   let _wsReconnectTimer = null;
+  let _wsUseDirectPort = false;
 
   function connectWebSocket() {
     // Smart WebSocket URL detection:
-    // - Local dev (HTTP):   ws://127.0.0.1:8765  (separate WS port)
-    // - Production (HTTPS): wss://yourapp.onrender.com/ws  (same port via path upgrade)
-    const isLocalDev = (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
+    // - Production (Render) & standard dev: wss://host/ws or ws://host/ws via app server proxy (single-port compliant)
+    // - Local standalone fallback: ws://127.0.0.1:8765 if proxy unavailable
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = isLocalDev
-      ? `ws://127.0.0.1:8765`
-      : window.location.hostname.match(/^[0-9.]+$/) ? `ws://${window.location.hostname}:8765` : `${wsProtocol}//${window.location.host}/ws`;
+    const isLocal = (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
+    let wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+    if (!window.location.host || window.location.protocol === "file:") {
+      wsUrl = "ws://127.0.0.1:8765";
+    } else if (_wsUseDirectPort && isLocal) {
+      wsUrl = "ws://127.0.0.1:8765";
+    }
 
     const badge = document.getElementById("wsStatusBadge");
     const dot   = document.getElementById("wsStatusDot");
@@ -3247,7 +3451,7 @@
 
 
     _wsClient.onopen = () => {
-      scannerTrace("ws_connected", {transport:"websocket"});
+      scannerTrace("ws_connected", {transport:"websocket", url: wsUrl});
       if (dot) dot.style.background = "#16a34a";
       if (text) text.textContent = "WS: Connected";
       if (badge) {
@@ -3288,6 +3492,33 @@
           scannerTrace("snapshot_received", {snapshot_id:msg.payload.snapshot_id,
             delivery_id:msg.payload._delivery?.delivery_id, transport:"websocket"});
           renderAll(msg.payload, "websocket");
+        } else if (msg.type === "pending_alerts" && Array.isArray(msg.alerts)) {
+          // Reconnect catch-up: process unacknowledged alerts from backend state
+          msg.alerts.forEach(item => {
+            const evtId = item.alert_event_id;
+            if (!evtId) return;
+            if (_persistedSeenEventIds.has(evtId)) {
+              // Already chimed in this browser previously; silently ACK
+              fetch('/api/alerts/ack', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alert_event_id: evtId, symbol: item.symbol, client_id: _getClientId() })
+              }).catch(err => console.warn('Alert ack error:', err));
+            } else {
+              // Truly missed alert while disconnected!
+              _savePersistedAlertId(evtId);
+              const isPE = (item.side === "bearish") || (item.percent_change < 0);
+              if (_hasEvaluatedInitialBell) {
+                playBellRangSound();
+                showStickyToast(item, isPE);
+              }
+              fetch('/api/alerts/ack', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alert_event_id: evtId, symbol: item.symbol, client_id: _getClientId() })
+              }).catch(err => console.warn('Alert ack error:', err));
+            }
+          });
         } else if (msg.type === "index_update" && msg.index_context) {
           const n50 = msg.index_context["NIFTY 50"] || {};
           const bnk = msg.index_context["NIFTY BANK"] || {};

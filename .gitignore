@@ -18,7 +18,11 @@ inputs/instant_triggers.json
 inputs/outcome_tracker_state.json
 inputs/outcome_log/
 inputs/top5_eligible_state.json
+inputs/candidate_lifecycle*
 inputs/stock_suggestion_index.error.json
+inputs/upstox_credentials.json
+inputs/upstox_token.json
+inputs/upstox_instruments.json
 scanner_event_log.json
 scanner_event_log.xlsx
 scanner_event_log_full.json
