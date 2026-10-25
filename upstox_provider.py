@@ -28,21 +28,32 @@ _INSTRUMENTS_CACHE: dict[str, Any] | None = None
 
 
 def load_credentials() -> dict[str, str]:
-    if not CREDENTIALS_FILE.exists():
-        return {}
-    try:
-        return json.loads(CREDENTIALS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    creds = {}
+    if CREDENTIALS_FILE.exists():
+        try:
+            creds = json.loads(CREDENTIALS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    api_key = os.environ.get("UPSTOX_API_KEY") or os.environ.get("UPSTOX_CLIENT_ID") or creds.get("api_key", "")
+    api_secret = os.environ.get("UPSTOX_API_SECRET") or os.environ.get("UPSTOX_CLIENT_SECRET") or creds.get("api_secret", "")
+    redirect_uri = os.environ.get("UPSTOX_REDIRECT_URI") or creds.get("redirect_uri", "http://127.0.0.1:8000/api/upstox/callback")
+    return {
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "redirect_uri": redirect_uri,
+    }
 
 
 def load_token() -> dict[str, Any]:
-    if not TOKEN_FILE.exists():
-        return {}
-    try:
-        return json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    token_data = {}
+    if TOKEN_FILE.exists():
+        try:
+            token_data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    if not token_data.get("access_token") and os.environ.get("UPSTOX_ACCESS_TOKEN"):
+        token_data["access_token"] = os.environ.get("UPSTOX_ACCESS_TOKEN")
+    return token_data
 
 
 def save_token(token_data: dict[str, Any]) -> None:
