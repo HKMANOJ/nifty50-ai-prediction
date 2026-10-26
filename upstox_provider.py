@@ -8,6 +8,7 @@ Level-2 market depth (real buying/selling pressure), and OAuth2 authentication.
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.parse
 import urllib.request
@@ -322,7 +323,10 @@ def fetch_5m_candles_with_telemetry(symbol: str) -> dict[str, Any]:
         }
 
     encoded_key = urllib.parse.quote(inst_key)
-    headers = {"Accept": "application/json", "User-Agent": "ManojLabs-Nifty50Scanner/2.0"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     token = load_token().get("access_token")
     if token:
         headers["Authorization"] = f"Bearer {token}"
