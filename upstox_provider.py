@@ -162,6 +162,32 @@ def get_instrument_key(symbol: str) -> str | None:
     return None
 
 
+def parse_1m_candles(candles_1m: list[list[Any]]) -> list[dict[str, Any]]:
+    """Converts raw Upstox 1-minute candle array to standard dicts in chronological order.
+    Upstox candle format: [timestamp_iso, open, high, low, close, volume, oi]
+    """
+    if not candles_1m:
+        return []
+    chronological = list(reversed(candles_1m))
+    res: list[dict[str, Any]] = []
+    for c in chronological:
+        try:
+            ts_str = c[0]
+            dt = datetime.fromisoformat(ts_str)
+            res.append({
+                "timestamp": int(dt.timestamp()),
+                "open": float(c[1]),
+                "high": float(c[2]),
+                "low": float(c[3]),
+                "close": float(c[4]),
+                "volume": float(c[5]),
+                "oi": float(c[6]) if len(c) > 6 and c[6] is not None else 0.0,
+            })
+        except Exception:
+            continue
+    return res
+
+
 def aggregate_1m_to_5m(candles_1m: list[list[Any]]) -> list[dict[str, Any]]:
     """Converts Upstox 1-minute candle array to standard 5-minute candles.
     Upstox candle format: [timestamp_iso, open, high, low, close, volume, oi]
@@ -397,6 +423,7 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
             "completed_candles": [],
             "forming_candle": None,
             "all_candles": [],
+            "candles_1m": [],
             "latest_completed_candle_ist": None,
             "latest_completed_candle_epoch": None,
             "observed_latency_ms": latency_ms,
@@ -404,6 +431,9 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
             "is_stale": False,
             "error": error_reason or "Empty candle response from Upstox API",
         }
+
+    # Parse 1-minute candles for sub-minute institutional volume shock radar
+    parsed_1m = parse_1m_candles(raw_candles_1m)
 
     # Aggregate 1-minute to 5-minute candles
     all_5m = aggregate_1m_to_5m(raw_candles_1m)
@@ -418,6 +448,7 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
             "completed_candles": [],
             "forming_candle": None,
             "all_candles": all_5m,
+            "candles_1m": parsed_1m,
             "latest_completed_candle_ist": None,
             "latest_completed_candle_epoch": None,
             "observed_latency_ms": latency_ms,
@@ -443,6 +474,7 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
         "completed_candles": completed_candles,
         "forming_candle": forming_candle,
         "all_candles": all_5m,
+        "candles_1m": parsed_1m,
         "latest_completed_candle_ist": latest_ist,
         "latest_completed_candle_epoch": latest_epoch,
         "observed_latency_ms": latency_ms,

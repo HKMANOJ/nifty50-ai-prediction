@@ -188,6 +188,7 @@ CANDLE_POOL_WAIT_SECONDS = 9.0     # hard cap on the whole batch; stragglers are
 CANDLE_POOL_MAX_WORKERS = 24
 CANDLE_CACHE_PATH = INPUT_DIR / "candle_cache.json"
 _CANDLE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CANDLE_1M_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _CANDLE_CACHE_LOADED = False
 
 
@@ -303,6 +304,11 @@ class Suggestion:
     cascade_vol_ratio: float = 1.0
     breakout_freshness: str = "PENDING"
     breakout_age_minutes: int | None = None
+    is_block_surge: bool = False
+    block_surge_type: str | None = None
+    block_surge_time: str | None = None
+    block_surge_turnover_cr: float = 0.0
+    block_surge_rvol: float = 1.0
     first_qualified_at: str | None = None
     first_top5_at: str | None = None
     first_rank1_at: str | None = None
@@ -366,6 +372,11 @@ class Suggestion:
             "cascade_vol_ratio": self.cascade_vol_ratio,
             "breakout_freshness": self.breakout_freshness,
             "breakout_age_minutes": self.breakout_age_minutes,
+            "is_block_surge": self.is_block_surge,
+            "block_surge_type": self.block_surge_type,
+            "block_surge_time": self.block_surge_time,
+            "block_surge_turnover_cr": self.block_surge_turnover_cr,
+            "block_surge_rvol": self.block_surge_rvol,
             "first_qualified_at": self.first_qualified_at,
             "first_top5_at": self.first_top5_at,
             "first_rank1_at": self.first_rank1_at,
@@ -807,6 +818,8 @@ def fetch_5m_candles_pipeline(symbol: str, full_range: bool = False) -> dict[str
         import upstox_provider
         upstox_res = upstox_provider.fetch_5m_candles_with_telemetry(symbol, full_range=full_range)
         if upstox_res.get("ok") and upstox_res.get("completed_candles"):
+            if upstox_res.get("candles_1m"):
+                _CANDLE_1M_CACHE[symbol] = (_time.time(), upstox_res["candles_1m"])
             return upstox_res
     except Exception as exc:
         pass
@@ -1273,6 +1286,146 @@ def detect_3bar_impulse_cascade(
         "cascade_body_pct": 0.0,
         "cascade_vol_ratio": 1.0,
     }
+
+
+def detect_institutional_block_surge(
+    symbol: str,
+    candles_1m: list[dict[str, Any]],
+    candles_5m: list[dict[str, Any]],
+    side: str,
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    """Evaluates sub-minute and multi-crore Institutional Block Surges (FII/DII footprints).
+    
+    Checks both:
+    1. 1-Minute Candle Radar (Fast Sub-Minute Path):
+       - Single 1m turnover >= ₹7.5 Crores AND RVOL_1m >= 4.0x
+       - Single 1m RVOL >= 8.0x AND turnover >= ₹3.0 Crores with directional price move (>=0.25%)
+       - Extreme 1m turnover >= ₹15.0 Crores (unmistakable institutional block trade)
+    2. 5-Minute Candle Radar (Fallback/Confirmation Path):
+       - Single 5m turnover >= ₹20.0 Crores AND RVOL_5m >= 3.5x
+       - Single 5m RVOL >= 7.0x AND turnover >= ₹10.0 Crores
+    
+    Looks across the most recent 15 minutes of trading to maintain the alert if an
+    institutional block trade occurred recently.
+    """
+    default_res = {
+        "is_block_surge": False,
+        "block_surge_type": None,
+        "block_surge_time": None,
+        "block_surge_turnover_cr": 0.0,
+        "block_surge_rvol": 1.0,
+        "block_surge_vol": 0,
+        "block_surge_price": float(row.get("ltp") or 0.0),
+        "surge_age_minutes": 0,
+    }
+
+    # 1. Evaluate 1-Minute Candles first (Fast Sub-Minute Radar)
+    if candles_1m and len(candles_1m) >= 2:
+        valid_vols = [float(c.get("volume") or 0) for c in candles_1m if float(c.get("volume") or 0) > 0]
+        if valid_vols:
+            sorted_vols = sorted(valid_vols)
+            median_1m_vol = sorted_vols[len(sorted_vols) // 2]
+            baseline_vol = max(50.0, median_1m_vol)
+        else:
+            baseline_vol = 50.0
+
+        recent_1m = candles_1m[-15:]
+        for idx, c in enumerate(reversed(recent_1m)):
+            vol = float(c.get("volume") or 0)
+            if vol <= 0:
+                continue
+            close = float(c.get("close") or row.get("ltp") or 0)
+            open_p = float(c.get("open") or close)
+            turnover_cr = (vol * close) / 10_000_000.0
+            rvol_1m = vol / baseline_vol
+            move_pct = ((close - open_p) / open_p * 100) if open_p > 0 else 0.0
+
+            is_bullish_bar = close >= open_p * 0.999
+            is_bearish_bar = close <= open_p * 1.001
+
+            is_match = False
+            if side == "bullish" and is_bullish_bar:
+                if turnover_cr >= 15.0:
+                    is_match = True
+                elif turnover_cr >= 7.5 and rvol_1m >= 4.0:
+                    is_match = True
+                elif rvol_1m >= 8.0 and turnover_cr >= 3.0 and move_pct >= 0.25:
+                    is_match = True
+            elif side == "bearish" and is_bearish_bar:
+                if turnover_cr >= 15.0:
+                    is_match = True
+                elif turnover_cr >= 7.5 and rvol_1m >= 4.0:
+                    is_match = True
+                elif rvol_1m >= 8.0 and turnover_cr >= 3.0 and move_pct <= -0.25:
+                    is_match = True
+
+            if is_match:
+                ts = c.get("timestamp")
+                surge_time = datetime.fromtimestamp(ts, tz=INDIA_TZ).strftime("%I:%M %p") if ts else None
+                stype = "⚡ BLOCK SURGE (BUY)" if side == "bullish" else "⚡ BLOCK SURGE (SELL)"
+                return {
+                    "is_block_surge": True,
+                    "block_surge_type": stype,
+                    "block_surge_time": surge_time,
+                    "block_surge_turnover_cr": round(turnover_cr, 1),
+                    "block_surge_rvol": round(rvol_1m, 1),
+                    "block_surge_vol": int(vol),
+                    "block_surge_price": close,
+                    "surge_age_minutes": idx,
+                }
+
+    # 2. Fallback / Confirmation via 5-Minute Candles
+    if candles_5m and len(candles_5m) >= 2:
+        valid_5m_vols = [float(c.get("volume") or 0) for c in candles_5m if float(c.get("volume") or 0) > 0]
+        sorted_5m = sorted(valid_5m_vols) if valid_5m_vols else [1.0]
+        median_5m_vol = sorted_5m[len(sorted_5m) // 2]
+        baseline_5m = max(100.0, median_5m_vol)
+
+        recent_5m = candles_5m[-4:]
+        for idx, c in enumerate(reversed(recent_5m)):
+            vol = float(c.get("volume") or 0)
+            if vol <= 0:
+                continue
+            close = float(c.get("close") or row.get("ltp") or 0)
+            open_p = float(c.get("open") or close)
+            turnover_cr = (vol * close) / 10_000_000.0
+            rvol_5m = vol / baseline_5m
+            is_bullish_bar = close >= open_p * 0.998
+            is_bearish_bar = close <= open_p * 1.002
+
+            is_match = False
+            if side == "bullish" and is_bullish_bar:
+                if turnover_cr >= 35.0:
+                    is_match = True
+                elif turnover_cr >= 20.0 and rvol_5m >= 3.5:
+                    is_match = True
+                elif rvol_5m >= 7.0 and turnover_cr >= 10.0:
+                    is_match = True
+            elif side == "bearish" and is_bearish_bar:
+                if turnover_cr >= 35.0:
+                    is_match = True
+                elif turnover_cr >= 20.0 and rvol_5m >= 3.5:
+                    is_match = True
+                elif rvol_5m >= 7.0 and turnover_cr >= 10.0:
+                    is_match = True
+
+            if is_match:
+                ts = c.get("timestamp")
+                surge_time = datetime.fromtimestamp(ts, tz=INDIA_TZ).strftime("%I:%M %p") if ts else None
+                stype = "⚡ BLOCK SURGE (BUY)" if side == "bullish" else "⚡ BLOCK SURGE (SELL)"
+                return {
+                    "is_block_surge": True,
+                    "block_surge_type": stype,
+                    "block_surge_time": surge_time,
+                    "block_surge_turnover_cr": round(turnover_cr, 1),
+                    "block_surge_rvol": round(rvol_5m, 1),
+                    "block_surge_vol": int(vol),
+                    "block_surge_price": close,
+                    "surge_age_minutes": idx * 5,
+                }
+
+    return default_res
 
 
 def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any]) -> dict[str, Any]:
@@ -2048,8 +2201,18 @@ def build_suggestions(
             record(row, "rally_gate_failed", rally=rally, base_score=base_score, vc_ranking=vc_ranking)
             continue
 
-        # 5-Minute Breakout Analysis
+        # 5-Minute Breakout Analysis & 1-Minute Institutional Block Surge Radar
         sym_candles = candles_by_symbol.get(symbol, [])
+        sym_1m_candles = _CANDLE_1M_CACHE.get(symbol, (0, []))[1]
+
+        surge_info = detect_institutional_block_surge(
+            symbol=symbol,
+            candles_1m=sym_1m_candles,
+            candles_5m=sym_candles,
+            side=side,
+            row=row,
+        )
+
         bo_info = analyze_5m_breakout(sym_candles, side, row)
         bo_info["latest_candle_at_ist"] = (
             datetime.fromtimestamp(sym_candles[-1]["timestamp"], tz=INDIA_TZ).isoformat()
@@ -2060,8 +2223,16 @@ def build_suggestions(
         breakout_time = bo_info["breakout_time"]
         is_breakout = bo_info["is_breakout"]
 
+        # If institutional block surge arrived on forming/1m bar, upgrade status
+        if surge_info.get("is_block_surge"):
+            is_breakout = True
+            if not breakout_time:
+                breakout_time = surge_info.get("block_surge_time")
+            if five_min_status.lower() == "consolidating":
+                five_min_status = "Block Surge"
+
         # If it dropped below PML (Bullish) or above PMH (Bearish), it failed its trend.
-        if bo_info.get("is_failed_trend"):
+        if bo_info.get("is_failed_trend") and not surge_info.get("is_block_surge"):
             record(row, "trend_invalidated", rally=rally, breakout=bo_info, vc_ranking=vc_ranking)
             continue
 
@@ -2095,13 +2266,17 @@ def build_suggestions(
                     continue
 
         # Only show active Breakout/Breakdown or Near BO/Near BD candidates (no Consolidating)
-        if five_min_status.lower() == "consolidating":
+        if five_min_status.lower() == "consolidating" and not surge_info.get("is_block_surge"):
             record(row, "consolidating", rally=rally, breakout=bo_info)
             continue
 
-        # Boost score and tag if active 3-bar cascade or 5m breakout is confirmed
+        # Boost score and tag if active institutional block surge, 3-bar cascade or 5m breakout is confirmed
         rally_score = rally["score"]
         quality_tags = list(rally["quality_tags"])
+        if surge_info.get("is_block_surge"):
+            rally_score = min(100, rally_score + 20)
+            stype = surge_info.get("block_surge_type") or "⚡ BLOCK SURGE"
+            quality_tags.insert(0, f"{stype} ({surge_info.get('block_surge_time') or 'Active'}, ₹{surge_info.get('block_surge_turnover_cr', 0):.1f}Cr, {surge_info.get('block_surge_rvol', 1):.0f}x vol)")
         if bo_info.get("is_cascade"):
             rally_score = min(100, rally_score + 15)
             c_label = "3-Bar Waterfall" if side == "bearish" else "3-Bar Impulse"
@@ -2162,14 +2337,11 @@ def build_suggestions(
             reason_parts.append(f"volume {int(display_volume):,}")
 
         status_val = rally["status"] or status_from_score(rally_score, setup)
-        if bo_info.get("is_cascade") and rally_score >= 70:
+        if (bo_info.get("is_cascade") or surge_info.get("is_block_surge")) and rally_score >= 65:
             status_val = "Priority Rally"
         # Matches the frontend bell (MLAIStockV2.html checkAndTriggerBellAlerts):
-        # rings on confirmed breakout alone, no longer waits for Priority Rally -
-        # that used to delay Tracked Breakouts pins by 20-30+ min on real cases.
-        # status_val can still separately reach "Priority Rally" later once the
-        # score catches up; this flag just no longer waits for it.
-        bell_rang = bool((is_breakout or bo_info.get("is_cascade")) and "near" not in five_min_status.lower())
+        # rings on confirmed breakout or active institutional block surge
+        bell_rang = bool((is_breakout or bo_info.get("is_cascade") or surge_info.get("is_block_surge")) and "near" not in five_min_status.lower())
 
         _high, _low, _prev_close = row.get("high"), row.get("low"), row.get("prev_close")
         day_range_percent = (
@@ -2222,19 +2394,43 @@ def build_suggestions(
                 cascade_vol_ratio=float(bo_info.get("cascade_vol_ratio") or 1.0),
                 breakout_freshness=bo_info.get("breakout_freshness", "PENDING"),
                 breakout_age_minutes=bo_info.get("breakout_age_minutes"),
+                is_block_surge=bool(surge_info.get("is_block_surge")),
+                block_surge_type=surge_info.get("block_surge_type"),
+                block_surge_time=surge_info.get("block_surge_time"),
+                block_surge_turnover_cr=float(surge_info.get("block_surge_turnover_cr") or 0.0),
+                block_surge_rvol=float(surge_info.get("block_surge_rvol") or 1.0),
             )
         )
 
     # Priority Sort:
-    # Tier 1 (Top): Active 5-Minute Breakouts (is_breakout=True)
-    # Tier 2 (Middle): Near Breakouts (Near BO / Near BD)
-    # Tier 3 (Base): Other valid candidates
-    # Within each tier: sorted by Volume Multiplier (VC Ranking) × Rally Score descending, then % Change
-    # Sort strictly by Percentage Change (Highest % gainers on top for Bullish, Largest % drop on top for Bearish)
+    # Tier 0 (Institutional Fast-Track): Active Block Surge (is_block_surge=True), sorted by turnover in ₹ Crores descending
+    # Tier 1 (Breakouts): Active 5-Minute Breakouts (is_breakout=True), sorted by % change
+    # Tier 2 (Near Breakouts): Near Breakouts (Near BO / Near BD), sorted by % change
+    # Tier 3 (Base): Other valid candidates, sorted by % change
     if side == "bullish":
-        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else -9999, reverse=True)
+        def sort_key_bullish(item: Suggestion):
+            if item.is_block_surge:
+                return (0, -(item.block_surge_turnover_cr or 0.0), -(item.percent_change or -9999))
+            elif item.is_breakout or item.is_cascade:
+                return (1, 0.0, -(item.percent_change or -9999))
+            elif "near" in (item.five_min_status or "").lower():
+                return (2, 0.0, -(item.percent_change or -9999))
+            else:
+                return (3, 0.0, -(item.percent_change or -9999))
+
+        suggestions.sort(key=sort_key_bullish)
     else:
-        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else 9999)
+        def sort_key_bearish(item: Suggestion):
+            if item.is_block_surge:
+                return (0, -(item.block_surge_turnover_cr or 0.0), (item.percent_change or 9999))
+            elif item.is_breakout or item.is_cascade:
+                return (1, 0.0, (item.percent_change or 9999))
+            elif "near" in (item.five_min_status or "").lower():
+                return (2, 0.0, (item.percent_change or 9999))
+            else:
+                return (3, 0.0, (item.percent_change or 9999))
+
+        suggestions.sort(key=sort_key_bearish)
 
     if audit is not None:
         for index, item in enumerate(suggestions, start=1):
@@ -3276,8 +3472,8 @@ def update_instant_triggers(
                         _log_event_to_db("instant_trigger", session_date, item.symbol, side_name, existing)
                     continue
 
-                if not item.is_breakout:
-                    continue  # only pin on a confirmed breakout, not Near BO/BD
+                if not (item.is_breakout or item.is_block_surge):
+                    continue  # only pin on a confirmed breakout or institutional block surge, not Near BO/BD
 
                 breakdown = score_instant_trigger_factors(item, side_name, index_context, sector_alignment)
                 is_upgraded = bool(item.status == "Priority Rally" and item.bell_rang)
@@ -3297,6 +3493,9 @@ def update_instant_triggers(
                     "instant_score": breakdown["composite"],
                     "factors": breakdown["factors"],
                     "rally_score_at_trigger": item.one_side_rally_score,
+                    "is_block_surge": item.is_block_surge,
+                    "block_surge_turnover_cr": item.block_surge_turnover_cr,
+                    "block_surge_rvol": item.block_surge_rvol,
                     "upgraded_to_priority": is_upgraded,
                     "upgraded_at_ist": payload.get("market_clock_ist") if is_upgraded else None,
                 }

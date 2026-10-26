@@ -94,7 +94,7 @@ LAST_AUTO_SCAN_INFO: dict[str, Any] = {
 # auto-scanner stops entirely (even though NSE itself stays open till 15:30).
 # A manual refresh from the UI still works; this only stops the unattended
 # background loop.
-AUTO_SCAN_LAST_RUN_MINUTES = 14 * 60 + 45  # 2:45 PM IST
+AUTO_SCAN_LAST_RUN_MINUTES = 15 * 60 + 20  # 3:20 PM IST (covers institutional power hour & closing squeeze)
 
 # Yesterday's full scan results otherwise sit on screen looking "live" from
 # market close until the first real 9:15+ scan completes (30+ seconds in).
@@ -158,7 +158,7 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
     def _loop() -> None:
         import scanner_trace
         scanner_trace.submit_health("scheduler_started", interval_seconds=interval_seconds,
-                                    auto_scan_cutoff_ist="14:45", process_id=os.getpid())
+                                    auto_scan_cutoff_ist="15:20", process_id=os.getpid())
         time.sleep(5)  # Grace period on boot
         while True:
             try:

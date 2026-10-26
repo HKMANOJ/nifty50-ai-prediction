@@ -1873,13 +1873,10 @@
       const isBreakout = Boolean(row.is_breakout || st.includes("breakout"));
       const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
       const isActualBreakout = !isNear && !isConsolidating && (isBreakout || isBreakdown);
+      const isBlockSurge = Boolean(row.is_block_surge);
 
-      // Rings the instant a breakout is CONFIRMED - no longer waits for
-      // score=100/Priority Rally (that used to delay the bell by 20-30+ min
-      // per the real cases we found - WAAREEENER, HDFCBANK, etc). Same gate
-      // Instant Triggers already uses; the row's status/score still shows
-      // and can separately upgrade to "Priority Rally" once it catches up.
-      if (!isActualBreakout) return;
+      // Rings the instant a breakout is CONFIRMED or an Institutional Block Surge arrives
+      if (!isActualBreakout && !isBlockSurge) return;
 
       // Unique alert key per candidate identity, side, and wave (alert_count)
       const sideKey = row.side || (isBreakdown ? 'bearish' : 'bullish');
@@ -2552,7 +2549,7 @@
           <div class="item-left">
             <span class="item-rank">${idx + 1}</span>
             <div class="item-names">
-              <span class="item-symbol">${row.symbol} ${row.lot_size ? `<span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${row.lot_size}</span>` : ""}</span>
+              <span class="item-symbol">${row.symbol} ${row.lot_size ? `<span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${row.lot_size}</span>` : ""} ${row.is_block_surge ? `<span style="font-size:8px; font-weight:800; background:#f5f3ff; color:#6d28d9; border:1px solid #c4b5fd; padding:1px 4px; border-radius:3px; margin-left:3px;">⚡ BLOCK ${row.block_surge_turnover_cr ? '₹' + row.block_surge_turnover_cr.toFixed(0) + 'Cr' : ''}</span>` : ""}</span>
               <span class="item-setup-tag">${row.setup || "OI Confirmed"}</span>
             </div>
           </div>
@@ -2643,6 +2640,19 @@
         freshBadge = `<span style="background:#fefce8; color:#a16207; border:1px solid #fde047; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px; margin-left:5px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle;" title="Price compressing within 0.3% of PMH/PML - Pre-Breakout Early Warning">⏳ COILING</span>`;
       }
 
+      // Institutional Block Surge Badge (FII/DII Real-Time Volume Shock)
+      let blockBadge = "";
+      if (row.is_block_surge) {
+        const crLabel = row.block_surge_turnover_cr ? ` ₹${row.block_surge_turnover_cr.toFixed(1)}Cr` : "";
+        const rvolLabel = row.block_surge_rvol ? ` (${row.block_surge_rvol.toFixed(0)}x)` : "";
+        const surgeTime = row.block_surge_time ? ` ${row.block_surge_time}` : "";
+        const isBuy = !row.block_surge_type || row.block_surge_type.includes("BUY") || isUp;
+        const bg = isBuy ? "#f5f3ff" : "#fff1f2";
+        const color = isBuy ? "#6d28d9" : "#be123c";
+        const border = isBuy ? "#c4b5fd" : "#fecdd3";
+        blockBadge = `<span style="background:${bg}; color:${color}; border:1px solid ${border}; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px; margin-left:5px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle;" title="Institutional Block Order (FII/DII footprint): Multi-crore volume shock on 1-minute tape">⚡ BLOCK SURGE${crLabel}${rvolLabel}${surgeTime}</span>`;
+      }
+
       return `
         <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">${idx + 1}</td>
@@ -2663,7 +2673,7 @@
             </span>
           </td>
           <td>
-            <span class="bo-status-pill ${boCls}">${statusBadge}</span>${freshBadge}
+            <span class="bo-status-pill ${boCls}">${statusBadge}</span>${freshBadge}${blockBadge}
           </td>
           <td>
             <div class="score-meter">
@@ -2730,10 +2740,24 @@
     if (hasRows) _lastGoodRenderAt = Date.now();
     window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
 
-    _currentBullish = (payload.bullish || []).sort((a, b) => (b.percent_change ?? 0) - (a.percent_change ?? 0));
-    _currentBearish = (payload.bearish || []).sort((a, b) => (a.percent_change ?? 0) - (b.percent_change ?? 0));
+    const sortBullish = (a, b) => {
+      const aSurge = Boolean(a.is_block_surge);
+      const bSurge = Boolean(b.is_block_surge);
+      if (aSurge !== bSurge) return aSurge ? -1 : 1;
+      if (aSurge && bSurge) return (b.block_surge_turnover_cr || 0) - (a.block_surge_turnover_cr || 0);
+      return (b.percent_change ?? 0) - (a.percent_change ?? 0);
+    };
+    const sortBearish = (a, b) => {
+      const aSurge = Boolean(a.is_block_surge);
+      const bSurge = Boolean(b.is_block_surge);
+      if (aSurge !== bSurge) return aSurge ? -1 : 1;
+      if (aSurge && bSurge) return (b.block_surge_turnover_cr || 0) - (a.block_surge_turnover_cr || 0);
+      return (a.percent_change ?? 0) - (b.percent_change ?? 0);
+    };
+    _currentBullish = (payload.bullish || []).slice().sort(sortBullish);
+    _currentBearish = (payload.bearish || []).slice().sort(sortBearish);
 
-    // Re-assign ranks 1..N based on sorted percentage
+    // Re-assign ranks 1..N based on institutional priority + percentage
     _currentBullish.forEach((r, idx) => { r.rank = idx + 1; });
     _currentBearish.forEach((r, idx) => { r.rank = idx + 1; });
 
