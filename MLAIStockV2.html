@@ -2741,18 +2741,22 @@
     window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
 
     const sortBullish = (a, b) => {
-      const aSurge = Boolean(a.is_block_surge);
-      const bSurge = Boolean(b.is_block_surge);
-      if (aSurge !== bSurge) return aSurge ? -1 : 1;
-      if (aSurge && bSurge) return (b.block_surge_turnover_cr || 0) - (a.block_surge_turnover_cr || 0);
-      return (b.percent_change ?? 0) - (a.percent_change ?? 0);
+      const aPct = a.percent_change ?? -9999;
+      const bPct = b.percent_change ?? -9999;
+      const aSurge = a.is_block_surge && aPct >= 0.75 ? Math.min(5.0, (a.block_surge_turnover_cr || 0) * 0.15) : 0;
+      const bSurge = b.is_block_surge && bPct >= 0.75 ? Math.min(5.0, (b.block_surge_turnover_cr || 0) * 0.15) : 0;
+      const aScore = aPct + aSurge + (a.is_cascade ? 1.0 : 0) + (a.is_breakout ? 0.5 : 0);
+      const bScore = bPct + bSurge + (b.is_cascade ? 1.0 : 0) + (b.is_breakout ? 0.5 : 0);
+      return bScore - aScore;
     };
     const sortBearish = (a, b) => {
-      const aSurge = Boolean(a.is_block_surge);
-      const bSurge = Boolean(b.is_block_surge);
-      if (aSurge !== bSurge) return aSurge ? -1 : 1;
-      if (aSurge && bSurge) return (b.block_surge_turnover_cr || 0) - (a.block_surge_turnover_cr || 0);
-      return (a.percent_change ?? 0) - (b.percent_change ?? 0);
+      const aPct = a.percent_change ?? 9999;
+      const bPct = b.percent_change ?? 9999;
+      const aSurge = a.is_block_surge && aPct <= -0.75 ? Math.min(5.0, (a.block_surge_turnover_cr || 0) * 0.15) : 0;
+      const bSurge = b.is_block_surge && bPct <= -0.75 ? Math.min(5.0, (b.block_surge_turnover_cr || 0) * 0.15) : 0;
+      const aScore = Math.abs(aPct) + aSurge + (a.is_cascade ? 1.0 : 0) + (a.is_breakout ? 0.5 : 0);
+      const bScore = Math.abs(bPct) + bSurge + (b.is_cascade ? 1.0 : 0) + (b.is_breakout ? 0.5 : 0);
+      return bScore - aScore;
     };
     _currentBullish = (payload.bullish || []).slice().sort(sortBullish);
     _currentBearish = (payload.bearish || []).slice().sort(sortBearish);

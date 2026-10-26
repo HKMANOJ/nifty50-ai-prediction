@@ -183,14 +183,14 @@ class TestInstitutionalBlockSurge(unittest.TestCase):
         suggestions = [s1, s2]
 
         def sort_key_bullish(item: Suggestion):
-            if item.is_block_surge:
-                return (0, -(item.block_surge_turnover_cr or 0.0), -(item.percent_change or -9999))
-            elif item.is_breakout or item.is_cascade:
-                return (1, 0.0, -(item.percent_change or -9999))
-            elif "near" in (item.five_min_status or "").lower():
-                return (2, 0.0, -(item.percent_change or -9999))
-            else:
-                return (3, 0.0, -(item.percent_change or -9999))
+            pct = item.percent_change if item.percent_change is not None else -9999.0
+            surge_boost = min(5.0, (item.block_surge_turnover_cr or 0.0) * 0.15) if (item.is_block_surge and pct >= 0.75) else 0.0
+            cascade_boost = 1.0 if item.is_cascade else 0.0
+            bo_boost = 0.5 if item.is_breakout else 0.0
+            effective_momentum = pct + surge_boost + cascade_boost + bo_boost
+
+            tier = 0 if (item.is_breakout or item.is_cascade or item.is_block_surge) else (1 if "near" in (item.five_min_status or "").lower() else 2)
+            return (tier, -effective_momentum)
 
         suggestions.sort(key=sort_key_bullish)
 

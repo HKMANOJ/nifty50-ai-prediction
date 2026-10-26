@@ -2403,32 +2403,32 @@ def build_suggestions(
         )
 
     # Priority Sort:
-    # Tier 0 (Institutional Fast-Track): Active Block Surge (is_block_surge=True), sorted by turnover in ₹ Crores descending
-    # Tier 1 (Breakouts): Active 5-Minute Breakouts (is_breakout=True), sorted by % change
-    # Tier 2 (Near Breakouts): Near Breakouts (Near BO / Near BD), sorted by % change
-    # Tier 3 (Base): Other valid candidates, sorted by % change
+    # Combines Price Expansion Momentum with Institutional Block Surge Velocity.
+    # Active breakouts/surges get Tier-0 priority, and block surge grants up to +5.0%
+    # momentum boost to real movers (pct >= 0.75%) so that high-volume runners (Ather, Dr Reddy)
+    # lead the board, while flat heavyweight stocks (+0.20%) do not displace rally leaders.
     if side == "bullish":
         def sort_key_bullish(item: Suggestion):
-            if item.is_block_surge:
-                return (0, -(item.block_surge_turnover_cr or 0.0), -(item.percent_change or -9999))
-            elif item.is_breakout or item.is_cascade:
-                return (1, 0.0, -(item.percent_change or -9999))
-            elif "near" in (item.five_min_status or "").lower():
-                return (2, 0.0, -(item.percent_change or -9999))
-            else:
-                return (3, 0.0, -(item.percent_change or -9999))
+            pct = item.percent_change if item.percent_change is not None else -9999.0
+            surge_boost = min(5.0, (item.block_surge_turnover_cr or 0.0) * 0.15) if (item.is_block_surge and pct >= 0.75) else 0.0
+            cascade_boost = 1.0 if item.is_cascade else 0.0
+            bo_boost = 0.5 if item.is_breakout else 0.0
+            effective_momentum = pct + surge_boost + cascade_boost + bo_boost
+
+            tier = 0 if (item.is_breakout or item.is_cascade or item.is_block_surge) else (1 if "near" in (item.five_min_status or "").lower() else 2)
+            return (tier, -effective_momentum)
 
         suggestions.sort(key=sort_key_bullish)
     else:
         def sort_key_bearish(item: Suggestion):
-            if item.is_block_surge:
-                return (0, -(item.block_surge_turnover_cr or 0.0), (item.percent_change or 9999))
-            elif item.is_breakout or item.is_cascade:
-                return (1, 0.0, (item.percent_change or 9999))
-            elif "near" in (item.five_min_status or "").lower():
-                return (2, 0.0, (item.percent_change or 9999))
-            else:
-                return (3, 0.0, (item.percent_change or 9999))
+            pct = item.percent_change if item.percent_change is not None else 9999.0
+            surge_boost = min(5.0, (item.block_surge_turnover_cr or 0.0) * 0.15) if (item.is_block_surge and pct <= -0.75) else 0.0
+            cascade_boost = 1.0 if item.is_cascade else 0.0
+            bo_boost = 0.5 if item.is_breakout else 0.0
+            effective_momentum = abs(pct) + surge_boost + cascade_boost + bo_boost
+
+            tier = 0 if (item.is_breakout or item.is_cascade or item.is_block_surge) else (1 if "near" in (item.five_min_status or "").lower() else 2)
+            return (tier, -effective_momentum)
 
         suggestions.sort(key=sort_key_bearish)
 
