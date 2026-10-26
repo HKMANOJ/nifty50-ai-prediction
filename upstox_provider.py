@@ -297,8 +297,9 @@ def separate_completed_and_forming(
     return completed, forming
 
 
-def fetch_5m_candles_with_telemetry(symbol: str) -> dict[str, Any]:
+def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> dict[str, Any]:
     """Fetches high-speed intraday 5-minute candles via Upstox API v2.
+    When full_range=True, combines the past 5 trading days with today's live session for full chart context.
     Measures observed latency, validates session date, monotonic spacing, and OHLC integrity,
     and isolates the forming in-progress candle from completed candles.
     """
@@ -349,10 +350,11 @@ def fetch_5m_candles_with_telemetry(symbol: str) -> dict[str, Any]:
     except Exception as exc:
         error_reason = f"Upstox request failed/unauthorized ({type(exc).__name__})"
 
-    # 2. Try historical endpoint for the latest completed trading session if intraday was empty
-    if not raw_candles_1m:
+    # 2. When full_range=True (for 5-Day chart) or intraday is empty, fetch historical 5-day candles
+    hist_candles_1m = []
+    if full_range or not raw_candles_1m:
         to_date = now_ist.strftime("%Y-%m-%d")
-        from_date = (now_ist - timedelta(days=5)).strftime("%Y-%m-%d")
+        from_date = (now_ist - timedelta(days=6)).strftime("%Y-%m-%d")
         hist_url = f"{UPSTOX_API_BASE}/historical-candle/{encoded_key}/1minute/{to_date}/{from_date}"
         hist_req = urllib.request.Request(hist_url, headers=headers)
         try:
@@ -361,8 +363,11 @@ def fetch_5m_candles_with_telemetry(symbol: str) -> dict[str, Any]:
                     data = json.loads(resp.read().decode("utf-8"))
                     raw = data.get("data", {}).get("candles", [])
                     if raw:
-                        latest_date_prefix = raw[0][0][:10]
-                        raw_candles_1m = [c for c in raw if c[0].startswith(latest_date_prefix)]
+                        if full_range:
+                            hist_candles_1m = raw
+                        else:
+                            latest_date_prefix = raw[0][0][:10]
+                            hist_candles_1m = [c for c in raw if c[0].startswith(latest_date_prefix)]
                         error_reason = None
                 else:
                     error_reason = f"Upstox request failed/unauthorized (HTTP {resp.status})"
@@ -370,6 +375,17 @@ def fetch_5m_candles_with_telemetry(symbol: str) -> dict[str, Any]:
             error_reason = f"Upstox request failed/unauthorized (HTTP {http_err.code})"
         except Exception as exc:
             error_reason = f"Upstox request failed/unauthorized ({type(exc).__name__})"
+
+    if full_range and hist_candles_1m:
+        seen_ts = set()
+        merged = []
+        for c in list(raw_candles_1m) + list(hist_candles_1m):
+            if c[0] not in seen_ts:
+                seen_ts.add(c[0])
+                merged.append(c)
+        raw_candles_1m = merged
+    elif not raw_candles_1m and hist_candles_1m:
+        raw_candles_1m = hist_candles_1m
 
     latency_ms = int((time.monotonic() - t0) * 1000)
 
@@ -393,7 +409,7 @@ def fetch_5m_candles_with_telemetry(symbol: str) -> dict[str, Any]:
     all_5m = aggregate_1m_to_5m(raw_candles_1m)
 
     # Validate integrity
-    is_valid, reason = validate_candles_integrity(all_5m, now_ist)
+    is_valid, reason = validate_candles_integrity(all_5m, now_ist, allow_multi_day=full_range)
     if not is_valid:
         return {
             "ok": False,
@@ -436,11 +452,11 @@ def fetch_5m_candles_with_telemetry(symbol: str) -> dict[str, Any]:
     }
 
 
-def fetch_5m_candles(symbol: str) -> list[dict[str, Any]]:
+def fetch_5m_candles(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
     """Fetches high-speed intraday 5-minute candles via Upstox API.
     Returns only completed, validated candles (forming candle excluded).
     """
-    res = fetch_5m_candles_with_telemetry(symbol)
+    res = fetch_5m_candles_with_telemetry(symbol, full_range=full_range)
     if res.get("ok"):
         return res.get("completed_candles", [])
     return []

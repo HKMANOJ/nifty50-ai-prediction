@@ -805,7 +805,7 @@ def fetch_5m_candles_pipeline(symbol: str, full_range: bool = False) -> dict[str
     # 1. Primary: Official Upstox Provider
     try:
         import upstox_provider
-        upstox_res = upstox_provider.fetch_5m_candles_with_telemetry(symbol)
+        upstox_res = upstox_provider.fetch_5m_candles_with_telemetry(symbol, full_range=full_range)
         if upstox_res.get("ok") and upstox_res.get("completed_candles"):
             return upstox_res
     except Exception as exc:
