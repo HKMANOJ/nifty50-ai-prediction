@@ -1375,7 +1375,14 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                             first_breakout_epoch = c["timestamp"]
                         break
 
-        # Active breakout condition
+        # Early Detection: Live Forming Wick Breakout & Velocity Ignition (dP/dt)
+        live_ltp = float(row.get("ltp") or latest_close)
+        live_high = float(row.get("high") or latest["high"])
+        live_open = float(row.get("open") or candles[0]["open"])
+        open_move = ((live_ltp - live_open) / live_open * 100) if live_open > 0 else 0.0
+        elapsed_min = max(5, len(candles) * 5)
+        velocity = (open_move / elapsed_min) * max(1.0, latest_rvol)
+
         if cascade_info["is_cascade"]:
             is_breakout = True
             breakout_status = "Impulse BO"
@@ -1383,6 +1390,20 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             if not breakout_time:
                 breakout_time = cascade_info["cascade_time"]
             if not first_breakout_epoch:
+                first_breakout_epoch = latest["timestamp"]
+        elif (live_ltp >= morning_high * 1.001 or live_high >= morning_high * 1.002) and live_ltp >= ema9 and live_ltp >= live_open:
+            is_breakout = True
+            breakout_status = "Impulse BO"
+            chart_structure = "Live Wick Breakout"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
+        elif elapsed_min <= 45 and open_move >= 0.75 and velocity >= 0.05 and live_ltp >= ema9:
+            is_breakout = True
+            breakout_status = "Impulse BO"
+            chart_structure = "Velocity Ignition"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
         elif latest_close >= morning_high * 0.998 and latest_close >= ema9:
             is_breakout = True
@@ -1434,7 +1455,14 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                             first_breakout_epoch = c["timestamp"]
                         break
 
-        # Active breakout condition
+        # Early Detection: Live Forming Wick Breakdown & Velocity Ignition Slide (dP/dt)
+        live_ltp = float(row.get("ltp") or latest_close)
+        live_low = float(row.get("low") or latest["low"])
+        live_open = float(row.get("open") or candles[0]["open"])
+        open_move = ((live_ltp - live_open) / live_open * 100) if live_open > 0 else 0.0
+        elapsed_min = max(5, len(candles) * 5)
+        velocity = (open_move / elapsed_min) * max(1.0, latest_rvol)
+
         if cascade_info["is_cascade"]:
             is_breakout = True
             breakout_status = "Waterfall BD"
@@ -1442,6 +1470,20 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             if not breakout_time:
                 breakout_time = cascade_info["cascade_time"]
             if not first_breakout_epoch:
+                first_breakout_epoch = latest["timestamp"]
+        elif (live_ltp <= morning_low * 0.999 or live_low <= morning_low * 0.998) and live_ltp <= ema9 and live_ltp <= live_open:
+            is_breakout = True
+            breakout_status = "Waterfall BD"
+            chart_structure = "Live Wick Breakdown"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
+        elif elapsed_min <= 45 and open_move <= -0.75 and velocity <= -0.05 and live_ltp <= ema9:
+            is_breakout = True
+            breakout_status = "Waterfall BD"
+            chart_structure = "Velocity Ignition Slide"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
         elif latest_close <= morning_low * 1.002 and latest_close <= ema9:
             is_breakout = True
@@ -1458,17 +1500,19 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
 
     # Session-wide Trend Invalidation Check (Bull/Bear Trap Protection):
     # A true One-Side Rally candidate must NEVER breach the opposite rail during the session.
-    # Bullish: if any candle breached below morning_low -> the trend failed / Bull Trap!
-    # Bearish: if any candle breached above morning_high -> the trend failed / Bear Trap!
+    # Bullish: if any candle breached below morning_low AND currently below morning_high -> Bull Trap!
+    # Bearish: if any candle breached above morning_high AND currently above morning_low -> Bear Trap!
     is_failed_trend = False
     if side == "bullish":
-        if latest_close < morning_low or any(c["close"] < morning_low for c in trading_candles):
+        has_dumped_below_low = any(c["close"] < morning_low for c in trading_candles) or latest_close < morning_low
+        if has_dumped_below_low and latest_close < morning_high * 0.998:
             is_failed_trend = True
             is_breakout = False
             breakout_status = "Failed Breakout"
             chart_structure = "Bull Trap Reversal"
     elif side == "bearish":
-        if latest_close > morning_high or any(c["close"] > morning_high for c in trading_candles):
+        has_spiked_above_high = any(c["close"] > morning_high for c in trading_candles) or latest_close > morning_high
+        if has_spiked_above_high and latest_close > morning_low * 1.002:
             is_failed_trend = True
             is_breakout = False
             breakout_status = "Failed Breakdown"
@@ -1734,6 +1778,11 @@ def assess_one_side_rally(
 
     score_components["move_from_open"] = score - sum(score_components.values())
     # 4. Open Interest Setup & Squeeze Potential (Max 20 pts)
+    is_v_reversal = (
+        open_move is not None
+        and ((side == "bullish" and open_move >= 0.5) or (side == "bearish" and open_move <= -0.5))
+    )
+
     if side == "bullish":
         if setup == "Long buildup":
             score += 20
@@ -1752,6 +1801,9 @@ def assess_one_side_rally(
             else:
                 score += 10
                 tags.append("price momentum lead")
+        elif is_v_reversal and open_move >= 0.5:
+            score += 18
+            tags.append("bear-trap reversal rally")
         else:
             blockers.append("OI setup not bullish")
     else:
@@ -1772,6 +1824,9 @@ def assess_one_side_rally(
             else:
                 score += 10
                 tags.append("downside price lead")
+        elif is_v_reversal and open_move <= -0.5:
+            score += 18
+            tags.append("bull-trap reversal slide")
         else:
             blockers.append("OI setup not bearish")
 
@@ -1794,6 +1849,9 @@ def assess_one_side_rally(
             tags.append("clean price momentum")
         elif pct_change >= MIN_BULLISH_CHANGE:
             score += 4
+        elif is_v_reversal and open_move >= 0.5:
+            score += 6
+            tags.append(f"v-reversal from open (+{open_move:.2f}%)")
         else:
             blockers.append(f"price move below +{MIN_BULLISH_CHANGE:.2f}%")
     else:
@@ -1805,6 +1863,9 @@ def assess_one_side_rally(
             tags.append("clean downside momentum")
         elif pct_change <= MIN_BEARISH_CHANGE:
             score += 4
+        elif is_v_reversal and open_move <= -0.5:
+            score += 6
+            tags.append(f"v-reversal below open ({open_move:.2f}%)")
         else:
             blockers.append(f"price move above {MIN_BEARISH_CHANGE:.2f}%")
 
@@ -2987,12 +3048,16 @@ def compute_daily_top5(
             if bo_min is not None and bo_min > DAILY_TOP5_MAX_BREAKOUT_MINUTES:
                 continue  # breakout happened too late in the session - skip
             breakdown = score_daily_top5_factors(item, side_name, index_context, sector_alignment)
+            entry_timing = "EARLY IGNITION ⚡" if (bo_min is not None and bo_min <= 9 * 60 + 45) else "CONTINUATION 🔄"
+            entry_price = round(float(item.entry or item.ltp or 0), 2)
             scored.append({
                 "symbol": item.symbol,
                 "sector": get_sector(item.symbol),
                 "lot_size": item.lot_size,
                 "ltp": item.ltp,
+                "entry_price": entry_price,
                 "percent_change": item.percent_change,
+                "entry_timing": entry_timing,
                 "setup": item.setup,
                 "breakout_time": item.breakout_time,
                 "five_min_status": item.five_min_status,
@@ -3074,6 +3139,15 @@ def update_daily_top5(
             h, m = map(int, state["window_start_ist"].split(":"))
             window_end = now_ist.replace(hour=h, minute=m, second=0, microsecond=0) + timedelta(minutes=DAILY_TOP5_WINDOW_MINUTES)
             window_end_ist = window_end.strftime("%H:%M")
+
+        # Backfill entry_price and entry_timing if missing from an earlier snapshot
+        for side_name in ("bullish", "bearish"):
+            for entry in state["top5"].get(side_name, []):
+                if entry.get("entry_price") is None:
+                    entry["entry_price"] = entry.get("ltp")
+                if entry.get("entry_timing") is None:
+                    bo_min = _parse_clock_to_minutes(entry.get("breakout_time"))
+                    entry["entry_timing"] = "EARLY IGNITION ⚡" if (bo_min is not None and bo_min <= 9 * 60 + 45) else "CONTINUATION 🔄"
 
         return {
             "locked": state.get("window_start_ist") is not None,

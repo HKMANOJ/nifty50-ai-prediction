@@ -2481,7 +2481,8 @@
     const windowStr = (top5.window_start_ist && top5.window_end_ist)
       ? `Window ${top5.window_start_ist}–${top5.window_end_ist}`
       : `Locked ${top5.locked_at_ist || ""}`;
-    lockLabel.textContent = `${windowStr} · rolls every ${top5.window_minutes || 15}min`;
+    const stageBadge = (top5.window_start_ist === "09:30") ? ` · ⚡ Stage 1 Early Ignition` : ``;
+    lockLabel.textContent = `${windowStr}${stageBadge} · rolls every ${top5.window_minutes || 15}min`;
 
     const renderSide = (items) => {
       if (!Array.isArray(items) || items.length === 0) {
@@ -2501,8 +2502,8 @@
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <span style="font-size:11px; font-weight:800; color:var(--text-muted); width:14px;">${idx + 1}</span>
               <div style="flex:1; min-width:120px;">
-                <div class="tracked-sym">${it.symbol}${it.lot_size ? ` <span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${it.lot_size}</span>` : ""}</div>
-                <div class="tracked-sub">${it.sector || "Other"} · ${it.setup || "--"}${it.breakout_time ? ` · BO ${it.breakout_time}` : ""}</div>
+                <div class="tracked-sym">${it.symbol}${it.lot_size ? ` <span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${it.lot_size}</span>` : ""}${it.entry_timing ? ` <span style="font-size:8.5px; font-weight:800; background:${it.entry_timing.includes('EARLY') ? '#dcfce7' : '#f1f5f9'}; color:${it.entry_timing.includes('EARLY') ? '#15803d' : '#475569'}; padding:1px 5px; border-radius:3px; border:1px solid ${it.entry_timing.includes('EARLY') ? '#86efac' : '#cbd5e1'}; margin-left:4px;">${it.entry_timing}</span>` : ""}</div>
+                <div class="tracked-sub">${it.sector || "Other"} · ${it.setup || "--"}${it.breakout_time ? ` · BO ${it.breakout_time}` : ""}${it.entry_price ? ` · Trigger ₹${it.entry_price.toFixed(1)}` : ""}</div>
               </div>
               <div class="score-meter" style="min-width:70px;">
                 <span class="val">${score.toFixed(1)}</span>
