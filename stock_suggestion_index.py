@@ -2849,6 +2849,7 @@ def _process_candidate_lifecycle(
             "alert_count": alert_count,
             "alert_event_id": event_id,
             "alert_created_at": created_at,
+            "alert_created_epoch": now_epoch if alert_fired else None,
             "alert_delivered_at": None,
             "alert_acknowledged_at": None,
             "delivery_status": "PENDING" if alert_fired else "ACKNOWLEDGED",
@@ -2863,11 +2864,48 @@ def _process_candidate_lifecycle(
             "cooldown_until_epoch": 0.0,
             "last_breakout_level": breakout_level,
             "last_structure": item.chart_structure,
+            "entry": item.entry,
+            "stop_loss": item.stop_loss,
+            "target": item.target,
+            "score": item.score,
+            "one_side_rally_score": item.one_side_rally_score,
+            "rvol_5m": item.rvol_5m,
+            "vc_ranking": getattr(item, "vc_ranking", None),
+            "range_position_percent": item.range_position_percent,
+            "breakout_time": item.breakout_time,
+            "lot_size": item.lot_size,
+            "breakout_freshness": getattr(item, "breakout_freshness", None),
+            "ltp": item.ltp,
+            "percent_change": item.percent_change,
         }
         cands_store[key] = entry
     else:
         # Candidate already exists in lifecycle store
         entry["is_active"] = True
+        entry["current_rank"] = rank
+        entry["last_structure"] = item.chart_structure
+        entry["ltp"] = item.ltp
+        entry["percent_change"] = item.percent_change
+        if item.entry is not None:
+            entry["entry"] = item.entry
+        if item.stop_loss is not None:
+            entry["stop_loss"] = item.stop_loss
+        if item.target is not None:
+            entry["target"] = item.target
+        if item.score is not None:
+            entry["score"] = item.score
+        if item.one_side_rally_score is not None:
+            entry["one_side_rally_score"] = item.one_side_rally_score
+        if item.rvol_5m is not None:
+            entry["rvol_5m"] = item.rvol_5m
+        if item.range_position_percent is not None:
+            entry["range_position_percent"] = item.range_position_percent
+        if item.breakout_time:
+            entry["breakout_time"] = item.breakout_time
+        if getattr(item, "vc_ranking", None) is not None:
+            entry["vc_ranking"] = getattr(item, "vc_ranking", None)
+        if getattr(item, "breakout_freshness", None) is not None:
+            entry["breakout_freshness"] = getattr(item, "breakout_freshness", None)
 
         # Rule 9: Preserve original timestamps; do not overwrite during refreshes
         if is_qualified and not entry.get("first_qualified_at"):
@@ -2923,6 +2961,7 @@ def _process_candidate_lifecycle(
                 entry["alert_fired"] = True
                 entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w{new_count}_{int(now_epoch)}"
                 entry["alert_created_at"] = market_clock_ist
+                entry["alert_created_epoch"] = now_epoch
                 entry["alert_delivered_at"] = None
                 entry["alert_acknowledged_at"] = None
                 entry["delivery_status"] = "PENDING"
@@ -2940,6 +2979,7 @@ def _process_candidate_lifecycle(
                 entry["last_structure"] = item.chart_structure
                 entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w1_{int(now_epoch)}"
                 entry["alert_created_at"] = market_clock_ist
+                entry["alert_created_epoch"] = now_epoch
                 entry["alert_delivered_at"] = None
                 entry["alert_acknowledged_at"] = None
                 entry["delivery_status"] = "PENDING"

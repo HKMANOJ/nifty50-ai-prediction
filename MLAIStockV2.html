@@ -1819,30 +1819,55 @@
     }
   }
 
-  function showStickyToast(x, isPE) {
+  function showStickyToast(x, isPE, force = false) {
     const container = document.getElementById("toastContainer");
     if (!container || !x || !x.symbol) return;
-    const existing = container.querySelector(`.toast[data-sym="${x.symbol}"]`);
+
+    // Guard against alerts firing when market is closed or past trade cutoff (12:45 PM IST)
+    // Only manual test button clicks (force === true) bypass this check.
+    if (!force) {
+      if (typeof isMarketHours === "function" && !isMarketHours()) return;
+      const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
+      if (nowMin > TRADE_CUTOFF_MIN) return;
+    }
+
+    // Attempt enrichment from current dashboard candidate rows if any fields are missing
+    const allRows = [...(_currentBullish || []), ...(_currentBearish || [])];
+    const live = allRows.find(r => r.symbol === x.symbol) || {};
+    const item = { ...live, ...x };
+
+    // Do NOT display empty/broken placeholder toasts if core price data is missing
+    const entryVal = item.entry || item.ltp || item.last_breakout_level;
+    const scoreVal = item.one_side_rally_score ?? item.score;
+    if (!force && !entryVal && scoreVal == null) {
+      console.warn("Suppressed empty alert popup for:", item.symbol);
+      return;
+    }
+
+    const existing = container.querySelector(`.toast[data-sym="${item.symbol}"]`);
     if (existing) existing.remove();
 
     const type = isPE ? "bearish" : "bullish";
-    const freshTag = x.breakout_freshness === "FRESH" ? " · ⚡ FRESH" : (x.breakout_freshness === "RETEST" ? " · 🔄 RETEST" : "");
-    const statusText = isPE ? `🔴 BREAKDOWN ${x.breakout_time || ''}${freshTag}` : `🟢 BREAKOUT ${x.breakout_time || ''}${freshTag}`;
+    const freshTag = item.breakout_freshness === "FRESH" ? " · ⚡ FRESH" : (item.breakout_freshness === "RETEST" ? " · 🔄 RETEST" : "");
+    const timeDisplay = item.breakout_time || item.alert_created_at || "";
+    const statusText = isPE ? `🔴 BREAKDOWN ${timeDisplay}${freshTag}` : `🟢 BREAKOUT ${timeDisplay}${freshTag}`;
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
-    toast.setAttribute("data-sym", x.symbol);
+    toast.setAttribute("data-sym", item.symbol);
     toast.style.cursor = "pointer";
 
-    const rvolDisplay = (x.rvol_5m ? `${x.rvol_5m.toFixed(1)}x` : (x.vc_ranking ? `${x.vc_ranking.toFixed(1)}x` : "--"));
-    const entryStr = x.entry ? `₹${x.entry}` : (x.ltp ? `₹${x.ltp}` : "--");
-    const slStr = x.stop_loss ? `₹${x.stop_loss}` : "--";
-    const tgtStr = x.target ? `₹${x.target}` : "--";
+    const rvolDisplay = (item.rvol_5m != null && item.rvol_5m > 0 ? `${Number(item.rvol_5m).toFixed(1)}x` : (item.vc_ranking != null ? `${Number(item.vc_ranking).toFixed(1)}x` : (item.block_surge_rvol != null ? `${Number(item.block_surge_rvol).toFixed(1)}x` : "--")));
+    const entryStr = entryVal ? `₹${n(entryVal)}` : "--";
+    const slStr = item.stop_loss ? `₹${n(item.stop_loss)}` : "--";
+    const tgtStr = item.target ? `₹${n(item.target)}` : "--";
+    const scoreStr = scoreVal != null ? scoreVal : "--";
+    const rangeHoldStr = item.range_position_percent != null ? `${item.range_position_percent}%` : "--%";
 
     toast.innerHTML = `
       <div style="flex:1;">
-        <div class="toast-title ${type}">🔔 ${x.symbol} - ${statusText}</div>
+        <div class="toast-title ${type}">🔔 ${item.symbol} - ${statusText}</div>
         <div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ ALL PRIORITY CRITERIA MET</div>
-        <div class="toast-desc">Time: ${x.breakout_time || '--'} · Score: ${x.one_side_rally_score ?? x.score ?? '--'}${x.lot_size ? ` · Lot: ${Number(x.lot_size).toLocaleString()}` : ''}<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>RVOL: ${rvolDisplay} · Range Hold: ${x.range_position_percent ?? '--'}%</div>
+        <div class="toast-desc">Time: ${timeDisplay || '--'} · Score: ${scoreStr}${item.lot_size ? ` · Lot: ${Number(item.lot_size).toLocaleString()}` : ''}<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>RVOL: ${rvolDisplay} · Range Hold: ${rangeHoldStr}</div>
       </div>
       <button class="toast-close" title="Dismiss">✖</button>
     `;
@@ -1851,7 +1876,7 @@
       if (evt.target && evt.target.classList.contains("toast-close")) {
         toast.remove();
       } else if (typeof selectStock === "function") {
-        selectStock(x.symbol, x);
+        selectStock(item.symbol, item);
       }
     });
 
@@ -1860,6 +1885,7 @@
 
   function checkAndTriggerBellAlerts(payload) {
     if (!payload || !payload.ok) return;
+    if (typeof isMarketHours === "function" && !isMarketHours()) { _hasEvaluatedInitialBell = true; return; }
     const allRows = [...(payload.bullish || []), ...(payload.bearish || [])];
     const nowMin = istNowMinutes(payload);
     if (nowMin > TRADE_CUTOFF_MIN) { _hasEvaluatedInitialBell = true; return; }
@@ -3259,7 +3285,7 @@
           vc_ranking: _testTogglePE ? 3.8 : 6.0,
           range_position_percent: _testTogglePE ? 14.0 : 83.0,
           is_breakout: true
-        }, _testTogglePE);
+        }, _testTogglePE, true);
       });
     }
 
@@ -3526,26 +3552,51 @@
           msg.alerts.forEach(item => {
             const evtId = item.alert_event_id;
             if (!evtId) return;
+
+            // Helper to acknowledge to backend state machine
+            const ackAlert = () => {
+              fetch('/api/alerts/ack', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alert_event_id: evtId, symbol: item.symbol, client_id: _getClientId() })
+              }).catch(err => console.warn('Alert ack error:', err));
+            };
+
             if (_persistedSeenEventIds.has(evtId)) {
               // Already chimed in this browser previously; silently ACK
-              fetch('/api/alerts/ack', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ alert_event_id: evtId, symbol: item.symbol, client_id: _getClientId() })
-              }).catch(err => console.warn('Alert ack error:', err));
-            } else {
-              // Truly missed alert while disconnected!
-              _savePersistedAlertId(evtId);
-              const isPE = (item.side === "bearish") || (item.percent_change < 0);
-              if (_hasEvaluatedInitialBell) {
-                playBellRangSound();
-                showStickyToast(item, isPE);
-              }
-              fetch('/api/alerts/ack', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ alert_event_id: evtId, symbol: item.symbol, client_id: _getClientId() })
-              }).catch(err => console.warn('Alert ack error:', err));
+              ackAlert();
+              return;
+            }
+
+            // Mark as seen immediately so it never replays in this browser session
+            _savePersistedAlertId(evtId);
+            ackAlert();
+
+            // Catch-up notification gate:
+            // Do NOT play sounds or show popups if:
+            // 1. Outside market hours (e.g. evening, weekend)
+            // 2. Past trade cutoff (12:45 PM IST)
+            // 3. Alert is stale (> FRESH_WINDOW_MIN old)
+            if (typeof isMarketHours === "function" && !isMarketHours()) return;
+            const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
+            if (nowMin > TRADE_CUTOFF_MIN) return;
+
+            const boTime = item.breakout_time || item.alert_created_at;
+            const boMin = breakoutMinutes(boTime);
+            const ageMin = (boMin != null) ? (nowMin - boMin) : null;
+            const isFresh = (ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN;
+
+            if (!isFresh) return; // Stale alert from earlier; silently acknowledged
+
+            // Truly fresh missed alert while briefly disconnected! Enrich before display
+            const allRows = [...(_currentBullish || []), ...(_currentBearish || [])];
+            const live = allRows.find(r => r.symbol === item.symbol) || {};
+            const enriched = { ...live, ...item };
+
+            const isPE = (enriched.side === "bearish") || (enriched.percent_change < 0);
+            if (_hasEvaluatedInitialBell) {
+              playBellRangSound();
+              showStickyToast(enriched, isPE);
             }
           });
         } else if (msg.type === "index_update" && msg.index_context) {

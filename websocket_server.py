@@ -44,12 +44,67 @@ async def register_client(ws: WebSocketServerProtocol) -> None:
 
     # Reconnect catch-up: push unacknowledged alerts to reconnected client
     try:
-        from stock_suggestion_index import _load_lifecycle_state
+        from datetime import datetime
+        from stock_suggestion_index import (
+            INDIA_TZ,
+            INPUT_DIR,
+            _load_lifecycle_state,
+            _save_lifecycle_state,
+        )
         state = _load_lifecycle_state()
-        pending = [
-            v for v in state.get("candidates", {}).values()
-            if v.get("alert_event_id") and not v.get("alert_acknowledged_at")
-        ]
+        raw_cands = state.get("candidates", {})
+
+        now_dt = datetime.now(INDIA_TZ)
+        is_live_market = now_dt.weekday() < 5 and (9 * 60 + 15) <= (now_dt.hour * 60 + now_dt.minute) <= (15 * 60 + 35)
+        now_epoch = time.time()
+
+        # Load latest suggestions for metric enrichment
+        latest_file = INPUT_DIR / "stock_suggestion_index.latest.json"
+        latest_lookup: dict[str, Any] = {}
+        if latest_file.exists():
+            try:
+                latest_data = json.loads(latest_file.read_text(encoding="utf-8"))
+                for row in latest_data.get("bullish", []) + latest_data.get("bearish", []):
+                    if isinstance(row, dict) and "symbol" in row:
+                        latest_lookup[row["symbol"]] = row
+            except Exception:
+                pass
+
+        pending = []
+        needs_save = False
+        for v in raw_cands.values():
+            if not v.get("alert_event_id"):
+                continue
+            if v.get("alert_acknowledged_at"):
+                continue
+
+            created_epoch = v.get("alert_created_epoch") or v.get("claimed_at")
+            is_stale = False
+            if not is_live_market:
+                is_stale = True
+            elif created_epoch and (now_epoch - created_epoch > 900):
+                is_stale = True
+
+            if is_stale:
+                v["alert_acknowledged_at"] = now_dt.strftime("%H:%M:%S")
+                v["delivery_status"] = "ACKNOWLEDGED"
+                needs_save = True
+                continue
+
+            # Genuine fresh unacknowledged alert during live market
+            item_data = dict(v)
+            if v.get("symbol") in latest_lookup:
+                for k, val in latest_lookup[v["symbol"]].items():
+                    if k not in item_data or item_data[k] is None:
+                        item_data[k] = val
+            pending.append(item_data)
+
+        if needs_save:
+            try:
+                _save_lifecycle_state(state)
+            except Exception:
+                pass
+
         if pending:
             await ws.send(json.dumps({
                 "type": "pending_alerts",

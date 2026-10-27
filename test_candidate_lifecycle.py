@@ -1094,6 +1094,42 @@ class TestCandidateLifecycleRules(unittest.TestCase):
             else:
                 os.environ.pop("WS_BACKEND_PORT", None)
 
+    def test_lifecycle_entry_saves_trade_metrics(self):
+        """Validates that candidate lifecycle stores complete trade metrics (entry, sl, tgt, score, rvol, range_hold)
+        so alert payloads and reconnection catch-ups never display placeholder '--'."""
+        session_date = "2026-10-25"
+        cand = make_test_suggestion(
+            "METRIC_SYM",
+            "bullish",
+            rank=1,
+            bell_rang=True,
+            entry=1250.5,
+            stop_loss=1235.0,
+            target=1280.0,
+            score=95,
+            rvol_5m=3.2,
+            breakout_time="10:15 AM",
+        )
+
+        enforce_candidate_lifecycle_and_mutual_exclusion(
+            session_date=session_date,
+            market_clock_ist="10:15:00",
+            bullish=[cand],
+            bearish=[],
+            now_epoch=1000.0,
+        )
+        state = ssi._load_lifecycle_state()
+        entry = state["candidates"]["METRIC_SYM_bullish"]
+
+        self.assertEqual(entry.get("entry"), 1250.5)
+        self.assertEqual(entry.get("stop_loss"), 1235.0)
+        self.assertEqual(entry.get("target"), 1280.0)
+        self.assertEqual(entry.get("score"), 95)
+        self.assertEqual(entry.get("rvol_5m"), 3.2)
+        self.assertEqual(entry.get("range_position_percent"), 85.0)
+        self.assertEqual(entry.get("breakout_time"), "10:15 AM")
+        self.assertEqual(entry.get("alert_created_epoch"), 1000.0)
+
 
 if __name__ == "__main__":
     unittest.main()
