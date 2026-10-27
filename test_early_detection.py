@@ -9,7 +9,8 @@ class TestEarlyDetectionEngine(unittest.TestCase):
     def test_live_forming_wick_breakout(self):
         # Candle 1 (09:15): High = 1000, Low = 980
         # Candle 2 (09:20): Close = 995, but live tick LTP = 1003 (pierces morning high)
-        t0 = int(datetime(2026, 10, 26, 9, 15, tzinfo=INDIA_TZ).timestamp())
+        today = datetime.now(INDIA_TZ).date()
+        t0 = int(datetime(today.year, today.month, today.day, 9, 15, tzinfo=INDIA_TZ).timestamp())
         candles = [
             {"timestamp": t0, "open": 985.0, "high": 1000.0, "low": 980.0, "close": 990.0, "volume": 1000},
             {"timestamp": t0 + 300, "open": 990.0, "high": 995.0, "low": 988.0, "close": 995.0, "volume": 800},
@@ -23,7 +24,8 @@ class TestEarlyDetectionEngine(unittest.TestCase):
 
     def test_velocity_ignition_early_momentum(self):
         # Stock surges +1.2% in first 10 minutes with volume while candle close is consolidating near EMA
-        t0 = int(datetime(2026, 10, 26, 9, 15, tzinfo=INDIA_TZ).timestamp())
+        today = datetime.now(INDIA_TZ).date()
+        t0 = int(datetime(today.year, today.month, today.day, 9, 15, tzinfo=INDIA_TZ).timestamp())
         candles = [
             {"timestamp": t0, "open": 1000.0, "high": 1005.0, "low": 998.0, "close": 1002.0, "volume": 5000},
             {"timestamp": t0 + 300, "open": 1002.0, "high": 1004.0, "low": 1001.0, "close": 1003.0, "volume": 6000},

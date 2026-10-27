@@ -270,7 +270,7 @@ def validate_candles_integrity(
 
     # Session date & freshness check
     current_minutes = now_ist.hour * 60 + now_ist.minute
-    is_live_session = now_ist.weekday() < 5 and (9 * 60 + 20) <= current_minutes <= (15 * 60 + 35)
+    is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
 
     latest_c = candles_5m[-1]
     candle_dt = datetime.fromtimestamp(latest_c["timestamp"], tz=INDIA_TZ)
@@ -392,8 +392,14 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
                         if full_range:
                             hist_candles_1m = raw
                         else:
-                            latest_date_prefix = raw[0][0][:10]
-                            hist_candles_1m = [c for c in raw if c[0].startswith(latest_date_prefix)]
+                            today_prefix = now_ist.strftime("%Y-%m-%d")
+                            current_minutes = now_ist.hour * 60 + now_ist.minute
+                            is_market_hours = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+                            if is_market_hours:
+                                hist_candles_1m = [c for c in raw if c[0].startswith(today_prefix)]
+                            else:
+                                latest_date_prefix = raw[0][0][:10]
+                                hist_candles_1m = [c for c in raw if c[0].startswith(latest_date_prefix)]
                         error_reason = None
                 else:
                     error_reason = f"Upstox request failed/unauthorized (HTTP {resp.status})"

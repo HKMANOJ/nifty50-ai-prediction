@@ -926,6 +926,13 @@ def fetch_5m_candles_pipeline(symbol: str, full_range: bool = False) -> dict[str
     if cached and (now_epoch - cached[0]) <= get_candle_cache_ttl():
         c_candles = cached[1]
         if c_candles:
+            current_minutes = now_ist.hour * 60 + now_ist.minute
+            is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+            if is_live_session:
+                latest_dt = datetime.fromtimestamp(c_candles[-1]["timestamp"], tz=INDIA_TZ).date()
+                if latest_dt != now_ist.date():
+                    c_candles = []
+        if c_candles:
             latest_epoch = c_candles[-1]["timestamp"]
             latest_ist = datetime.fromtimestamp(latest_epoch, tz=INDIA_TZ).strftime("%I:%M %p")
             return {
@@ -1320,6 +1327,15 @@ def detect_institutional_block_surge(
         "surge_age_minutes": 0,
     }
 
+    # During live trading session, strictly filter candles to TODAY's session only
+    now_ist = datetime.now(INDIA_TZ)
+    current_minutes = now_ist.hour * 60 + now_ist.minute
+    is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+    if is_live_session:
+        today_date = now_ist.date()
+        candles_1m = [c for c in (candles_1m or []) if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
+        candles_5m = [c for c in (candles_5m or []) if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
+
     # 1. Evaluate 1-Minute Candles first (Fast Sub-Minute Radar)
     if candles_1m and len(candles_1m) >= 2:
         valid_vols = [float(c.get("volume") or 0) for c in candles_1m if float(c.get("volume") or 0) > 0]
@@ -1430,9 +1446,17 @@ def detect_institutional_block_surge(
 
 def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any]) -> dict[str, Any]:
     """Analyzes 5-minute candles using a strict 5-Minute Opening Range Breakout (ORB) and Continuous Wave Tracking."""
+    # During live trading session, strictly filter candles to TODAY's session only
+    now_ist = datetime.now(INDIA_TZ)
+    current_minutes = now_ist.hour * 60 + now_ist.minute
+    is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+    if is_live_session:
+        today_date = now_ist.date()
+        candles = [c for c in (candles or []) if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
+
     if len(candles) < 2:
-        # No intraday candles came back (upstream slow/blocked). Flag it as its
-        # own state instead of "Consolidating" so the row is kept on the list
+        # No intraday candles came back (upstream slow/blocked or early 09:15-09:20 AM window).
+        # Flag it as its own state instead of "Consolidating" so the row is kept on the list
         # rather than silently dropped - it just is not eligible for a
         # confirmed-breakout badge until candles arrive on a later scan.
         return {
@@ -3094,7 +3118,17 @@ def update_tracked_breakouts(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if state.get("session_date") != session_date:
             state = {"session_date": session_date, "items": []}
 
+        # Purge any pre-market entries that were recorded before market open (09:15:00)
+        clock_str = payload.get("market_clock_ist") or ""
+        state["items"] = [
+            it for it in state.get("items", [])
+            if not (it.get("alert_time_ist") and it.get("alert_time_ist") < "09:15:00")
+        ]
         items: list[dict[str, Any]] = state["items"]
+
+        if clock_str and clock_str < "09:15:00":
+            return list(reversed(items))
+
         by_key = {(it["symbol"], it["side"]) for it in items}
 
         # Pin every fresh bell-ringing candidate from this scan that isn't
@@ -3452,7 +3486,17 @@ def update_instant_triggers(
         if state.get("session_date") != session_date:
             state = {"session_date": session_date, "items": []}
 
+        # Purge any pre-market entries that were recorded before market open (09:15:00)
+        clock_str = payload.get("market_clock_ist") or ""
+        state["items"] = [
+            it for it in state.get("items", [])
+            if not (it.get("triggered_at_ist") and it.get("triggered_at_ist") < "09:15:00")
+        ]
         items: list[dict[str, Any]] = state["items"]
+
+        if clock_str and clock_str < "09:15:00":
+            return list(reversed(items))
+
         by_key = {(it["symbol"], it["side"]): it for it in items}
         sector_alignment = compute_sector_alignment(market_universe)
 
