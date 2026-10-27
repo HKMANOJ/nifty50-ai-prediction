@@ -1674,7 +1674,8 @@
   // clock time. Anything already ringing/locked before the cutoff still plays
   // out normally (existing lock holds till its own expiry; Tracked Breakouts
   // stays untouched) - this only stops fresh signals from firing past 12:45.
-  const TRADE_CUTOFF_MIN = 12 * 60 + 45;
+  const TRADE_CUTOFF_MIN = 12 * 60 + 45;       // Regular breakout trade cutoff (12:45 PM IST)
+  const BLOCK_SURGE_CUTOFF_MIN = 15 * 60 + 15; // Institutional Block Surge alert cutoff (03:15 PM IST)
   // Display-only cap: the backend still scores/ranks the full candidate pool
   // (business logic untouched) - this just trims what the dashboard SHOWS,
   // per side, to the top N by rank. The discovery-delay log (server side)
@@ -1823,18 +1824,20 @@
     const container = document.getElementById("toastContainer");
     if (!container || !x || !x.symbol) return;
 
-    // Guard against alerts firing when market is closed or past trade cutoff (12:45 PM IST)
-    // Only manual test button clicks (force === true) bypass this check.
-    if (!force) {
-      if (typeof isMarketHours === "function" && !isMarketHours()) return;
-      const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
-      if (nowMin > TRADE_CUTOFF_MIN) return;
-    }
-
     // Attempt enrichment from current dashboard candidate rows if any fields are missing
     const allRows = [...(_currentBullish || []), ...(_currentBearish || [])];
     const live = allRows.find(r => r.symbol === x.symbol) || {};
     const item = { ...live, ...x };
+
+    // Guard against alerts firing when market is closed or past cutoff
+    // Block surges (institutional footprints >= 20Cr) are allowed up to 3:15 PM IST
+    if (!force) {
+      if (typeof isMarketHours === "function" && !isMarketHours()) return;
+      const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
+      const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
+      const cutoff = isSurge ? BLOCK_SURGE_CUTOFF_MIN : TRADE_CUTOFF_MIN;
+      if (nowMin > cutoff) return;
+    }
 
     // Do NOT display empty/broken placeholder toasts if core price data is missing
     const entryVal = item.entry || item.ltp || item.last_breakout_level;
@@ -1848,15 +1851,24 @@
     if (existing) existing.remove();
 
     const type = isPE ? "bearish" : "bullish";
+    const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
     const freshTag = item.breakout_freshness === "FRESH" ? " · ⚡ FRESH" : (item.breakout_freshness === "RETEST" ? " · 🔄 RETEST" : "");
-    const timeDisplay = item.breakout_time || item.alert_created_at || "";
-    const statusText = isPE ? `🔴 BREAKDOWN ${timeDisplay}${freshTag}` : `🟢 BREAKOUT ${timeDisplay}${freshTag}`;
+    const timeDisplay = item.block_surge_time || item.breakout_time || item.alert_created_at || "";
+    
+    let statusText = isPE ? `🔴 BREAKDOWN ${timeDisplay}${freshTag}` : `🟢 BREAKOUT ${timeDisplay}${freshTag}`;
+    let bannerText = `<div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ ALL PRIORITY CRITERIA MET</div>`;
+    
+    if (isSurge) {
+      statusText = item.block_surge_type || (isPE ? "⚡ BLOCK SURGE (SELL)" : "⚡ BLOCK SURGE (BUY)");
+      bannerText = `<div style="font-size:10px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:4px; padding:2px 4px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BLOCK SURGE · ₹${item.block_surge_turnover_cr || 0}Cr (${item.block_surge_rvol || 1}x)</div>`;
+    }
+
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
     toast.setAttribute("data-sym", item.symbol);
     toast.style.cursor = "pointer";
 
-    const rvolDisplay = (item.rvol_5m != null && item.rvol_5m > 0 ? `${Number(item.rvol_5m).toFixed(1)}x` : (item.vc_ranking != null ? `${Number(item.vc_ranking).toFixed(1)}x` : (item.block_surge_rvol != null ? `${Number(item.block_surge_rvol).toFixed(1)}x` : "--")));
+    const rvolDisplay = (item.block_surge_rvol != null && item.block_surge_rvol > 1 ? `${Number(item.block_surge_rvol).toFixed(1)}x` : (item.rvol_5m != null && item.rvol_5m > 0 ? `${Number(item.rvol_5m).toFixed(1)}x` : (item.vc_ranking != null ? `${Number(item.vc_ranking).toFixed(1)}x` : "--")));
     const entryStr = entryVal ? `₹${n(entryVal)}` : "--";
     const slStr = item.stop_loss ? `₹${n(item.stop_loss)}` : "--";
     const tgtStr = item.target ? `₹${n(item.target)}` : "--";
@@ -1866,7 +1878,7 @@
     toast.innerHTML = `
       <div style="flex:1;">
         <div class="toast-title ${type}">🔔 ${item.symbol} - ${statusText}</div>
-        <div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ ALL PRIORITY CRITERIA MET</div>
+        ${bannerText}
         <div class="toast-desc">Time: ${timeDisplay || '--'} · Score: ${scoreStr}${item.lot_size ? ` · Lot: ${Number(item.lot_size).toLocaleString()}` : ''}<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>RVOL: ${rvolDisplay} · Range Hold: ${rangeHoldStr}</div>
       </div>
       <button class="toast-close" title="Dismiss">✖</button>
@@ -1888,7 +1900,76 @@
     if (typeof isMarketHours === "function" && !isMarketHours()) { _hasEvaluatedInitialBell = true; return; }
     const allRows = [...(payload.bullish || []), ...(payload.bearish || [])];
     const nowMin = istNowMinutes(payload);
-    if (nowMin > TRADE_CUTOFF_MIN) { _hasEvaluatedInitialBell = true; return; }
+    // Hard cutoff for all alerts is 3:15 PM IST (before MIS auto-square-off)
+    if (nowMin > BLOCK_SURGE_CUTOFF_MIN) { _hasEvaluatedInitialBell = true; return; }
+
+    allRows.forEach(row => {
+      if (row.lot_size && row.lot_size > MAX_LOT_SIZE_DISPLAY) return;
+
+      const st = (row.five_min_status || "").toLowerCase();
+      const isNear = st.includes("near");
+      const isConsolidating = st.includes("consolidating");
+      const isBreakout = Boolean(row.is_breakout || st.includes("breakout"));
+      const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
+      const isActualBreakout = !isNear && !isConsolidating && (isBreakout || isBreakdown);
+      const isBlockSurge = Boolean(row.is_block_surge);
+
+      // Rings the instant a breakout is CONFIRMED or an Institutional Block Surge arrives
+      if (!isActualBreakout && !isBlockSurge) return;
+
+      // Regular breakouts stop alerting after 12:45 PM IST.
+      // BUT Institutional Block Surges (multi-crore footprints) continue alerting up to 3:15 PM IST!
+      if (nowMin > TRADE_CUTOFF_MIN && !isBlockSurge) return;
+
+      // Unique alert key per candidate identity, side, and wave (alert_count)
+      const sideKey = row.side || (isBreakdown ? 'bearish' : 'bullish');
+      const wave = row.alert_count || 1;
+      const alertKey = `${row.symbol}_${sideKey}_wave${wave}${isBlockSurge ? '_surge' : ''}`;
+      if (_alertedBreakouts.has(alertKey)) return;   // already handled -> stay silent
+      if (row.alert_event_id && _persistedSeenEventIds.has(row.alert_event_id)) return; // already chimed in this browser
+
+      // Only ring if the breakout or block surge is FRESH (within FRESH_WINDOW_MIN minutes)
+      const eventTime = row.block_surge_time || row.breakout_time;
+      const boMin = breakoutMinutes(eventTime);
+      const ageMin = (boMin == null) ? (row.surge_age_minutes ?? null) : (nowMin - boMin);
+      const isFresh = (ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN;
+
+      // When backend lifecycle engine is active, respect row.should_alert; fallback to isFresh
+      const shouldTrigger = (row.should_alert !== undefined) ? Boolean(row.should_alert) : isFresh;
+
+      _alertedBreakouts.add(alertKey);   // seed regardless, so this wave fires at most once
+
+      if (shouldTrigger && _hasEvaluatedInitialBell) {
+        // If direction reversed or re-alerting, remove any opposite/stale toast
+        const oppToast = document.querySelector(`.toast[data-sym="${row.symbol}"]`);
+        if (oppToast) oppToast.remove();
+
+        if (row.alert_event_id) {
+          _savePersistedAlertId(row.alert_event_id);
+        }
+
+        playBellRangSound();
+        showStickyToast(row, isBreakdown);
+
+        // Acknowledge alert delivery to backend state machine
+        if (row.alert_event_id) {
+          fetch('/api/alerts/ack', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              alert_event_id: row.alert_event_id,
+              symbol: row.symbol,
+              client_id: _getClientId()
+            })
+          }).catch(err => console.warn('Alert ack error:', err));
+        }
+      } else if (row.alert_event_id) {
+        _savePersistedAlertId(row.alert_event_id);
+      }
+    });
+
+    _hasEvaluatedInitialBell = true;
+  }
 
     allRows.forEach(row => {
       if (row.lot_size && row.lot_size > MAX_LOT_SIZE_DISPLAY) return;
@@ -3575,11 +3656,13 @@
             // Catch-up notification gate:
             // Do NOT play sounds or show popups if:
             // 1. Outside market hours (e.g. evening, weekend)
-            // 2. Past trade cutoff (12:45 PM IST)
+            // 2. Past cutoff (12:45 PM for regular breakouts, 3:15 PM for institutional block surges)
             // 3. Alert is stale (> FRESH_WINDOW_MIN old)
             if (typeof isMarketHours === "function" && !isMarketHours()) return;
             const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
-            if (nowMin > TRADE_CUTOFF_MIN) return;
+            const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
+            const cutoff = isSurge ? BLOCK_SURGE_CUTOFF_MIN : TRADE_CUTOFF_MIN;
+            if (nowMin > cutoff) return;
 
             const boTime = item.breakout_time || item.alert_created_at;
             const boMin = breakoutMinutes(boTime);

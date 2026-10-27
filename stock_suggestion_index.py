@@ -2827,8 +2827,8 @@ def _process_candidate_lifecycle(
         d["bell_rang"] = False
         return Suggestion(**d)
 
-    is_qualified = bool(item.is_breakout or item.is_cascade or "near" in (item.five_min_status or "").lower())
-    is_confirmed_breakout = bool(item.is_breakout or item.is_cascade)
+    is_qualified = bool(item.is_breakout or item.is_cascade or getattr(item, "is_block_surge", False) or "near" in (item.five_min_status or "").lower())
+    is_confirmed_breakout = bool(item.is_breakout or item.is_cascade or getattr(item, "is_block_surge", False))
     breakout_level = item.entry or item.ltp or 0.0
 
     if entry is None:
@@ -2877,6 +2877,11 @@ def _process_candidate_lifecycle(
             "breakout_freshness": getattr(item, "breakout_freshness", None),
             "ltp": item.ltp,
             "percent_change": item.percent_change,
+            "is_block_surge": getattr(item, "is_block_surge", False),
+            "block_surge_type": getattr(item, "block_surge_type", None),
+            "block_surge_time": getattr(item, "block_surge_time", None),
+            "block_surge_turnover_cr": getattr(item, "block_surge_turnover_cr", 0.0),
+            "block_surge_rvol": getattr(item, "block_surge_rvol", 1.0),
         }
         cands_store[key] = entry
     else:
@@ -2906,6 +2911,12 @@ def _process_candidate_lifecycle(
             entry["vc_ranking"] = getattr(item, "vc_ranking", None)
         if getattr(item, "breakout_freshness", None) is not None:
             entry["breakout_freshness"] = getattr(item, "breakout_freshness", None)
+        if getattr(item, "is_block_surge", False):
+            entry["is_block_surge"] = True
+            entry["block_surge_type"] = item.block_surge_type
+            entry["block_surge_time"] = item.block_surge_time
+            entry["block_surge_turnover_cr"] = item.block_surge_turnover_cr
+            entry["block_surge_rvol"] = item.block_surge_rvol
 
         # Rule 9: Preserve original timestamps; do not overwrite during refreshes
         if is_qualified and not entry.get("first_qualified_at"):
