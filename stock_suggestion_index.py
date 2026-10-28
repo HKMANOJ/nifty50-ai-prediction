@@ -2087,56 +2087,59 @@ def assess_one_side_rally(
     sym = row.get("symbol", "")
     sector_name = get_sector(sym)
 
-    # Layer 2: Macro Market Movement Gating (NIFTY & BANKNIFTY)
+    # Layer 2: Macro Market Movement Analysis (Never block running stocks!)
     nifty = index_context.get("NIFTY 50", {})
     bank = index_context.get("NIFTY BANK", {})
     nifty_pct = nifty.get("percent_change")
     bank_pct = bank.get("percent_change")
 
-    if side == "bearish" and nifty_pct is not None and nifty_pct >= 0.20:
-        blockers.append(f"market is bullish (NIFTY {nifty_pct:+.2f}%) - shorting gated")
-    elif side == "bearish" and bank_pct is not None and bank_pct >= 0.20 and sector_name in ("Banks", "Fin Serv"):
-        blockers.append(f"BANKNIFTY is bullish ({bank_pct:+.2f}%) - banking shorts gated")
-    elif side == "bullish" and nifty_pct is not None and nifty_pct <= -0.20:
-        stock_pct = float(pct_change or 0.0)
-        op_move = float(open_move or 0.0)
-        if stock_pct < 1.8 or op_move < 0.75:
-            blockers.append(f"NIFTY is bearish ({nifty_pct:+.2f}%) - long requires decoupled RS (>= +1.8%)")
-
-    # Layer 3: Micro Sector Movement Gating
-    if sector_alignment is not None:
-        stock_pct_abs = abs(float(pct_change or 0.0))
+    if nifty_pct is not None:
         if side == "bullish":
-            if sector_alignment < 45.0:
-                if stock_pct_abs < 2.0:
-                    blockers.append(f"sector divergence ({sector_name} is weak: {sector_alignment:.0f}% aligned)")
-                else:
-                    score -= 8  # Mild penalty instead of fatal blocker for high-conviction runaway breakout
-            elif sector_alignment >= 70.0:
+            if nifty_pct >= 0.20:
+                score += 5
+                tags.append(f"market tailwind (NIFTY {nifty_pct:+.2f}%)")
+            elif nifty_pct <= -0.20:
+                tags.append(f"independent relative strength (running against red NIFTY {nifty_pct:+.2f}%)")
+        else:  # bearish
+            if nifty_pct <= -0.20:
+                score += 5
+                tags.append(f"market breakdown tailwind (NIFTY {nifty_pct:+.2f}%)")
+            elif nifty_pct >= 0.20:
+                tags.append(f"independent relative weakness (cracking against green NIFTY {nifty_pct:+.2f}%)")
+
+    if bank_pct is not None and sector_name in ("Banks", "Fin Serv"):
+        if side == "bullish" and bank_pct >= 0.20:
+            score += 3
+            tags.append(f"banking tailwind (BANKNIFTY {bank_pct:+.2f}%)")
+        elif side == "bearish" and bank_pct <= -0.20:
+            score += 3
+            tags.append(f"banking slide tailwind (BANKNIFTY {bank_pct:+.2f}%)")
+
+    # Layer 3: Micro Sector Movement Analysis (Never block running stocks!)
+    if sector_alignment is not None:
+        if side == "bullish":
+            if sector_alignment >= 70.0:
                 score += 5
                 tags.append(f"sector tailwind ({sector_name} {sector_alignment:.0f}% bullish)")
+            elif sector_alignment < 45.0:
+                score -= 3
+                tags.append(f"standalone idiosyncratic rally ({sector_name} {sector_alignment:.0f}% aligned)")
         else:
-            if sector_alignment < 45.0:
-                if stock_pct_abs < 2.0:
-                    blockers.append(f"sector divergence ({sector_name} is strong: {100 - sector_alignment:.0f}% bullish)")
-                else:
-                    score -= 8  # Mild penalty instead of fatal blocker for high-conviction runaway breakdown
-            elif sector_alignment >= 70.0:
+            if sector_alignment >= 70.0:
                 score += 5
                 tags.append(f"sector breakdown ({sector_name} {sector_alignment:.0f}% bearish)")
+            elif sector_alignment < 45.0:
+                score -= 3
+                tags.append(f"standalone idiosyncratic breakdown ({sector_name} {sector_alignment:.0f}% aligned)")
 
-    # Layer 4: Anti-Trap Heavyweight Short Blacklist
-    now_ist = datetime.now(INDIA_TZ)
-    current_minutes = now_ist.hour * 60 + now_ist.minute
-    is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
-
+    # Layer 4: Heavyweight Context Tagging (Never block running heavyweights!)
     INDEX_HEAVYWEIGHTS = {
-        "TCS", "HINDUNILVR", "ICICIBANK", "NESTLEIND", "BHARTIARTL", "SBIN",
+        "RELIANCE", "TCS", "HINDUNILVR", "ICICIBANK", "NESTLEIND", "BHARTIARTL", "SBIN",
         "ASIANPAINT", "TATACONSUM", "TITAN", "MARUTI", "M&M", "EICHERMOT",
         "HAL", "CIPLA", "TECHM", "HCLTECH", "BAJAJ-AUTO", "BAJAJFINSV", "LT"
     }
-    if side == "bearish" and is_live_session and current_minutes <= (10 * 60 + 30) and sym in INDEX_HEAVYWEIGHTS:
-        blockers.append("morning index heavyweight - high dip-buy trap risk")
+    if sym in INDEX_HEAVYWEIGHTS:
+        tags.append("index heavyweight runner")
 
     score_int = int(round(max(0, min(100, score))))
     is_priority = score_int >= 75 and (range_pos is None or range_pos >= 0.60 if side == "bullish" else range_pos <= 0.40) and activity_ratio >= 1.1
@@ -2303,8 +2306,8 @@ def build_suggestions(
         row_act = calc_stock_activity(row, oi)
         activity_ratio = (row_act / median_act) if median_act > 0 else 1.0
         vc_ranking = round(max(0.1, activity_ratio), 2)
-        # Dynamic VC threshold: stocks with clean momentum (>=1.5% move) only require 0.30 VC
-        effective_min_vc = 0.30 if abs(row.get("percent_change") or 0.0) >= 1.5 else MIN_VC_RANKING
+        # Dynamic VC threshold: running stocks (>=0.65% move) only require 0.25 VC so mid-caps are never blocked
+        effective_min_vc = 0.25 if abs(row.get("percent_change") or 0.0) >= 0.65 else MIN_VC_RANKING
         if vc_ranking <= effective_min_vc:
             record(row, "volume_confluence_below_minimum", vc_ranking=vc_ranking)
             continue
@@ -2385,9 +2388,10 @@ def build_suggestions(
             orb_check_low = min(c["low"] for c in sym_candles[:6])
             ltp_check = row.get("ltp")
             prev_close_check = row.get("prev_close")
-            # Hysteresis buffer for already-ranked stocks prevents single-tick 2-minute disappearance
+            # Hysteresis buffer for already-ranked stocks or high-conviction runners prevents 2-minute minor tick drop
             is_already_top5 = symbol in prev_top5_symbols
-            tolerance_pct = (PMH_PML_TOLERANCE_PCT + 0.35) if is_already_top5 else PMH_PML_TOLERANCE_PCT
+            is_high_conviction = rally["score"] >= 75
+            tolerance_pct = 1.0 if (is_already_top5 or is_high_conviction) else PMH_PML_TOLERANCE_PCT
             if side == "bullish":
                 bullish_floor = orb_check_high * (1 - tolerance_pct / 100)
                 if ltp_check is None or ltp_check < bullish_floor:
