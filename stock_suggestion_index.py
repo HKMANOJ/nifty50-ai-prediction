@@ -1903,6 +1903,7 @@ def assess_one_side_rally(
     side: str,
     activity_ratio: float,
     index_context: dict[str, dict[str, Any]],
+    sector_alignment: float | None = None,
 ) -> dict[str, Any]:
     setup = classify_oi(row.get("percent_change"), (oi or {}).get("oi_change"))
     pct_change = row.get("percent_change")
@@ -2081,6 +2082,53 @@ def assess_one_side_rally(
     score_components["index_context"] = index_score
     tags.append(note)
 
+    sym = row.get("symbol", "")
+    sector_name = get_sector(sym)
+
+    # Layer 2: Macro Market Movement Gating (NIFTY & BANKNIFTY)
+    nifty = index_context.get("NIFTY 50", {})
+    bank = index_context.get("NIFTY BANK", {})
+    nifty_pct = nifty.get("percent_change")
+    bank_pct = bank.get("percent_change")
+
+    if side == "bearish" and nifty_pct is not None and nifty_pct >= 0.20:
+        blockers.append(f"market is bullish (NIFTY {nifty_pct:+.2f}%) - shorting gated")
+    elif side == "bearish" and bank_pct is not None and bank_pct >= 0.20 and sector_name in ("Banks", "Fin Serv"):
+        blockers.append(f"BANKNIFTY is bullish ({bank_pct:+.2f}%) - banking shorts gated")
+    elif side == "bullish" and nifty_pct is not None and nifty_pct <= -0.20:
+        stock_pct = float(pct_change or 0.0)
+        op_move = float(open_move or 0.0)
+        if stock_pct < 1.8 or op_move < 0.75:
+            blockers.append(f"NIFTY is bearish ({nifty_pct:+.2f}%) - long requires decoupled RS (>= +1.8%)")
+
+    # Layer 3: Micro Sector Movement Gating
+    if sector_alignment is not None:
+        if side == "bullish":
+            if sector_alignment < 45.0:
+                blockers.append(f"sector divergence ({sector_name} is weak: {sector_alignment:.0f}% aligned)")
+            elif sector_alignment >= 70.0:
+                score += 5
+                tags.append(f"sector tailwind ({sector_name} {sector_alignment:.0f}% bullish)")
+        else:
+            if sector_alignment < 45.0:
+                blockers.append(f"sector divergence ({sector_name} is strong: {100 - sector_alignment:.0f}% bullish)")
+            elif sector_alignment >= 70.0:
+                score += 5
+                tags.append(f"sector breakdown ({sector_name} {sector_alignment:.0f}% bearish)")
+
+    # Layer 4: Anti-Trap Heavyweight Short Blacklist
+    now_ist = datetime.now(INDIA_TZ)
+    current_minutes = now_ist.hour * 60 + now_ist.minute
+    is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+
+    INDEX_HEAVYWEIGHTS = {
+        "TCS", "HINDUNILVR", "ICICIBANK", "NESTLEIND", "BHARTIARTL", "SBIN",
+        "ASIANPAINT", "TATACONSUM", "TITAN", "MARUTI", "M&M", "EICHERMOT",
+        "HAL", "CIPLA", "TECHM", "HCLTECH", "BAJAJ-AUTO", "BAJAJFINSV", "LT"
+    }
+    if side == "bearish" and is_live_session and current_minutes <= (10 * 60 + 30) and sym in INDEX_HEAVYWEIGHTS:
+        blockers.append("morning index heavyweight - high dip-buy trap risk")
+
     score_int = int(round(max(0, min(100, score))))
     is_priority = score_int >= 75 and (range_pos is None or range_pos >= 0.60 if side == "bullish" else range_pos <= 0.40) and activity_ratio >= 1.1
     one_side = score_int >= MIN_ONE_SIDE_SCORE and not blockers
@@ -2132,8 +2180,8 @@ def build_trade_levels(
             stop = round(entry - risk, 2)
 
         final_risk = max(entry - stop, max(ltp * 0.003, 1.0))
-        target = round(entry + (final_risk * 2.0), 2)
-        plan = "Buy on confirmed breakout; SL below breakout rail/EMA9."
+        target = round(entry + (final_risk * 1.5), 2)
+        plan = "Buy on confirmed breakout; Target 1 (+1.5%); trail SL to Breakeven once +1.2% reached; SL below EMA9."
     else:
         entry = round((ltp if ltp is not None else low) - buffer, 2)
         tight = bo_info.get("tight_stop") if bo_info else None
@@ -2151,8 +2199,8 @@ def build_trade_levels(
             stop = round(entry + risk, 2)
 
         final_risk = max(stop - entry, max(ltp * 0.003, 1.0))
-        target = round(entry - (final_risk * 2.0), 2)
-        plan = "Sell on confirmed breakdown; SL above breakdown rail/EMA9."
+        target = round(entry - (final_risk * 1.5), 2)
+        plan = "Sell on confirmed breakdown; Target 1 (-1.5%); trail SL to Breakeven once -1.2% reached; SL above EMA9."
     return entry, stop, target, plan
 
 
@@ -2261,7 +2309,14 @@ def build_suggestions(
 
         setup = classify_oi(row.get("percent_change"), oi.get("oi_change"))
         base_score = calc_score(row, oi, side=side, activity_ratio=activity_ratio)
-        rally = assess_one_side_rally(row, oi, side=side, activity_ratio=activity_ratio, index_context=index_context)
+        rally = assess_one_side_rally(
+            row,
+            oi,
+            side=side,
+            activity_ratio=activity_ratio,
+            index_context=index_context,
+            sector_alignment=stock_sector_align,
+        )
         assessments[symbol] = rally
         if not rally["is_one_side"]:
             record(row, "rally_gate_failed", rally=rally, base_score=base_score, vc_ranking=vc_ranking)
@@ -2554,6 +2609,8 @@ def phase_for_time(now_ist: datetime) -> str:
     current = now_ist.time()
     if current < MARKET_OPEN:
         return "Pre-open: waiting for NSE 09:15 data"
+    if current < time(9, 20):
+        return "Opening Discovery: awaiting 09:20 Candle 1 settlement"
     if MARKET_OPEN <= current < SUGGESTION_READY:
         return "Building opening scan: analyze until 10:00"
     if SUGGESTION_READY <= current <= MARKET_CLOSE:
