@@ -2830,21 +2830,23 @@
       const aConfirmed = a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired');
       const bConfirmed = b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired');
 
-      const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : (a.is_block_surge ? 2 : (aSt.includes('near') ? 3 : 4)));
-      const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : (b.is_block_surge ? 2 : (bSt.includes('near') ? 3 : 4)));
+      const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : ((aSt.includes('near') || aSt.includes('coiling')) ? 2 : 3));
+      const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : ((bSt.includes('near') || bSt.includes('coiling')) ? 2 : 3));
       if (aTier !== bTier) return aTier - bTier;
 
       const aPct = a.percent_change ?? -9999;
       const bPct = b.percent_change ?? -9999;
-      const aMf = (a.money_flow_percentage || 0) / 100 * 5.0;
-      const bMf = (b.money_flow_percentage || 0) / 100 * 5.0;
-      const aRvol = a.rvol_5m || a.block_surge_rvol || 1.0;
-      const bRvol = b.rvol_5m || b.block_surge_rvol || 1.0;
+      const aSetup = ((a.one_side_rally_score || a.score || 0) / 100) * 8.0;
+      const bSetup = ((b.one_side_rally_score || b.score || 0) / 100) * 8.0;
+      const aMf = ((a.money_flow_percentage || 0) / 100) * 2.5;
+      const bMf = ((b.money_flow_percentage || 0) / 100) * 2.5;
+      const aRvol = a.rvol_5m || 1.0;
+      const bRvol = b.rvol_5m || 1.0;
       const aRvolBoost = aRvol >= 1.5 ? Math.min(3.0, (aRvol - 1.0) * 0.5) : 0;
       const bRvolBoost = bRvol >= 1.5 ? Math.min(3.0, (bRvol - 1.0) * 0.5) : 0;
 
-      const aScore = aMf + Math.max(0, aPct) + aRvolBoost;
-      const bScore = bMf + Math.max(0, bPct) + bRvolBoost;
+      const aScore = aSetup + Math.max(0, aPct) + aRvolBoost + aMf;
+      const bScore = bSetup + Math.max(0, bPct) + bRvolBoost + bMf;
       return bScore - aScore;
     };
     const sortBearish = (a, b) => {
@@ -2853,21 +2855,23 @@
       const aConfirmed = a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired');
       const bConfirmed = b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired');
 
-      const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : (a.is_block_surge ? 2 : (aSt.includes('near') ? 3 : 4)));
-      const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : (b.is_block_surge ? 2 : (bSt.includes('near') ? 3 : 4)));
+      const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : ((aSt.includes('near') || aSt.includes('coiling')) ? 2 : 3));
+      const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : ((bSt.includes('near') || bSt.includes('coiling')) ? 2 : 3));
       if (aTier !== bTier) return aTier - bTier;
 
       const aPct = a.percent_change ?? 9999;
       const bPct = b.percent_change ?? 9999;
-      const aMf = (a.money_flow_percentage || 0) / 100 * 5.0;
-      const bMf = (b.money_flow_percentage || 0) / 100 * 5.0;
-      const aRvol = a.rvol_5m || a.block_surge_rvol || 1.0;
-      const bRvol = b.rvol_5m || b.block_surge_rvol || 1.0;
+      const aSetup = ((a.one_side_rally_score || a.score || 0) / 100) * 8.0;
+      const bSetup = ((b.one_side_rally_score || b.score || 0) / 100) * 8.0;
+      const aMf = ((a.money_flow_percentage || 0) / 100) * 2.5;
+      const bMf = ((b.money_flow_percentage || 0) / 100) * 2.5;
+      const aRvol = a.rvol_5m || 1.0;
+      const bRvol = b.rvol_5m || 1.0;
       const aRvolBoost = aRvol >= 1.5 ? Math.min(3.0, (aRvol - 1.0) * 0.5) : 0;
       const bRvolBoost = bRvol >= 1.5 ? Math.min(3.0, (bRvol - 1.0) * 0.5) : 0;
 
-      const aScore = aMf + Math.abs(aPct) + aRvolBoost;
-      const bScore = bMf + Math.abs(bPct) + bRvolBoost;
+      const aScore = aSetup + Math.abs(aPct) + aRvolBoost + aMf;
+      const bScore = bSetup + Math.abs(bPct) + bRvolBoost + bMf;
       return bScore - aScore;
     };
     _currentBullish = (payload.bullish || []).slice().sort(sortBullish);

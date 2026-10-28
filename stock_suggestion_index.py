@@ -2480,28 +2480,31 @@ def build_suggestions(
         )
 
     # Priority Sort:
-    # Combines Price Expansion Momentum with Institutional Block Surge Velocity.
-    # Active breakouts/surges get Tier-0 priority, and block surge grants up to +5.0%
-    # momentum boost to real movers (pct >= 0.75%) so that high-volume runners (Ather, Dr Reddy)
-    # lead the board, while flat heavyweight stocks (+0.20%) do not displace rally leaders.
+    # Pure Quantitative Breakout Setup Engine (Zero Raw Crore Turnover Bias)
+    # Tier 0 is STRICTLY for confirmed active breakouts / waterfalls.
+    # Ranking is computed from: Setup Quality Score (Range hold, Open move, OI, Nifty)
+    # + Price Expansion Momentum + RVOL 5m Expansion + Order Flow Conviction.
     if side == "bullish":
         def sort_key_bullish(item: Suggestion):
             pct = item.percent_change if item.percent_change is not None else -9999.0
             mf = float(item.money_flow_percentage or 0.0)
             st = (item.five_min_status or "").lower()
 
-            # Tier 0 is STRICTLY for confirmed active breakouts or cascades.
-            # 'Near BO' or coiling or unconfirmed breaks MUST NOT enter Tier 0!
+            # Tier 0 is STRICTLY for confirmed active breakouts.
+            # 'Near BO', coiling, or expired breaks MUST NOT enter Tier 0!
             is_confirmed_bo = item.is_breakout and ("near" not in st and "coiling" not in st and "expired" not in st)
-            tier = 0 if is_confirmed_bo else (1 if item.is_cascade else (2 if item.is_block_surge else (3 if "near" in st else 4)))
+            tier = 0 if is_confirmed_bo else (1 if item.is_cascade else (2 if ("near" in st or "coiling" in st) else 3))
 
-            # Money Flow Priority: institutional order flow, depth & OI alignment
-            mf_score = (mf / 100.0) * 5.0
+            # Breakout Conviction Engine (Pure Setup Math: Setup Score + Price Expansion + RVOL + Order Flow)
+            # ZERO boost for raw block crore turnover.
+            rally_score = float(item.one_side_rally_score or item.score or 0.0)
+            setup_conviction = (rally_score / 100.0) * 8.0
             price_score = max(0.0, pct)
-            rvol = float(item.rvol_5m or item.block_surge_rvol or 1.0)
+            rvol = float(item.rvol_5m or 1.0)
             rvol_boost = min(3.0, (rvol - 1.0) * 0.5) if rvol >= 1.5 else 0.0
+            mf_boost = (mf / 100.0) * 2.5
 
-            total_conviction = mf_score + price_score + rvol_boost
+            total_conviction = setup_conviction + price_score + rvol_boost + mf_boost
             return (tier, -total_conviction)
 
         suggestions.sort(key=sort_key_bullish)
@@ -2511,18 +2514,21 @@ def build_suggestions(
             mf = float(item.money_flow_percentage or 0.0)
             st = (item.five_min_status or "").lower()
 
-            # Tier 0 is STRICTLY for confirmed active breakdowns or waterfalls.
-            # 'Near BD' or coiling or unconfirmed breaks MUST NOT enter Tier 0!
+            # Tier 0 is STRICTLY for confirmed active breakdowns / waterfalls.
+            # 'Near BD', coiling, or expired breaks MUST NOT enter Tier 0!
             is_confirmed_bd = item.is_breakout and ("near" not in st and "coiling" not in st and "expired" not in st)
-            tier = 0 if is_confirmed_bd else (1 if item.is_cascade else (2 if item.is_block_surge else (3 if "near" in st else 4)))
+            tier = 0 if is_confirmed_bd else (1 if item.is_cascade else (2 if ("near" in st or "coiling" in st) else 3))
 
-            # Money Flow Priority: institutional order flow, depth & OI alignment
-            mf_score = (mf / 100.0) * 5.0
+            # Breakout Conviction Engine (Pure Setup Math: Setup Score + Price Expansion + RVOL + Order Flow)
+            # ZERO boost for raw block crore turnover.
+            rally_score = float(item.one_side_rally_score or item.score or 0.0)
+            setup_conviction = (rally_score / 100.0) * 8.0
             price_score = abs(pct)
-            rvol = float(item.rvol_5m or item.block_surge_rvol or 1.0)
+            rvol = float(item.rvol_5m or 1.0)
             rvol_boost = min(3.0, (rvol - 1.0) * 0.5) if rvol >= 1.5 else 0.0
+            mf_boost = (mf / 100.0) * 2.5
 
-            total_conviction = mf_score + price_score + rvol_boost
+            total_conviction = setup_conviction + price_score + rvol_boost + mf_boost
             return (tier, -total_conviction)
 
         suggestions.sort(key=sort_key_bearish)
