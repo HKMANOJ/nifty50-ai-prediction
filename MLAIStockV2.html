@@ -2825,33 +2825,49 @@
     window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
 
     const sortBullish = (a, b) => {
-      const aTier = (a.is_breakout || a.is_cascade) ? 0 : (a.is_block_surge ? 1 : (String(a.five_min_status || '').toLowerCase().includes('near') ? 2 : 3));
-      const bTier = (b.is_breakout || b.is_cascade) ? 0 : (b.is_block_surge ? 1 : (String(b.five_min_status || '').toLowerCase().includes('near') ? 2 : 3));
+      const aSt = String(a.five_min_status || '').toLowerCase();
+      const bSt = String(b.five_min_status || '').toLowerCase();
+      const aConfirmed = a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired');
+      const bConfirmed = b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired');
+
+      const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : (a.is_block_surge ? 2 : (aSt.includes('near') ? 3 : 4)));
+      const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : (b.is_block_surge ? 2 : (bSt.includes('near') ? 3 : 4)));
       if (aTier !== bTier) return aTier - bTier;
 
       const aPct = a.percent_change ?? -9999;
       const bPct = b.percent_change ?? -9999;
-      const aRvol = a.block_surge_rvol || 1.0;
-      const bRvol = b.block_surge_rvol || 1.0;
-      const aSurge = a.is_block_surge && aRvol >= 1.8 && aPct >= 0.75 ? Math.min(4.0, (aRvol - 1.0) * 1.5) : 0;
-      const bSurge = b.is_block_surge && bRvol >= 1.8 && bPct >= 0.75 ? Math.min(4.0, (bRvol - 1.0) * 1.5) : 0;
-      const aScore = aPct + aSurge + (a.is_cascade ? 1.0 : 0) + (a.is_breakout ? 0.5 : 0);
-      const bScore = bPct + bSurge + (b.is_cascade ? 1.0 : 0) + (b.is_breakout ? 0.5 : 0);
+      const aMf = (a.money_flow_percentage || 0) / 100 * 5.0;
+      const bMf = (b.money_flow_percentage || 0) / 100 * 5.0;
+      const aRvol = a.rvol_5m || a.block_surge_rvol || 1.0;
+      const bRvol = b.rvol_5m || b.block_surge_rvol || 1.0;
+      const aRvolBoost = aRvol >= 1.5 ? Math.min(3.0, (aRvol - 1.0) * 0.5) : 0;
+      const bRvolBoost = bRvol >= 1.5 ? Math.min(3.0, (bRvol - 1.0) * 0.5) : 0;
+
+      const aScore = aMf + Math.max(0, aPct) + aRvolBoost;
+      const bScore = bMf + Math.max(0, bPct) + bRvolBoost;
       return bScore - aScore;
     };
     const sortBearish = (a, b) => {
-      const aTier = (a.is_breakout || a.is_cascade) ? 0 : (a.is_block_surge ? 1 : (String(a.five_min_status || '').toLowerCase().includes('near') ? 2 : 3));
-      const bTier = (b.is_breakout || b.is_cascade) ? 0 : (b.is_block_surge ? 1 : (String(b.five_min_status || '').toLowerCase().includes('near') ? 2 : 3));
+      const aSt = String(a.five_min_status || '').toLowerCase();
+      const bSt = String(b.five_min_status || '').toLowerCase();
+      const aConfirmed = a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired');
+      const bConfirmed = b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired');
+
+      const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : (a.is_block_surge ? 2 : (aSt.includes('near') ? 3 : 4)));
+      const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : (b.is_block_surge ? 2 : (bSt.includes('near') ? 3 : 4)));
       if (aTier !== bTier) return aTier - bTier;
 
       const aPct = a.percent_change ?? 9999;
       const bPct = b.percent_change ?? 9999;
-      const aRvol = a.block_surge_rvol || 1.0;
-      const bRvol = b.block_surge_rvol || 1.0;
-      const aSurge = a.is_block_surge && aRvol >= 1.8 && aPct <= -0.75 ? Math.min(4.0, (aRvol - 1.0) * 1.5) : 0;
-      const bSurge = b.is_block_surge && bRvol >= 1.8 && bPct <= -0.75 ? Math.min(4.0, (bRvol - 1.0) * 1.5) : 0;
-      const aScore = Math.abs(aPct) + aSurge + (a.is_cascade ? 1.0 : 0) + (a.is_breakout ? 0.5 : 0);
-      const bScore = Math.abs(bPct) + bSurge + (b.is_cascade ? 1.0 : 0) + (b.is_breakout ? 0.5 : 0);
+      const aMf = (a.money_flow_percentage || 0) / 100 * 5.0;
+      const bMf = (b.money_flow_percentage || 0) / 100 * 5.0;
+      const aRvol = a.rvol_5m || a.block_surge_rvol || 1.0;
+      const bRvol = b.rvol_5m || b.block_surge_rvol || 1.0;
+      const aRvolBoost = aRvol >= 1.5 ? Math.min(3.0, (aRvol - 1.0) * 0.5) : 0;
+      const bRvolBoost = bRvol >= 1.5 ? Math.min(3.0, (bRvol - 1.0) * 0.5) : 0;
+
+      const aScore = aMf + Math.abs(aPct) + aRvolBoost;
+      const bScore = bMf + Math.abs(bPct) + bRvolBoost;
       return bScore - aScore;
     };
     _currentBullish = (payload.bullish || []).slice().sort(sortBullish);

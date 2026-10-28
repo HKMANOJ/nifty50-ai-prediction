@@ -1365,9 +1365,9 @@ def detect_institutional_block_surge(
             rvol_1m = vol / baseline_vol
             move_pct = ((close - open_p) / open_p * 100) if open_p > 0 else 0.0
 
-            # Directional & Intraday Location Coherence
-            is_bullish_bar = close > open_p and (day_high <= 0 or close >= day_high * 0.996)
-            is_bearish_bar = close < open_p and (day_low <= 0 or close <= day_low * 1.004)
+            # Directional Coherence
+            is_bullish_bar = close >= open_p
+            is_bearish_bar = close <= open_p
 
             is_match = False
             if side == "bullish" and is_bullish_bar:
@@ -1416,9 +1416,9 @@ def detect_institutional_block_surge(
             open_p = float(c.get("open") or close)
             turnover_cr = (vol * close) / 10_000_000.0
             rvol_5m = vol / baseline_5m
-            # Directional & Intraday Location Coherence (5m)
-            is_bullish_bar = close > open_p and (day_high <= 0 or close >= day_high * 0.996)
-            is_bearish_bar = close < open_p and (day_low <= 0 or close <= day_low * 1.004)
+            # Directional Coherence (5m)
+            is_bullish_bar = close >= open_p
+            is_bearish_bar = close <= open_p
 
             is_match = False
             if side == "bullish" and is_bullish_bar:
@@ -1689,10 +1689,14 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
     # A true One-Side Rally candidate must NEVER breach the opposite rail during the session,
     # nor should it have staged an intraday reversal against the breakout rail.
     is_failed_trend = False
+    day_high_so_far = max(c["high"] for c in candles) if candles else latest_close
+    day_low_so_far = min(c["low"] for c in candles) if candles else latest_close
+    day_span = day_high_so_far - day_low_so_far
+    range_pos_now = ((latest_close - day_low_so_far) / day_span) if day_span > 0 else 0.5
+
     if side == "bullish":
         has_dumped_below_low = any(c["close"] < morning_low for c in trading_candles) or latest_close < morning_low
-        day_high_so_far = max(c["high"] for c in candles) if candles else latest_close
-        has_pulled_from_high = ((day_high_so_far - latest_close) / day_high_so_far * 100 > 0.45) if day_high_so_far > 0 else False
+        has_pulled_from_high = (latest_close < ema9 * 0.998) and (range_pos_now < 0.60)
         if (has_dumped_below_low and latest_close < morning_high * 0.998) or has_pulled_from_high:
             is_failed_trend = True
             is_breakout = False
@@ -1700,8 +1704,7 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             chart_structure = "Bull Trap Reversal" if has_dumped_below_low else "Intraday Pullback"
     elif side == "bearish":
         has_spiked_above_high = any(c["close"] > morning_high for c in trading_candles) or latest_close > morning_high
-        day_low_so_far = min(c["low"] for c in candles) if candles else latest_close
-        has_bounced_from_low = ((latest_close - day_low_so_far) / day_low_so_far * 100 > 0.45) if day_low_so_far > 0 else False
+        has_bounced_from_low = (latest_close > ema9 * 1.002) and (range_pos_now > 0.40)
         if (has_spiked_above_high and latest_close > morning_low * 1.002) or has_bounced_from_low:
             is_failed_trend = True
             is_breakout = False
@@ -1929,41 +1932,31 @@ def assess_one_side_rally(
 
     score_components["volume"] = score
     # 2. Day Range Position / Upper Range Hold (Max 25 pts)
-    ltp_val = float(row.get("ltp") or 0.0)
-    high_val = float(row.get("high") or ltp_val)
-    low_val = float(row.get("low") or ltp_val)
-
     if range_pos is None:
         score += 10
         tags.append("range position unavailable")
     elif side == "bullish":
-        pullback_pct = ((high_val - ltp_val) / high_val * 100) if high_val > 0 else 0.0
-        if pullback_pct > 0.40:
-            blockers.append(f"pulling back from day high (-{pullback_pct:.2f}%)")
-        elif range_pos >= 0.80:
+        if range_pos >= 0.75:
             score += 25
             tags.append(f"locked near day high ({range_pos*100:.0f}%)")
-        elif range_pos >= MIN_RANGE_EXTREME:
+        elif range_pos >= 0.60:
             score += 18
             tags.append(f"holding upper range ({range_pos*100:.0f}%)")
         elif range_pos >= 0.45:
             score += 8
         else:
-            blockers.append("rejected from day high")
+            blockers.append(f"rejected from day high (range position {range_pos*100:.0f}%)")
     else:
-        rebound_pct = ((ltp_val - low_val) / low_val * 100) if low_val > 0 else 0.0
-        if rebound_pct > 0.40:
-            blockers.append(f"bouncing off day low (+{rebound_pct:.2f}%)")
-        elif range_pos <= 0.20:
+        if range_pos <= 0.25:
             score += 25
             tags.append(f"locked near day low ({range_pos*100:.0f}%)")
-        elif range_pos <= (1 - MIN_RANGE_EXTREME):
+        elif range_pos <= 0.40:
             score += 18
             tags.append(f"holding lower range ({range_pos*100:.0f}%)")
         elif range_pos <= 0.55:
             score += 8
         else:
-            blockers.append("rejected from day low")
+            blockers.append(f"rejected from day low (range position {range_pos*100:.0f}%)")
 
     score_components["range_hold"] = score - sum(score_components.values())
     # 3. Move from Open (Max 20 pts)
@@ -2494,29 +2487,43 @@ def build_suggestions(
     if side == "bullish":
         def sort_key_bullish(item: Suggestion):
             pct = item.percent_change if item.percent_change is not None else -9999.0
-            rvol = item.block_surge_rvol or 1.0
-            surge_boost = min(4.0, (rvol - 1.0) * 1.5) if (item.is_block_surge and rvol >= 1.8 and pct >= 0.75) else 0.0
-            cascade_boost = 1.0 if item.is_cascade else 0.0
-            bo_boost = 0.5 if item.is_breakout else 0.0
-            effective_momentum = pct + surge_boost + cascade_boost + bo_boost
+            mf = float(item.money_flow_percentage or 0.0)
+            st = (item.five_min_status or "").lower()
 
-            # Tier 0 is STRICTLY for active breakouts or cascades. Block surge alone is Tier 1.
-            tier = 0 if (item.is_breakout or item.is_cascade) else (1 if item.is_block_surge else (2 if "near" in (item.five_min_status or "").lower() else 3))
-            return (tier, -effective_momentum)
+            # Tier 0 is STRICTLY for confirmed active breakouts or cascades.
+            # 'Near BO' or coiling or unconfirmed breaks MUST NOT enter Tier 0!
+            is_confirmed_bo = item.is_breakout and ("near" not in st and "coiling" not in st and "expired" not in st)
+            tier = 0 if is_confirmed_bo else (1 if item.is_cascade else (2 if item.is_block_surge else (3 if "near" in st else 4)))
+
+            # Money Flow Priority: institutional order flow, depth & OI alignment
+            mf_score = (mf / 100.0) * 5.0
+            price_score = max(0.0, pct)
+            rvol = float(item.rvol_5m or item.block_surge_rvol or 1.0)
+            rvol_boost = min(3.0, (rvol - 1.0) * 0.5) if rvol >= 1.5 else 0.0
+
+            total_conviction = mf_score + price_score + rvol_boost
+            return (tier, -total_conviction)
 
         suggestions.sort(key=sort_key_bullish)
     else:
         def sort_key_bearish(item: Suggestion):
             pct = item.percent_change if item.percent_change is not None else 9999.0
-            rvol = item.block_surge_rvol or 1.0
-            surge_boost = min(4.0, (rvol - 1.0) * 1.5) if (item.is_block_surge and rvol >= 1.8 and pct <= -0.75) else 0.0
-            cascade_boost = 1.0 if item.is_cascade else 0.0
-            bo_boost = 0.5 if item.is_breakout else 0.0
-            effective_momentum = abs(pct) + surge_boost + cascade_boost + bo_boost
+            mf = float(item.money_flow_percentage or 0.0)
+            st = (item.five_min_status or "").lower()
 
-            # Tier 0 is STRICTLY for active breakdowns or cascades. Block surge alone is Tier 1.
-            tier = 0 if (item.is_breakout or item.is_cascade) else (1 if item.is_block_surge else (2 if "near" in (item.five_min_status or "").lower() else 3))
-            return (tier, -effective_momentum)
+            # Tier 0 is STRICTLY for confirmed active breakdowns or waterfalls.
+            # 'Near BD' or coiling or unconfirmed breaks MUST NOT enter Tier 0!
+            is_confirmed_bd = item.is_breakout and ("near" not in st and "coiling" not in st and "expired" not in st)
+            tier = 0 if is_confirmed_bd else (1 if item.is_cascade else (2 if item.is_block_surge else (3 if "near" in st else 4)))
+
+            # Money Flow Priority: institutional order flow, depth & OI alignment
+            mf_score = (mf / 100.0) * 5.0
+            price_score = abs(pct)
+            rvol = float(item.rvol_5m or item.block_surge_rvol or 1.0)
+            rvol_boost = min(3.0, (rvol - 1.0) * 0.5) if rvol >= 1.5 else 0.0
+
+            total_conviction = mf_score + price_score + rvol_boost
+            return (tier, -total_conviction)
 
         suggestions.sort(key=sort_key_bearish)
 
