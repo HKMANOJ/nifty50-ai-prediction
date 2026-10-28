@@ -1617,6 +1617,7 @@
   let _currentBullish = [];
   let _currentBearish = [];
   let _activeTab = "bullish";
+  let _userSwitchedTab = false;
   let _selectedSymbol = "MUTHOOTFIN";
   let _tvChart = null;
   let _candleSeries = null;
@@ -2824,19 +2825,31 @@
     window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
 
     const sortBullish = (a, b) => {
+      const aTier = (a.is_breakout || a.is_cascade) ? 0 : (a.is_block_surge ? 1 : (String(a.five_min_status || '').toLowerCase().includes('near') ? 2 : 3));
+      const bTier = (b.is_breakout || b.is_cascade) ? 0 : (b.is_block_surge ? 1 : (String(b.five_min_status || '').toLowerCase().includes('near') ? 2 : 3));
+      if (aTier !== bTier) return aTier - bTier;
+
       const aPct = a.percent_change ?? -9999;
       const bPct = b.percent_change ?? -9999;
-      const aSurge = a.is_block_surge && aPct >= 0.75 ? Math.min(5.0, (a.block_surge_turnover_cr || 0) * 0.15) : 0;
-      const bSurge = b.is_block_surge && bPct >= 0.75 ? Math.min(5.0, (b.block_surge_turnover_cr || 0) * 0.15) : 0;
+      const aRvol = a.block_surge_rvol || 1.0;
+      const bRvol = b.block_surge_rvol || 1.0;
+      const aSurge = a.is_block_surge && aRvol >= 1.8 && aPct >= 0.75 ? Math.min(4.0, (aRvol - 1.0) * 1.5) : 0;
+      const bSurge = b.is_block_surge && bRvol >= 1.8 && bPct >= 0.75 ? Math.min(4.0, (bRvol - 1.0) * 1.5) : 0;
       const aScore = aPct + aSurge + (a.is_cascade ? 1.0 : 0) + (a.is_breakout ? 0.5 : 0);
       const bScore = bPct + bSurge + (b.is_cascade ? 1.0 : 0) + (b.is_breakout ? 0.5 : 0);
       return bScore - aScore;
     };
     const sortBearish = (a, b) => {
+      const aTier = (a.is_breakout || a.is_cascade) ? 0 : (a.is_block_surge ? 1 : (String(a.five_min_status || '').toLowerCase().includes('near') ? 2 : 3));
+      const bTier = (b.is_breakout || b.is_cascade) ? 0 : (b.is_block_surge ? 1 : (String(b.five_min_status || '').toLowerCase().includes('near') ? 2 : 3));
+      if (aTier !== bTier) return aTier - bTier;
+
       const aPct = a.percent_change ?? 9999;
       const bPct = b.percent_change ?? 9999;
-      const aSurge = a.is_block_surge && aPct <= -0.75 ? Math.min(5.0, (a.block_surge_turnover_cr || 0) * 0.15) : 0;
-      const bSurge = b.is_block_surge && bPct <= -0.75 ? Math.min(5.0, (b.block_surge_turnover_cr || 0) * 0.15) : 0;
+      const aRvol = a.block_surge_rvol || 1.0;
+      const bRvol = b.block_surge_rvol || 1.0;
+      const aSurge = a.is_block_surge && aRvol >= 1.8 && aPct <= -0.75 ? Math.min(4.0, (aRvol - 1.0) * 1.5) : 0;
+      const bSurge = b.is_block_surge && bRvol >= 1.8 && bPct <= -0.75 ? Math.min(4.0, (bRvol - 1.0) * 1.5) : 0;
       const aScore = Math.abs(aPct) + aSurge + (a.is_cascade ? 1.0 : 0) + (a.is_breakout ? 0.5 : 0);
       const bScore = Math.abs(bPct) + bSurge + (b.is_cascade ? 1.0 : 0) + (b.is_breakout ? 0.5 : 0);
       return bScore - aScore;
@@ -2902,14 +2915,26 @@
         }
         if (scanDot) scanDot.style.background = "#94a3b8";
       } else if (isMarketHours()) {
-        const lastT = scanInfo.last_run_ist ? scanInfo.last_run_ist.replace(" IST", "") : (payload.market_clock_ist || "");
-        scanText.textContent = lastT ? `Auto-Scan: 5m (Last: ${lastT})` : "Auto-Scan: 5m Active";
-        if (scanBadge) {
-          scanBadge.style.background = "#eff6ff";
-          scanBadge.style.color = "#1d4ed8";
-          scanBadge.style.borderColor = "#bfdbfe";
+        const clockStr = payload.market_clock_ist || "";
+        const isOpeningWindow = clockStr >= "09:15:00" && clockStr < "09:20:00";
+        if (isOpeningWindow) {
+          scanText.textContent = "Auto-Scan: 🟡 Opening Range Forming (09:15-09:20 Settle)";
+          if (scanBadge) {
+            scanBadge.style.background = "#fffbeb";
+            scanBadge.style.color = "#b45309";
+            scanBadge.style.borderColor = "#fde68a";
+          }
+          if (scanDot) scanDot.style.background = "#f59e0b";
+        } else {
+          const lastT = scanInfo.last_run_ist ? scanInfo.last_run_ist.replace(" IST", "") : (payload.market_clock_ist || "");
+          scanText.textContent = lastT ? `Auto-Scan: 5m (Last: ${lastT})` : "Auto-Scan: 5m Active";
+          if (scanBadge) {
+            scanBadge.style.background = "#eff6ff";
+            scanBadge.style.color = "#1d4ed8";
+            scanBadge.style.borderColor = "#bfdbfe";
+          }
+          if (scanDot) scanDot.style.background = "#2563eb";
         }
-        if (scanDot) scanDot.style.background = "#2563eb";
       } else {
         scanText.textContent = "Auto-Scan: Idle (Market Closed)";
         if (scanBadge) {
@@ -3148,6 +3173,22 @@
     const pdhEl = document.getElementById("pdhCount");
     if (pdhEl) pdhEl.textContent = String(_currentBullish.filter(x => (x.range_position_percent || 0) >= 70).length || 14);
 
+    // Automatic Index Alignment (Market Direction):
+    // If NIFTY is negative (<= -0.20%) and user hasn't explicitly clicked a tab,
+    // automatically align view with Bearish (short) stocks to prevent fighting the market tide.
+    if (!_userSwitchedTab) {
+      const n50Chg = (payload.index_context?.["NIFTY 50"]?.percent_change) ?? 0;
+      if (n50Chg <= -0.20 && _currentBearish.length > 0) {
+        _activeTab = "bearish";
+        document.getElementById("tabLosers")?.classList.add("active");
+        document.getElementById("tabGainers")?.classList.remove("active");
+      } else if (n50Chg >= 0.20 && _currentBullish.length > 0) {
+        _activeTab = "bullish";
+        document.getElementById("tabGainers")?.classList.add("active");
+        document.getElementById("tabLosers")?.classList.remove("active");
+      }
+    }
+
     const currentRows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
     renderLeftList(currentRows);
     renderTable(currentRows);
@@ -3244,6 +3285,7 @@
 
   /* ── Tab Switchers ── */
   document.getElementById("tabGainers")?.addEventListener("click", () => {
+    _userSwitchedTab = true;
     _activeTab = "bullish";
     document.getElementById("tabGainers").classList.add("active");
     document.getElementById("tabLosers").classList.remove("active");
@@ -3253,6 +3295,7 @@
   });
 
   document.getElementById("tabLosers")?.addEventListener("click", () => {
+    _userSwitchedTab = true;
     _activeTab = "bearish";
     document.getElementById("tabLosers").classList.add("active");
     document.getElementById("tabGainers").classList.remove("active");
