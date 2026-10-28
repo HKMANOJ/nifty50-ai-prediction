@@ -3085,13 +3085,6 @@ def enforce_candidate_lifecycle_and_mutual_exclusion(
             opposite_key = f"{sym}_bullish"
             if opposite_key in cands_store and not cands_store[opposite_key].get("is_invalidated"):
                 _invalidate_lifecycle_entry(cands_store, sym, "bullish", market_clock_ist, now_epoch, "Direction reversed to Bearish")
-            if opposite_key in cands_store and not cands_store[opposite_key].get("is_invalidated"):
-                _invalidate_lifecycle_entry(cands_store, sym, "bearish", market_clock_ist, now_epoch, "Direction reversed to Bullish")
-
-        for sym in list(bear_map.keys()):
-            opposite_key = f"{sym}_bullish"
-            if opposite_key in cands_store and not cands_store[opposite_key].get("is_invalidated"):
-                _invalidate_lifecycle_entry(cands_store, sym, "bullish", market_clock_ist, now_epoch, "Direction reversed to Bearish")
 
         # Step 3: Process Bullish Candidates Lifecycle
         final_bullish = []
@@ -4158,6 +4151,23 @@ def build_payload(top: int) -> dict[str, Any]:
         payload.get("session_date"), payload.get("market_clock_ist"),
     )
     payload["pmh_pml_filter"] = compute_pmh_pml_filter(bullish, bearish)
+    # Collect recently invalidated candidates so frontend displays explicit exit/cut-loss alert
+    try:
+        lifecycle_state = _load_lifecycle_state()
+        invalidated_items = []
+        for k, v in lifecycle_state.get("candidates", {}).items():
+            if v.get("is_invalidated"):
+                invalidated_items.append({
+                    "symbol": v.get("symbol"),
+                    "side": v.get("side"),
+                    "invalidated_at": v.get("invalidated_at"),
+                    "reason": v.get("invalidation_reason"),
+                    "ltp": v.get("ltp"),
+                    "percent_change": v.get("percent_change"),
+                })
+        payload["invalidated_candidates"] = invalidated_items
+    except Exception:
+        payload["invalidated_candidates"] = []
     try:
         replay = scanner_trace.replay_inputs(sys.modules[__name__], gainers, losers, oi_by_symbol,
             index_context, shared_candles, scanner_trace.finish_capture(), extra_symbols)
@@ -4211,6 +4221,7 @@ def error_payload(exc: Exception) -> dict[str, Any]:
         "instant_triggers": [],
         "top5_eligible": {"bullish": [], "bearish": []},
         "pmh_pml_filter": {"bullish": [], "bearish": []},
+        "invalidated_candidates": [],
     }
 
 
@@ -4265,6 +4276,7 @@ def build_premarket_reset_payload(now_ist: datetime) -> dict[str, Any]:
         "instant_triggers": [],
         "top5_eligible": {"bullish": [], "bearish": []},
         "pmh_pml_filter": {"bullish": [], "bearish": []},
+        "invalidated_candidates": [],
     }
 
 

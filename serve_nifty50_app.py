@@ -790,6 +790,18 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             if best.get("session_date") != today_str:
                 best["_auto_refresh_reason"] = "stale_session_background_refresh"
                 self._kick_background_refresh()
+                # On trading days (weekday >= 09:00 AM IST), NEVER serve yesterday's stock list
+                # to the browser as active trades! Serve a clean reset state instead so the
+                # user never sees phantom stocks that vanish 15 seconds later.
+                current_minutes = now_ist.hour * 60 + now_ist.minute
+                if now_ist.weekday() < 5 and current_minutes >= PREMARKET_RESET_START_MINUTES:
+                    from stock_suggestion_index import build_premarket_reset_payload
+                    reset_payload = build_premarket_reset_payload(now_ist)
+                    reset_payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
+                    reset_payload["_auto_refresh_reason"] = "stale_session_reset"
+                    reset_payload["status_message"] = "Session Reset: Awaiting 09:16 AM First Candle Confirmation"
+                    self._send_json(HTTPStatus.OK, reset_payload)
+                    return
             self._send_json(HTTPStatus.OK, best)
             return
 
