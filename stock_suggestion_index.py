@@ -95,10 +95,12 @@ SECTOR_MAP: dict[str, str] = {
     "SBICARD": "Fin Serv", "SHRIRAMFIN": "Fin Serv", "PFC": "Fin Serv", "RECLTD": "Fin Serv",
     "IREDA": "Fin Serv", "JIOFIN": "Fin Serv", "LICHSGFIN": "Fin Serv", "PNBHOUSING": "Fin Serv",
     "LTF": "Fin Serv", "MFSL": "Fin Serv", "BAJAJHLDNG": "Fin Serv",
+    # Electronics Manufacturing Services (EMS) & Hardware
+    "KAYNES": "EMS / Electronics", "DIXON": "EMS / Electronics", "AMBER": "EMS / Electronics", "PGEL": "EMS / Electronics",
     # Consumer Durables & Electricals
     "BLUESTARCO": "Consumer Durables", "VOLTAS": "Consumer Durables", "HAVELLS": "Consumer Durables",
-    "CROMPTON": "Consumer Durables", "DIXON": "Consumer Durables", "AMBER": "Consumer Durables",
-    "POLYCAB": "Consumer Durables", "KEI": "Consumer Durables", "PGEL": "Consumer Durables",
+    "CROMPTON": "Consumer Durables",
+    "POLYCAB": "Consumer Durables", "KEI": "Consumer Durables",
     "VMM": "Consumer Durables", "ASTRAL": "Consumer Durables", "SUPREMEIND": "Consumer Durables",
     "APLAPOLLO": "Consumer Durables",
     # Pharmaceuticals & Healthcare
@@ -133,7 +135,7 @@ SECTOR_MAP: dict[str, str] = {
     "GRASIM": "Infra", "ADANIENT": "Infra",
     # Capital Goods, Power Equipment & Defence
     "SIEMENS": "Capital Goods", "ABB": "Capital Goods", "BHEL": "Capital Goods",
-    "KAYNES": "Capital Goods", "CGPOWER": "Capital Goods", "CUMMINSIND": "Capital Goods",
+    "CGPOWER": "Capital Goods", "CUMMINSIND": "Capital Goods",
     "POWERINDIA": "Capital Goods", "SOLARINDS": "Capital Goods",
     "HAL": "Defence", "BEL": "Defence", "BDL": "Defence", "COCHINSHIP": "Defence", "MAZDOCK": "Defence",
     # Power & Green Energy
@@ -2103,15 +2105,22 @@ def assess_one_side_rally(
 
     # Layer 3: Micro Sector Movement Gating
     if sector_alignment is not None:
+        stock_pct_abs = abs(float(pct_change or 0.0))
         if side == "bullish":
             if sector_alignment < 45.0:
-                blockers.append(f"sector divergence ({sector_name} is weak: {sector_alignment:.0f}% aligned)")
+                if stock_pct_abs < 2.0:
+                    blockers.append(f"sector divergence ({sector_name} is weak: {sector_alignment:.0f}% aligned)")
+                else:
+                    score -= 8  # Mild penalty instead of fatal blocker for high-conviction runaway breakout
             elif sector_alignment >= 70.0:
                 score += 5
                 tags.append(f"sector tailwind ({sector_name} {sector_alignment:.0f}% bullish)")
         else:
             if sector_alignment < 45.0:
-                blockers.append(f"sector divergence ({sector_name} is strong: {100 - sector_alignment:.0f}% bullish)")
+                if stock_pct_abs < 2.0:
+                    blockers.append(f"sector divergence ({sector_name} is strong: {100 - sector_alignment:.0f}% bullish)")
+                else:
+                    score -= 8  # Mild penalty instead of fatal blocker for high-conviction runaway breakdown
             elif sector_alignment >= 70.0:
                 score += 5
                 tags.append(f"sector breakdown ({sector_name} {sector_alignment:.0f}% bearish)")
@@ -2294,7 +2303,9 @@ def build_suggestions(
         row_act = calc_stock_activity(row, oi)
         activity_ratio = (row_act / median_act) if median_act > 0 else 1.0
         vc_ranking = round(max(0.1, activity_ratio), 2)
-        if vc_ranking <= MIN_VC_RANKING:
+        # Dynamic VC threshold: stocks with clean momentum (>=1.5% move) only require 0.30 VC
+        effective_min_vc = 0.30 if abs(row.get("percent_change") or 0.0) >= 1.5 else MIN_VC_RANKING
+        if vc_ranking <= effective_min_vc:
             record(row, "volume_confluence_below_minimum", vc_ranking=vc_ranking)
             continue
 
