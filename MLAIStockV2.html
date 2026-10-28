@@ -1245,18 +1245,7 @@
             <span style="color:var(--green); font-size:10px;">High RS</span>
           </div>
           <div class="leaders-strip" id="topLeadersStrip">
-            <div class="leader-tag">
-              <span class="sym">HINDZINC</span>
-              <span class="chg">+4.62%</span>
-            </div>
-            <div class="leader-tag">
-              <span class="sym">KAYNES</span>
-              <span class="chg">+3.92%</span>
-            </div>
-            <div class="leader-tag">
-              <span class="sym">MOTILALOFS</span>
-              <span class="chg">+3.04%</span>
-            </div>
+            <div style="font-size:11px; color:#94a3b8; font-weight:600; padding:4px 0;">Scanning live session leaders...</div>
           </div>
         </div>
 
@@ -2932,15 +2921,19 @@
       }
     }
 
-    // Top Leaders Strip
+    // Top Leaders Strip (Populated only with live verified session gainers)
     const strip = document.getElementById("topLeadersStrip");
-    if (strip && _currentBullish.length > 0) {
-      strip.innerHTML = _currentBullish.slice(0, 3).map(r => `
-        <div class="leader-tag">
-          <span class="sym">${r.symbol}</span>
-          <span class="chg">${pct(r.percent_change)}</span>
-        </div>
-      `).join("");
+    if (strip) {
+      if (_currentBullish.length > 0) {
+        strip.innerHTML = _currentBullish.slice(0, 3).map(r => `
+          <div class="leader-tag">
+            <span class="sym">${r.symbol}</span>
+            <span class="chg">${pct(r.percent_change)}</span>
+          </div>
+        `).join("");
+      } else {
+        strip.innerHTML = `<div style="font-size:11px; color:#94a3b8; font-weight:600; padding:4px 0;">No bullish leaders right now</div>`;
+      }
     }
 
     // ─────────────────────────────────────────────────────────────
