@@ -1950,16 +1950,14 @@ def assess_one_side_rally(
         else:
             blockers.append(f"rejected from day high (range position {range_pos*100:.0f}%)")
     else:
-        if range_pos <= 0.25:
+        if range_pos <= 0.15:
             score += 25
             tags.append(f"locked near day low ({range_pos*100:.0f}%)")
-        elif range_pos <= 0.40:
+        elif range_pos <= 0.25:
             score += 18
             tags.append(f"holding lower range ({range_pos*100:.0f}%)")
-        elif range_pos <= 0.55:
-            score += 8
         else:
-            blockers.append(f"rejected from day low (range position {range_pos*100:.0f}%)")
+            blockers.append(f"rejected from day low (bounced {range_pos*100:.0f}% off low)")
 
     score_components["range_hold"] = score - sum(score_components.values())
     # 3. Move from Open (Max 20 pts)
@@ -2063,7 +2061,10 @@ def assess_one_side_rally(
         else:
             blockers.append(f"price move below +{MIN_BULLISH_CHANGE:.2f}%")
     else:
-        if pct_change <= -2.5:
+        # Rule 1: Anti-Exhaustion Gap Cap (Never short stocks already down > 3.50% at open unless actively driving intraday)
+        if pct_change <= -3.50 and (open_move is None or open_move > -2.0):
+            blockers.append(f"gap-down exhaustion ({pct_change:.2f}%) - high bounce trap risk")
+        elif pct_change <= -2.0:
             score += 10
             tags.append("strong downside expansion")
         elif pct_change <= -1.2:
