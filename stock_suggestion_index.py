@@ -162,6 +162,11 @@ def get_sector(symbol: str) -> str:
 # Any stock with a lot size above this is excluded entirely - too much
 # capital per contract to be a practical suggestion.
 MAX_ALLOWED_LOT_SIZE = 650
+# Stock price boundaries for practical retail trading:
+# Excludes ultra-high priced stocks (> ₹10,000 like BOSCH, PAGEIND, FORCEMOT)
+# where contract value/capital is excessive, and penny stocks (< ₹50).
+MIN_ALLOWED_STOCK_PRICE = 50.0
+MAX_ALLOWED_STOCK_PRICE = 10000.0
 # Every F&O stock with a lot size below this is scanned directly every cycle,
 # independent of NSE's top-20 gainers/losers or its OI-spurts feed.
 LOT_SCAN_THRESHOLD = 650
@@ -1568,21 +1573,21 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                 breakout_time = cascade_info["cascade_time"]
             if not first_breakout_epoch:
                 first_breakout_epoch = latest["timestamp"]
-        elif (live_ltp >= morning_high * 1.001 or live_high >= morning_high * 1.002) and live_ltp >= ema9 and live_ltp >= live_open:
+        elif live_ltp >= morning_high * 1.001 and live_ltp >= ema9 and live_ltp >= live_open:
             is_breakout = True
             breakout_status = "Impulse BO"
-            chart_structure = "Live Wick Breakout"
+            chart_structure = "Live Sustained Breakout"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
-        elif elapsed_min <= 45 and open_move >= 0.75 and velocity >= 0.05 and live_ltp >= ema9:
+        elif elapsed_min <= 45 and open_move >= 0.75 and velocity >= 0.05 and live_ltp >= morning_high and live_ltp >= ema9:
             is_breakout = True
             breakout_status = "Impulse BO"
             chart_structure = "Velocity Ignition"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
-        elif latest_close >= morning_high * 0.998 and latest_close >= ema9:
+        elif latest_close >= morning_high and latest_close >= ema9:
             is_breakout = True
             breakout_status = "Breakout"
             if chart_structure == "Base Building":
@@ -1590,7 +1595,7 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
-        elif latest_close >= morning_high * 0.992:
+        elif latest_close >= morning_high * 0.992 or live_ltp >= morning_high * 0.992:
             breakout_status = "Near BO"
             if chart_structure == "Base Building":
                 chart_structure = "Testing Resistance"
@@ -1648,21 +1653,21 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                 breakout_time = cascade_info["cascade_time"]
             if not first_breakout_epoch:
                 first_breakout_epoch = latest["timestamp"]
-        elif (live_ltp <= morning_low * 0.999 or live_low <= morning_low * 0.998) and live_ltp <= ema9 and live_ltp <= live_open:
+        elif live_ltp <= morning_low * 0.999 and live_ltp <= ema9 and live_ltp <= live_open:
             is_breakout = True
             breakout_status = "Waterfall BD"
-            chart_structure = "Live Wick Breakdown"
+            chart_structure = "Live Sustained Breakdown"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
-        elif elapsed_min <= 45 and open_move <= -0.75 and velocity <= -0.05 and live_ltp <= ema9:
+        elif elapsed_min <= 45 and open_move <= -0.75 and velocity <= -0.05 and live_ltp <= morning_low and live_ltp <= ema9:
             is_breakout = True
             breakout_status = "Waterfall BD"
             chart_structure = "Velocity Ignition Slide"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
-        elif latest_close <= morning_low * 1.002 and latest_close <= ema9:
+        elif latest_close <= morning_low and latest_close <= ema9:
             is_breakout = True
             breakout_status = "Breakdown"
             if chart_structure == "Base Building":
@@ -1670,7 +1675,7 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
-        elif latest_close <= morning_low * 1.008:
+        elif latest_close <= morning_low * 1.008 or live_ltp <= morning_low * 1.008:
             breakout_status = "Near BD"
             if chart_structure == "Base Building":
                 chart_structure = "Testing Support"
@@ -2160,16 +2165,20 @@ def build_suggestions(
     for row in rows:
         symbol = row["symbol"]
         lot_size = get_fo_lot_size(symbol)
+        ltp = float(row.get("ltp") or 0.0)
         if symbol in INDEX_LIKE_SYMBOLS:
             record(row, "index_symbol_excluded")
         elif lot_size <= 0:
             record(row, "non_fno_symbol_excluded")
         elif lot_size > MAX_ALLOWED_LOT_SIZE:
             record(row, "lot_size_above_limit", lot_size=lot_size)
+        elif ltp > 0 and (ltp < MIN_ALLOWED_STOCK_PRICE or ltp > MAX_ALLOWED_STOCK_PRICE):
+            record(row, "stock_price_outside_limit", ltp=ltp)
     matched_rows = [
         row for row in rows
         if row["symbol"] not in INDEX_LIKE_SYMBOLS
         and 0 < get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+        and (float(row.get("ltp") or 0.0) <= 0 or MIN_ALLOWED_STOCK_PRICE <= float(row.get("ltp") or 0.0) <= MAX_ALLOWED_STOCK_PRICE)
     ]
     
     # Calculate activities across candidates to compute true relative volume (RVOL)
@@ -2289,8 +2298,11 @@ def build_suggestions(
                     record(row, "not_below_previous_close", rally=rally, breakout=bo_info)
                     continue
 
-        # Only show active Breakout/Breakdown or Near BO/Near BD candidates (no Consolidating)
-        if five_min_status.lower() == "consolidating" and not surge_info.get("is_block_surge"):
+        # Anti-Disappear Rule: Keep active Breakout/Breakdown, Near BO/Near BD, and confirmed runners in pullback.
+        # Only drop low-scoring consolidating stocks that never triggered a breakout.
+        has_earlier_breakout = bool(breakout_time or bo_info.get("breakout_time"))
+        is_high_conviction = rally["score"] >= 75
+        if five_min_status.lower() == "consolidating" and not surge_info.get("is_block_surge") and not has_earlier_breakout and not is_high_conviction:
             record(row, "consolidating", rally=rally, breakout=bo_info)
             continue
 
@@ -2484,12 +2496,13 @@ def phase_for_time(now_ist: datetime) -> str:
     return "Market closed: today's list is archived/reset on next session"
 
 
-def _passes_base_filter(symbol: str, oi_by_symbol: dict[str, dict[str, Any]] | None = None) -> bool:
+def _passes_base_filter(symbol: str, oi_by_symbol: dict[str, dict[str, Any]] | None = None, ltp: float | None = None) -> bool:
     lot = get_fo_lot_size(symbol)
-    return (
-        symbol not in INDEX_LIKE_SYMBOLS
-        and 0 < lot <= MAX_ALLOWED_LOT_SIZE
-    )
+    if symbol in INDEX_LIKE_SYMBOLS or not (0 < lot <= MAX_ALLOWED_LOT_SIZE):
+        return False
+    if ltp is not None and ltp > 0 and not (MIN_ALLOWED_STOCK_PRICE <= ltp <= MAX_ALLOWED_STOCK_PRICE):
+        return False
+    return True
 
 
 CANDIDATE_LIFECYCLE_PATH = INPUT_DIR / "candidate_lifecycle.json"

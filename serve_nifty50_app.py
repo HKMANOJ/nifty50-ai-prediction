@@ -174,7 +174,7 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                         print(f"[{now_ist.strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Executing 5-minute background market scan...")
                         try:
                             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
-                            res = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
+                            res = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=120)
                             dur = round(time.time() - scan_start, 1)
                             scan_payload = res.get("stdout") if isinstance(res.get("stdout"), dict) else {}
                             has_signal = _payload_has_signal(scan_payload)
@@ -852,7 +852,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
         try:
             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
-            result = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=85)
+            result = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=120)
             import scanner_trace
             output = result.get("stdout") if isinstance(result.get("stdout"), dict) else {}
             scanner_trace.submit_health("requested_scan_finished", snapshot_id=output.get("snapshot_id"),

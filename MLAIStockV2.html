@@ -1699,6 +1699,9 @@
   // Any stock with a lot size above this is excluded - matches the server's
   // MAX_ALLOWED_LOT_SIZE so client and server agree on what "too big" means.
   const MAX_LOT_SIZE_DISPLAY = 650;
+  // Stock price boundaries: exclude ultra-high priced stocks (> ₹10k) and penny stocks (< ₹50)
+  const MAX_STOCK_PRICE_DISPLAY = 10000;
+  const MIN_STOCK_PRICE_DISPLAY = 50;
   let _lockedPick = null;        // { symbol, score, boMin, expiresMin, type, row }
   // Previous scan's Top 5 Eligible symbols per side, so a freshly-added
   // stock (not seen last render) can get the new-entry blink treatment.
@@ -1917,6 +1920,7 @@
 
     allRows.forEach(row => {
       if (row.lot_size && row.lot_size > MAX_LOT_SIZE_DISPLAY) return;
+      if (row.ltp && (row.ltp > MAX_STOCK_PRICE_DISPLAY || row.ltp < MIN_STOCK_PRICE_DISPLAY)) return;
 
       const st = (row.five_min_status || "").toLowerCase();
       const isNear = st.includes("near");
@@ -1944,71 +1948,6 @@
       const eventTime = row.block_surge_time || row.breakout_time;
       const boMin = breakoutMinutes(eventTime);
       const ageMin = (boMin == null) ? (row.surge_age_minutes ?? null) : (nowMin - boMin);
-      const isFresh = (ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN;
-
-      // When backend lifecycle engine is active, respect row.should_alert; fallback to isFresh
-      const shouldTrigger = (row.should_alert !== undefined) ? Boolean(row.should_alert) : isFresh;
-
-      _alertedBreakouts.add(alertKey);   // seed regardless, so this wave fires at most once
-
-      if (shouldTrigger && _hasEvaluatedInitialBell) {
-        // If direction reversed or re-alerting, remove any opposite/stale toast
-        const oppToast = document.querySelector(`.toast[data-sym="${row.symbol}"]`);
-        if (oppToast) oppToast.remove();
-
-        if (row.alert_event_id) {
-          _savePersistedAlertId(row.alert_event_id);
-        }
-
-        playBellRangSound();
-        showStickyToast(row, isBreakdown);
-
-        // Acknowledge alert delivery to backend state machine
-        if (row.alert_event_id) {
-          fetch('/api/alerts/ack', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              alert_event_id: row.alert_event_id,
-              symbol: row.symbol,
-              client_id: _getClientId()
-            })
-          }).catch(err => console.warn('Alert ack error:', err));
-        }
-      } else if (row.alert_event_id) {
-        _savePersistedAlertId(row.alert_event_id);
-      }
-    });
-
-    _hasEvaluatedInitialBell = true;
-  }
-
-    allRows.forEach(row => {
-      if (row.lot_size && row.lot_size > MAX_LOT_SIZE_DISPLAY) return;
-
-      const st = (row.five_min_status || "").toLowerCase();
-      const isNear = st.includes("near");
-      const isConsolidating = st.includes("consolidating");
-      const isBreakout = Boolean(row.is_breakout || st.includes("breakout"));
-      const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
-      const isActualBreakout = !isNear && !isConsolidating && (isBreakout || isBreakdown);
-      const isBlockSurge = Boolean(row.is_block_surge);
-
-      // Rings the instant a breakout is CONFIRMED or an Institutional Block Surge arrives
-      if (!isActualBreakout && !isBlockSurge) return;
-
-      // Unique alert key per candidate identity, side, and wave (alert_count)
-      const sideKey = row.side || (isBreakdown ? 'bearish' : 'bullish');
-      const wave = row.alert_count || 1;
-      const alertKey = `${row.symbol}_${sideKey}_wave${wave}`;
-      if (_alertedBreakouts.has(alertKey)) return;   // already handled -> stay silent
-      if (row.alert_event_id && _persistedSeenEventIds.has(row.alert_event_id)) return; // already chimed in this browser
-
-      // Only ring if the breakout is FRESH (happened within the last
-      // FRESH_WINDOW_MIN minutes). Anything older is seeded silently so it can
-      // never replay later.
-      const boMin = breakoutMinutes(row.breakout_time);
-      const ageMin = (boMin == null) ? null : (nowMin - boMin);
       const isFresh = (ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN;
 
       // When backend lifecycle engine is active, respect row.should_alert; fallback to isFresh
@@ -2675,8 +2614,12 @@
 
     rows = (rows || []).filter(r => {
       if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
+      if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
       const st = (r.five_min_status || "").toLowerCase();
-      if (st === "consolidating") return false;
+      const score = r.score || r.rally_score || 0;
+      // Anti-Disappear: Keep breakouts, near BO/BD, and high-conviction runners (score >= 70).
+      // Only drop low-conviction consolidating filler.
+      if (st === "consolidating" && score < 70 && !r.is_breakout && !r.breakout_time) return false;
       return true;
     }).slice(0, MAX_DISPLAY_ROWS);
 
@@ -2716,8 +2659,12 @@
 
     rows = (rows || []).filter(r => {
       if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
+      if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
       const st = (r.five_min_status || "").toLowerCase();
-      if (st === "consolidating") return false;
+      const score = r.score || r.rally_score || 0;
+      // Anti-Disappear: Keep breakouts, near BO/BD, and high-conviction runners (score >= 70).
+      // Only drop low-conviction consolidating filler.
+      if (st === "consolidating" && score < 70 && !r.is_breakout && !r.breakout_time) return false;
       return true;
     }).slice(0, MAX_DISPLAY_ROWS);
 
