@@ -333,6 +333,7 @@ class Suggestion:
     claimed_by: str | None = None
     claimed_at: float | None = None
     is_failed_trend: bool = False
+    top5_streak_minutes: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -401,6 +402,7 @@ class Suggestion:
             "claimed_by": self.claimed_by,
             "claimed_at": self.claimed_at,
             "is_failed_trend": self.is_failed_trend,
+            "top5_streak_minutes": self.top5_streak_minutes,
         }
 
 
@@ -2917,6 +2919,8 @@ def _invalidate_lifecycle_entry(
         entry["claim_expires_at"] = None
         # 3 completed 5m candles = 15 minutes cooldown (900 seconds)
         entry["cooldown_until_epoch"] = now_epoch + 900.0
+        entry["consecutive_top5_scans"] = 0
+        entry["top5_streak_minutes"] = 0
     else:
         cands_store[key] = {
             "symbol": symbol,
@@ -2925,6 +2929,8 @@ def _invalidate_lifecycle_entry(
             "first_top5_at": None,
             "first_rank1_at": None,
             "first_alerted_at": None,
+            "consecutive_top5_scans": 0,
+            "top5_streak_minutes": 0,
             "alert_fired": False,
             "alert_count": 0,
             "alert_event_id": None,
@@ -2974,6 +2980,7 @@ def _process_candidate_lifecycle(
             d["delivery_status"] = entry.get("delivery_status", "PENDING")
             d["claimed_by"] = entry.get("claimed_by")
             d["claimed_at"] = entry.get("claimed_at")
+            d["top5_streak_minutes"] = entry.get("top5_streak_minutes", 0)
         d["should_alert"] = False
         d["bell_rang"] = False
         return Suggestion(**d)
@@ -2988,6 +2995,9 @@ def _process_candidate_lifecycle(
         alert_count = 1 if alert_fired else 0
         event_id = f"evt_{item.symbol}_{side}_w1_{int(now_epoch)}" if alert_fired else None
         created_at = market_clock_ist if alert_fired else None
+        is_top5 = (rank <= 5)
+        consecutive_top5_scans = 1 if is_top5 else 0
+        top5_streak_minutes = 5 if is_top5 else 0
 
         entry = {
             "symbol": item.symbol,
@@ -2996,6 +3006,8 @@ def _process_candidate_lifecycle(
             "first_top5_at": market_clock_ist if rank <= 5 else None,
             "first_rank1_at": market_clock_ist if rank == 1 else None,
             "first_alerted_at": market_clock_ist if alert_fired else None,
+            "consecutive_top5_scans": consecutive_top5_scans,
+            "top5_streak_minutes": top5_streak_minutes,
             "alert_fired": alert_fired,
             "alert_count": alert_count,
             "alert_event_id": event_id,
@@ -3081,6 +3093,14 @@ def _process_candidate_lifecycle(
         if rank == 1 and not entry.get("first_rank1_at"):
             entry["first_rank1_at"] = market_clock_ist
 
+        # Dynamic Top-5 Streak Counter (5m, 10m, 15m... resets to 0 if drops out of Top 5)
+        if rank <= 5:
+            entry["consecutive_top5_scans"] = entry.get("consecutive_top5_scans", 0) + 1
+            entry["top5_streak_minutes"] = entry["consecutive_top5_scans"] * 5
+        else:
+            entry["consecutive_top5_scans"] = 0
+            entry["top5_streak_minutes"] = 0
+
         entry["current_rank"] = rank
 
         # Rule 9 Check: Close-based stop-loss evaluation
@@ -3163,6 +3183,7 @@ def _process_candidate_lifecycle(
     d["first_top5_at"] = entry.get("first_top5_at")
     d["first_rank1_at"] = entry.get("first_rank1_at")
     d["first_alerted_at"] = entry.get("first_alerted_at")
+    d["top5_streak_minutes"] = entry.get("top5_streak_minutes", 0)
     d["alert_event_id"] = entry.get("alert_event_id")
     d["alert_created_at"] = entry.get("alert_created_at")
     d["alert_delivered_at"] = entry.get("alert_delivered_at")
@@ -3268,6 +3289,8 @@ def enforce_candidate_lifecycle_and_mutual_exclusion(
         for k, v in cands_store.items():
             if k not in active_keys:
                 v["is_active"] = False
+                v["consecutive_top5_scans"] = 0
+                v["top5_streak_minutes"] = 0
 
         state["candidates"] = cands_store
         if not is_weekend and is_trading_session is not False:

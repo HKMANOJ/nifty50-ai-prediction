@@ -862,6 +862,34 @@
     .stock-col .sub {
       font-size: 10px;
       color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .top5-streak-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-size: 10px;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      padding: 1px 5px;
+      border-radius: 4px;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      vertical-align: middle;
+    }
+    .top5-streak-pill.green {
+      background: #ecfdf5;
+      color: #059669;
+      border: 1px solid #a7f3d0;
+    }
+    .top5-streak-pill.red {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
     }
 
     .vc-pill {
@@ -2591,13 +2619,17 @@
     list.innerHTML = rows.map((row, idx) => {
       const isUp = (row.percent_change || 0) >= 0;
       const isSelected = row.symbol === _selectedSymbol;
+      const streakMin = row.top5_streak_minutes || 0;
+      const streakBadge = (streakMin > 0 && idx < 5)
+        ? `<span class="top5-streak-pill ${isUp ? 'green' : 'red'}" style="font-size:9px; padding:0 4px;" title="Continuous time in Top 5 (resets if dropped below rank 5)">⏱️ ${streakMin}m</span>`
+        : "";
       return `
         <div class="stock-card-item ${isSelected ? 'active' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${row.vc_ranking || 1}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <div class="item-left">
             <span class="item-rank">${idx + 1}</span>
             <div class="item-names">
               <span class="item-symbol">${row.symbol} ${row.lot_size ? `<span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${row.lot_size}</span>` : ""} ${row.is_block_surge ? `<span style="font-size:8px; font-weight:800; background:#f5f3ff; color:#6d28d9; border:1px solid #c4b5fd; padding:1px 4px; border-radius:3px; margin-left:3px;">⚡ BLOCK ${row.block_surge_turnover_cr ? '₹' + row.block_surge_turnover_cr.toFixed(0) + 'Cr' : ''}</span>` : ""}</span>
-              <span class="item-setup-tag">${row.setup || "OI Confirmed"}</span>
+              <span class="item-setup-tag">${row.setup || "OI Confirmed"}${streakBadge}</span>
             </div>
           </div>
           <div class="item-right">
@@ -2704,13 +2736,18 @@
         blockBadge = `<span style="background:${bg}; color:${color}; border:1px solid ${border}; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px; margin-left:5px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle;" title="Institutional Block Order (FII/DII footprint): Multi-crore volume shock on 1-minute tape">⚡ BLOCK SURGE${crLabel}${rvolLabel}${surgeTime}</span>`;
       }
 
+      const streakMin = row.top5_streak_minutes || 0;
+      const streakBadge = (streakMin > 0 && idx < 5)
+        ? `<span class="top5-streak-pill ${isUp ? 'green' : 'red'}" title="Continuous time in Top 5 (resets if dropped below rank 5)">⏱️ ${streakMin}m</span>`
+        : "";
+
       return `
         <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">${idx + 1}</td>
           <td>
             <div class="stock-col">
               <span class="sym">${row.symbol} ${row.lot_size ? `<span style="font-size:10px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 5px; border-radius:3px; border:1px solid #cbd5e1; margin-left:5px;">Lot ${row.lot_size}</span>` : ""}</span>
-              <span class="sub">${row.setup || "F&O Active"}</span>
+              <span class="sub">${row.setup || "F&O Active"}${streakBadge}</span>
             </div>
           </td>
           <td style="font-weight:700; font-family:var(--font-mono); color:${(row.money_flow_percentage ?? 0) >= 70 ? 'var(--green)' : (row.money_flow_percentage ?? 0) >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${(row.money_flow_percentage ?? 0).toFixed(1)}%</td>
@@ -2794,8 +2831,10 @@
     const sortBullish = (a, b) => {
       const aSt = String(a.five_min_status || '').toLowerCase();
       const bSt = String(b.five_min_status || '').toLowerCase();
-      const aConfirmed = a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired');
-      const bConfirmed = b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired');
+      const aProven = ((a.top5_streak_minutes || 0) >= 10) || ((a.percent_change || 0) >= 3.5 && (a.one_side_rally_score || a.score || 0) >= 90 && (a.range_position_percent == null || a.range_position_percent >= 80));
+      const bProven = ((b.top5_streak_minutes || 0) >= 10) || ((b.percent_change || 0) >= 3.5 && (b.one_side_rally_score || b.score || 0) >= 90 && (b.range_position_percent == null || b.range_position_percent >= 80));
+      const aConfirmed = (a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired')) || aProven;
+      const bConfirmed = (b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired')) || bProven;
 
       const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : ((aSt.includes('near') || aSt.includes('coiling')) ? 2 : 3));
       const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : ((bSt.includes('near') || bSt.includes('coiling')) ? 2 : 3));
@@ -2819,8 +2858,10 @@
     const sortBearish = (a, b) => {
       const aSt = String(a.five_min_status || '').toLowerCase();
       const bSt = String(b.five_min_status || '').toLowerCase();
-      const aConfirmed = a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired');
-      const bConfirmed = b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired');
+      const aProven = ((a.top5_streak_minutes || 0) >= 10) || ((a.percent_change || 0) <= -3.5 && (a.one_side_rally_score || a.score || 0) >= 90 && (a.range_position_percent == null || a.range_position_percent <= 20));
+      const bProven = ((b.top5_streak_minutes || 0) >= 10) || ((b.percent_change || 0) <= -3.5 && (b.one_side_rally_score || b.score || 0) >= 90 && (b.range_position_percent == null || b.range_position_percent <= 20));
+      const aConfirmed = (a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired')) || aProven;
+      const bConfirmed = (b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired')) || bProven;
 
       const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : ((aSt.includes('near') || aSt.includes('coiling')) ? 2 : 3));
       const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : ((bSt.includes('near') || bSt.includes('coiling')) ? 2 : 3));
