@@ -153,6 +153,22 @@ def _run_premarket_reset_if_due(now_ist: datetime) -> None:
         print(f"[PREMARKET-RESET ERROR] {exc}")
 
 
+def compute_seconds_until_next_5min_grid(interval_seconds: int = 300, buffer_seconds: int = 3) -> tuple[float, datetime]:
+    """Calculates sleep seconds to align exactly with the next wall-clock 5-minute grid (e.g. 09:20:03, 09:25:03).
+    Prevents cumulative scheduler drift from scan execution duration."""
+    now_ist = get_ist_now()
+    market_open = now_ist.replace(hour=9, minute=15, second=buffer_seconds, microsecond=0)
+    if now_ist < market_open:
+        sleep_secs = max(1.0, (market_open - now_ist).total_seconds())
+        return sleep_secs, market_open
+
+    seconds_since_midnight = now_ist.hour * 3600 + now_ist.minute * 60 + now_ist.second + (now_ist.microsecond / 1_000_000)
+    next_grid_seconds = ((int(seconds_since_midnight) // interval_seconds) + 1) * interval_seconds + buffer_seconds
+    target_dt = now_ist.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(seconds=next_grid_seconds)
+    sleep_secs = max(1.0, (target_dt - now_ist).total_seconds())
+    return sleep_secs, target_dt
+
+
 def start_background_auto_scanner(interval_seconds: int = 300) -> None:
     """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 5 min during market hours."""
     def _loop() -> None:
@@ -209,18 +225,30 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                         scanner_trace.submit_health("scheduled_scan_skipped", reason="refresh_lock_busy")
                         print("[AUTO-SCANNER] Skipping interval: manual refresh or lock is currently active.")
 
-                    next_run = get_ist_now() + timedelta(seconds=interval_seconds)
+                    # Wall-clock grid alignment (e.g. 09:20:03, 09:25:03, 09:30:03...)
+                    # Eliminates cumulative drift caused by subprocess run duration.
+                    sleep_secs, next_run = compute_seconds_until_next_5min_grid(interval_seconds=interval_seconds, buffer_seconds=3)
                     LAST_AUTO_SCAN_INFO["next_run_ist"] = next_run.strftime("%I:%M:%S %p IST")
-                    time.sleep(interval_seconds)
+                    print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Next grid-aligned scan scheduled at {next_run.strftime('%H:%M:%S IST')} (sleeping {sleep_secs:.1f}s)")
+                    time.sleep(sleep_secs)
                 elif is_ist_market_hours(now_ist):
-                    # Past our 2:45 PM cutoff but NSE itself is still open till 15:30 -
+                    # Past our 3:20 PM cutoff but NSE itself is still open till 15:30 -
                     # the auto-scanner is done for the day; no more background scans.
                     LAST_AUTO_SCAN_INFO["status"] = "scan_window_closed"
                     LAST_AUTO_SCAN_INFO["next_run_ist"] = None
                     time.sleep(30)
                 else:
                     LAST_AUTO_SCAN_INFO["status"] = "market_closed"
-                    time.sleep(30)
+                    market_open_today = now_ist.replace(hour=9, minute=15, second=3, microsecond=0)
+                    if now_ist.weekday() < 5 and now_ist < market_open_today:
+                        pre_sleep = min(60.0, max(5.0, (market_open_today - now_ist).total_seconds()))
+                        LAST_AUTO_SCAN_INFO["next_run_ist"] = market_open_today.strftime("%I:%M:%S %p IST")
+                        time.sleep(pre_sleep)
+                    else:
+                        time.sleep(30)
+            except Exception as e:
+                print(f"[AUTO-SCANNER LOOP EXCEPTION] {e}")
+                time.sleep(30)
             except Exception as e:
                 print(f"[AUTO-SCANNER LOOP EXCEPTION] {e}")
                 time.sleep(30)
