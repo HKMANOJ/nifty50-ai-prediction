@@ -1196,15 +1196,6 @@
         <span class="icon">📉</span>
         <span class="menu-label">Market Sentiment</span>
       </div>
-      <div class="menu-item" id="navTracked" data-view="tracked">
-        <span class="icon">📌</span>
-        <span class="menu-label">Tracked Breakouts</span>
-      </div>
-      <div class="menu-item" id="navTop5Eligible" data-view="top5eligible">
-        <span class="icon">🎯</span>
-        <span class="menu-label">Top 5 Eligible</span>
-        <span class="nav-blink-dot" id="top5EligibleNavDot" style="display:none;"></span>
-      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -3800,16 +3791,16 @@
 
     // Activate the clicked item
     if (targetView === "sector") {
-      document.getElementById("navSector").classList.add("active");
+      document.getElementById("navSector")?.classList.add("active");
       renderSectorView();
     } else if (targetView === "tracked") {
-      document.getElementById("navTracked").classList.add("active");
+      document.getElementById("navTracked")?.classList.add("active");
     } else if (targetView === "top5eligible") {
-      document.getElementById("navTop5Eligible").classList.add("active");
+      document.getElementById("navTop5Eligible")?.classList.add("active");
       const navDot = document.getElementById("top5EligibleNavDot");
       if (navDot) navDot.style.display = "none";
     } else {
-      document.getElementById("navDashboard").classList.add("active");
+      document.getElementById("navDashboard")?.classList.add("active");
     }
 
     // Close mobile drawer after nav click
