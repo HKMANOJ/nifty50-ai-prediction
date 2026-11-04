@@ -17,12 +17,13 @@ from typing import Callable
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
-RETENTION_DAYS = 14
-BATCH_SIZE = 1_000
-MAX_BATCHES = 5
+RETENTION_DAYS = int(os.environ.get("SCANNER_LOG_RETENTION_DAYS", "7"))
+BATCH_SIZE = 5_000
+MAX_BATCHES = 50
 # Shared across application processes; a transaction releases the lock itself.
 ADVISORY_LOCK_KEY = 202610220014
-PRODUCTION_HOSTNAME = "nifty50application.onrender.com"
+PRODUCTION_HOSTNAME = "nifty50-ai-prediction-cf4q.onrender.com"
+ALT_PRODUCTION_HOSTNAME = "nifty50application.onrender.com"
 TIMEOUTS_SQL = (
     "SELECT set_config('statement_timeout', %s, true), "
     "set_config('lock_timeout', %s, true), "
@@ -75,8 +76,9 @@ def retention_enabled(environ=None) -> bool:
     enabled = env.get("SCANNER_LOG_RETENTION_ENABLED")
     if enabled is not None:
         return enabled == "1"
+    hostname = env.get("RENDER_EXTERNAL_HOSTNAME")
     return (env.get("RENDER") == "true"
-            and env.get("RENDER_EXTERNAL_HOSTNAME") == PRODUCTION_HOSTNAME)
+            and hostname in (PRODUCTION_HOSTNAME, ALT_PRODUCTION_HOSTNAME))
 
 
 def retention_cutoff(now: datetime | None = None) -> date:
@@ -201,6 +203,39 @@ def start_retention_worker(stop_event: threading.Event | None = None) -> threadi
                               name="ScannerLogRetention", daemon=True)
     thread.start()
     return thread
+
+
+def run_daily_db_purge(retention_days: int = RETENTION_DAYS) -> dict:
+    """Invokes stored PostgreSQL procedure purge_data_older_than_7_days() or falls back to batch pass."""
+    import db_adapter
+    conn = None
+    cur = None
+    try:
+        conn = db_adapter.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT public.purge_data_older_than_7_days(%s);", (retention_days,))
+        res = cur.fetchone()[0]
+        conn.commit()
+        return res if isinstance(res, dict) else {"status": "success", "result": res}
+    except Exception as exc:
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        result = run_retention_pass(apply=True)
+        return {"status": "fallback", "error": str(exc), "summary": result.public_summary()}
+    finally:
+        if cur is not None:
+            try:
+                cur.close()
+            except Exception:
+                pass
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def main(argv: list[str] | None = None) -> int:

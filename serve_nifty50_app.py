@@ -149,6 +149,14 @@ def _run_premarket_reset_if_due(now_ist: datetime) -> None:
                 print(f"[PREMARKET-RESET] broadcast skipped: {bc_err}")
             print(f"[{now_ist.strftime('%H:%M:%S IST')}] [PREMARKET-RESET] Cleared yesterday's picks for {today_str}")
             _premarket_reset_date = today_str
+
+            # Purge Neon database records older than 7 days during daily pre-market window
+            try:
+                from scanner_log_retention import run_daily_db_purge
+                purge_summary = run_daily_db_purge(retention_days=7)
+                print(f"[{now_ist.strftime('%H:%M:%S IST')}] [PREMARKET-PURGE] 7-day Neon DB cleanup: {purge_summary}")
+            except Exception as purge_err:
+                print(f"[PREMARKET-PURGE ERROR] DB purge failed: {purge_err}")
     except Exception as exc:
         print(f"[PREMARKET-RESET ERROR] {exc}")
 
@@ -1333,6 +1341,9 @@ def main() -> None:
         from scanner_log_retention import retention_enabled, start_retention_worker
         if retention_enabled():
             retention_thread = start_retention_worker(stop_event=retention_stop)
+            print("[scanner-retention] Autonomous 7-day data retention worker started on Render", file=sys.stderr)
+        else:
+            print(f"[scanner-retention] Worker inactive (host={os.environ.get('RENDER_EXTERNAL_HOSTNAME')}, render={os.environ.get('RENDER')})", file=sys.stderr)
     except Exception:
         # Do not expose connection details or stop the market app on maintenance failure.
         print("[scanner-retention] worker_start_failed", file=sys.stderr)

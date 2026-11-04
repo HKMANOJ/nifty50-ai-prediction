@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import scanner_log_retention as retention
 
 NOW = datetime(2026, 10, 22, 12, 0, tzinfo=retention.IST)
-CUTOFF = date(2026, 10, 9)
+CUTOFF = date(2026, 10, 16)
 
 
 def database(*, expired=0, batches=None, locks=None):
@@ -28,26 +28,26 @@ def database(*, expired=0, batches=None, locks=None):
 
 
 class CutoffTests(unittest.TestCase):
-    def test_fourteen_calendar_dates_include_today_and_weekends(self):
+    def test_seven_calendar_dates_include_today_and_weekends(self):
         self.assertEqual(retention.retention_cutoff(NOW), CUTOFF)
-        kept = [(CUTOFF.replace(day=day) >= CUTOFF) for day in range(9, 23)]
-        self.assertEqual(len(kept), 14)
+        kept = [(CUTOFF.replace(day=day) >= CUTOFF) for day in range(16, 23)]
+        self.assertEqual(len(kept), 7)
         self.assertTrue(all(kept))
-        self.assertEqual(retention.retention_cutoff(datetime(2026, 10, 19, tzinfo=retention.IST)), date(2026, 10, 6))
+        self.assertEqual(retention.retention_cutoff(datetime(2026, 10, 19, tzinfo=retention.IST)), date(2026, 10, 13))
 
     def test_ist_midnight_not_utc_or_host_date_is_the_boundary(self):
         before = datetime(2026, 10, 21, 18, 29, 59, tzinfo=timezone.utc)
         after = datetime(2026, 10, 21, 18, 30, tzinfo=timezone.utc)
-        self.assertEqual(retention.retention_cutoff(before), date(2026, 10, 8))
+        self.assertEqual(retention.retention_cutoff(before), date(2026, 10, 15))
         self.assertEqual(retention.retention_cutoff(after), CUTOFF)
 
     def test_month_year_leap_and_external_dst_boundaries(self):
         samples = (
-            (datetime(2026, 1, 3, tzinfo=retention.IST), date(2025, 12, 21)),
-            (datetime(2024, 3, 1, tzinfo=retention.IST), date(2024, 2, 17)),
-            (datetime(2026, 3, 1, tzinfo=retention.IST), date(2026, 2, 16)),
-            (datetime(2026, 11, 1, 1, 30, tzinfo=ZoneInfo("America/New_York"), fold=0), date(2026, 10, 19)),
-            (datetime(2026, 11, 1, 1, 30, tzinfo=ZoneInfo("America/New_York"), fold=1), date(2026, 10, 19)),
+            (datetime(2026, 1, 3, tzinfo=retention.IST), date(2025, 12, 28)),
+            (datetime(2024, 3, 1, tzinfo=retention.IST), date(2024, 2, 24)),
+            (datetime(2026, 3, 1, tzinfo=retention.IST), date(2026, 2, 23)),
+            (datetime(2026, 11, 1, 1, 30, tzinfo=ZoneInfo("America/New_York"), fold=0), date(2026, 10, 26)),
+            (datetime(2026, 11, 1, 1, 30, tzinfo=ZoneInfo("America/New_York"), fold=1), date(2026, 10, 26)),
         )
         for stamp, expected in samples:
             with self.subTest(stamp=stamp):
@@ -94,13 +94,13 @@ class DatabaseTests(unittest.TestCase):
         cursor.close.assert_called_once()
 
     def test_apply_deletes_only_expired_scanner_rows_in_small_committed_batches(self):
-        connect, conn, cursor = database(batches=[1000, 7])
+        connect, conn, cursor = database(batches=[retention.BATCH_SIZE, 7])
         result = retention.run_retention_pass(apply=True, now=NOW, url="writer-secret", connect=connect)
-        self.assertEqual((result.status, result.deleted_count, result.committed_batches), ("pass_complete", 1007, 2))
+        self.assertEqual((result.status, result.deleted_count, result.committed_batches), ("pass_complete", retention.BATCH_SIZE + 7, 2))
         conn.set_session.assert_called_once_with(readonly=False, isolation_level="READ COMMITTED", autocommit=False)
         expected = [call(retention.TIMEOUTS_SQL, retention.TIMEOUT_PARAMETERS),
                     call(retention.LOCK_SQL, (retention.ADVISORY_LOCK_KEY,)),
-                    call(retention.DELETE_SQL, (CUTOFF, 1000))] * 2
+                    call(retention.DELETE_SQL, (CUTOFF, retention.BATCH_SIZE))] * 2
         self.assertEqual(cursor.execute.call_args_list, expected)
         self.assertEqual(conn.commit.call_count, 2)
         conn.rollback.assert_called_once()
@@ -122,11 +122,12 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(day is not None and day < CUTOFF, expired)
 
     def test_maximum_five_batches_is_not_claimed_complete(self):
-        connect, conn, cursor = database(batches=[1000] * 5)
+        connect, conn, cursor = database(batches=[retention.BATCH_SIZE] * retention.MAX_BATCHES)
         result = retention.run_retention_pass(apply=True, now=NOW, url="test", connect=connect)
-        self.assertEqual((result.status, result.deleted_count, result.committed_batches), ("batch_cap_reached", 5000, 5))
-        self.assertEqual(conn.commit.call_count, 5)
-        self.assertEqual(cursor.fetchall.call_count, 5)
+        self.assertEqual((result.status, result.deleted_count, result.committed_batches),
+                         ("batch_cap_reached", retention.BATCH_SIZE * retention.MAX_BATCHES, retention.MAX_BATCHES))
+        self.assertEqual(conn.commit.call_count, retention.MAX_BATCHES)
+        self.assertEqual(cursor.fetchall.call_count, retention.MAX_BATCHES)
 
     def test_lock_contention_never_attempts_delete(self):
         connect, conn, cursor = database(batches=[0], locks=[False])
@@ -139,9 +140,9 @@ class DatabaseTests(unittest.TestCase):
         conn.rollback.assert_called_once()
 
     def test_lock_busy_after_a_commit_retains_acknowledged_count(self):
-        connect, conn, cursor = database(batches=[1000, 0], locks=[True, False])
+        connect, conn, cursor = database(batches=[retention.BATCH_SIZE, 0], locks=[True, False])
         result = retention.run_retention_pass(apply=True, now=NOW, url="test", connect=connect)
-        self.assertEqual((result.status, result.deleted_count, result.committed_batches), ("lock_busy", 1000, 1))
+        self.assertEqual((result.status, result.deleted_count, result.committed_batches), ("lock_busy", retention.BATCH_SIZE, 1))
         self.assertEqual(cursor.fetchall.call_count, 1)
 
     def test_zero_rows_is_success_with_no_unbounded_loop(self):
@@ -178,11 +179,11 @@ class DatabaseTests(unittest.TestCase):
                     cursor.close.assert_called_once()
 
     def test_later_failure_does_not_erase_acknowledged_prior_batch(self):
-        connect, conn, cursor = database(batches=[1000, 1])
+        connect, conn, cursor = database(batches=[retention.BATCH_SIZE, 1])
         conn.commit.side_effect = [None, RuntimeError("secret")]
         result = retention.run_retention_pass(apply=True, now=NOW, url="test", connect=connect)
         self.assertEqual((result.status, result.error_stage, result.deleted_count, result.committed_batches),
-                         ("error", "commit", 1000, 1))
+                         ("error", "commit", retention.BATCH_SIZE, 1))
 
     def test_cleanup_failure_does_not_mask_result(self):
         connect, conn, cursor = database(batches=[0])
@@ -212,7 +213,7 @@ class DatabaseTests(unittest.TestCase):
             result = retention.run_retention_pass(now=NOW, url="test", connect=connect)
             self.assertEqual(result.status, "error")
             conn.commit.assert_not_called()
-        connect, conn, cursor = database(batches=[1001])
+        connect, conn, cursor = database(batches=[retention.BATCH_SIZE + 1])
         result = retention.run_retention_pass(apply=True, now=NOW, url="test", connect=connect)
         self.assertEqual(result.status, "error")
         conn.commit.assert_not_called()
@@ -222,6 +223,8 @@ class LifecycleTests(unittest.TestCase):
     def test_default_automatic_retention_is_only_for_intended_render_production(self):
         production = {"RENDER": "true", "RENDER_EXTERNAL_HOSTNAME": retention.PRODUCTION_HOSTNAME}
         self.assertTrue(retention.retention_enabled(production))
+        alt_prod = {"RENDER": "true", "RENDER_EXTERNAL_HOSTNAME": retention.ALT_PRODUCTION_HOSTNAME}
+        self.assertTrue(retention.retention_enabled(alt_prod))
         for env in ({}, {"DATABASE_URL": "shared-production-writer"}, {"RENDER": "true"},
                     {"RENDER_EXTERNAL_HOSTNAME": retention.PRODUCTION_HOSTNAME},
                     {**production, "RENDER": "false"},
@@ -285,7 +288,7 @@ class LifecycleTests(unittest.TestCase):
                     redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(retention.main(arguments), 0)
             run.assert_called_once_with(apply=applying)
-            self.assertEqual(json.loads(output.getvalue())["cutoff"], "2026-10-09")
+            self.assertEqual(json.loads(output.getvalue())["cutoff"], CUTOFF.isoformat())
 
 
 if __name__ == "__main__":
