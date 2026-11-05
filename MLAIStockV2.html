@@ -726,6 +726,27 @@
       border-color: #0f172a;
     }
 
+    .ov-vol-pill {
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .ov-vol-pill:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+    .ov-vol-pill.active {
+      background: #2563eb !important;
+      color: #ffffff !important;
+      font-weight: 800;
+    }
+
     #tvCandleContainer {
       width: 100%;
       height: 420px;
@@ -1018,6 +1039,24 @@
       background: linear-gradient(90deg, #2563eb, #10b981);
     }
 
+    /* ── Stock Overview Styles ── */
+    .overview-pill {
+      padding: 4px 10px;
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .overview-pill:hover, .overview-pill.active {
+      background: #4f46e5;
+      color: #ffffff;
+      border-color: #4338ca;
+    }
+
     /* ── Mobile Sidebar Drawer & Backdrop ── */
     .mobile-nav-toggle {
       display: none;
@@ -1195,6 +1234,10 @@
       <div class="menu-item" id="navSentiment" data-view="dashboard">
         <span class="icon">📉</span>
         <span class="menu-label">Market Sentiment</span>
+      </div>
+      <div class="menu-item" id="navOverview" data-view="overview">
+        <span class="icon">🔬</span>
+        <span class="menu-label">Stock Overview</span>
       </div>
     </nav>
 
@@ -1375,6 +1418,7 @@
             <div class="chart-toolbar">
               <button class="tf-btn active" id="btnTf5m">5m (5-Day)</button>
               <button class="tf-btn" id="btnFitChart">Fit View</button>
+              <button class="tf-btn" id="btnOpenOverview" onclick="openStockInOverview(_selectedSymbol)" style="background:linear-gradient(135deg, #4f46e5, #6366f1); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated Stock Overview with Volume Profile & Order Blocks">🔬 Open in Stock Overview</button>
             </div>
           </div>
 
@@ -1606,6 +1650,269 @@
         </div>
       </section>
     </div><!-- /viewTop5Eligible -->
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- STOCK OVERVIEW VIEW (Volume Profile, Order Blocks, Footprint Delta) -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div id="viewOverview" class="content-container" style="display:none; flex-direction:column; padding:16px 20px; gap:18px;">
+      
+      <!-- Top Search & Quick Selector Bar -->
+      <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:12px 16px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+        <div style="display:flex; align-items:center; gap:10px; flex:1 1 360px; min-width:280px;">
+          <span style="font-size:16px;">🔍</span>
+          <input type="text" id="overviewSearchInput" placeholder="Search any stock (e.g. BRITANNIA, RELIANCE, TCS, INFY)..." 
+                 style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px; font-weight:600; outline:none;" />
+          <button id="overviewSearchBtn" style="padding:8px 16px; background:#4f46e5; color:#fff; border:none; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer;">Search</button>
+        </div>
+
+        <!-- Quick Ticker Pills -->
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+          <span style="font-size:11px; font-weight:700; color:#64748b; margin-right:4px;">POPULAR:</span>
+          <button class="overview-pill active" onclick="loadStockOverview('BRITANNIA')">BRITANNIA</button>
+          <button class="overview-pill" onclick="loadStockOverview('RELIANCE')">RELIANCE</button>
+          <button class="overview-pill" onclick="loadStockOverview('TCS')">TCS</button>
+          <button class="overview-pill" onclick="loadStockOverview('INFY')">INFY</button>
+          <button class="overview-pill" onclick="loadStockOverview('HDFCBANK')">HDFCBANK</button>
+          <button class="overview-pill" onclick="loadStockOverview('TVSMOTOR')">TVSMOTOR</button>
+          <button class="overview-pill" onclick="loadStockOverview('PHOENIXLTD')">PHOENIXLTD</button>
+        </div>
+
+        <button onclick="switchView('dashboard')" style="padding:6px 12px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">← Back to Dashboard</button>
+      </div>
+
+      <!-- Main Overview Chart & Order Flow Workspace -->
+      <section class="overview-main-panel" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:16px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+        
+        <!-- Stock Header Bar -->
+        <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid #f1f5f9; padding-bottom:12px;">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span id="ovSymbol" style="font-size:22px; font-weight:900; color:#0f172a; font-family:var(--font-mono);">BRITANNIA</span>
+              <span id="ovName" style="font-size:13px; color:#64748b; font-weight:600;">BRITANNIA INDUSTRIES LTD</span>
+              <span id="ovLtp" style="font-size:20px; font-weight:800; color:#0f172a; font-family:var(--font-mono);">₹4,946.30</span>
+              <span id="ovChg" class="chart-active-chg up" style="font-size:13px; font-weight:700;">+8.19%</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap;">
+              <span class="chart-stat-chip" id="ovPocChip" style="background:#f5f3ff; color:#7c3aed; border:1px solid #ddd6fe; font-weight:800;">POC: ₹4,869.89</span>
+              <span class="chart-stat-chip" id="ovVahChip" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:700;">VAH: ₹4,988.20</span>
+              <span class="chart-stat-chip" id="ovValChip" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:700;">VAL: ₹4,646.40</span>
+              <span class="chart-stat-chip" id="ovStructureChip" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:700;">⚡ Trend: Bullish</span>
+              <span class="chart-stat-chip" id="ovTelemetryChip" style="background:#f8fafc; color:#475569; border:1px solid #e2e8f0; font-weight:600;">⚡ Feed: Upstox 5m</span>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:2px; gap:2px;">
+              <span style="font-size:10px; font-weight:800; color:#64748b; padding:0 6px;">VOL BARS:</span>
+              <button class="ov-vol-pill active" data-vol="compact" title="Compact volume in bottom 14%">Compact (12%)</button>
+              <button class="ov-vol-pill" data-vol="normal" title="Normal volume in bottom 24%">Medium (20%)</button>
+              <button class="ov-vol-pill" data-vol="hide" title="Hide vertical volume bars">Hide</button>
+            </div>
+            <button class="tf-btn active" id="btnOvFitChart">Fit View</button>
+            <button class="tf-btn" id="btnOvToggleVp" style="background:#f5f3ff; color:#7c3aed; border-color:#ddd6fe; font-weight:700;">Volume Profile</button>
+            <button class="tf-btn" id="btnOvToggleOb" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;">Order Blocks</button>
+            <button class="tf-btn" id="btnOvToggleFvg" style="background:#fefce8; color:#a16207; border-color:#fde68a; font-weight:700; opacity:0.5;">📦 FVG</button>
+            <button class="tf-btn" id="btnOvToggleLiq" style="background:#fef2f2; color:#b91c1c; border-color:#fecaca; font-weight:700; opacity:0.5;">🎯 Liquidity</button>
+            <button class="tf-btn" id="btnOvToggleCvd" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:700; opacity:0.5;">📈 CVD</button>
+            <button class="tf-btn" id="btnOvToggleFp" style="background:#fdf2f8; color:#be185d; border-color:#fbcfe8; font-weight:700;">👣 Footprint</button>
+            <button class="tf-btn" id="btnOvToggleMtf" style="background:#fdf4ff; color:#a21caf; border-color:#f0abfc; font-weight:700; opacity:0.5;">⚡ MTF Matrix</button>
+          </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- AUTOMATED INSTITUTIONAL TRADE PLAN BOX (SMC + ORDER FLOW) -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <div id="ovTradePlanBox" style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border:1px solid #334155; border-radius:10px; padding:14px 16px; color:#f8fafc; display:flex; flex-direction:column; gap:10px; box-shadow:0 4px 12px rgba(0,0,0,0.06);">
+          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="background:#3b82f6; color:#ffffff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; letter-spacing:0.5px;">🏛️ INSTITUTIONAL TRADE PLAN</span>
+              <span id="ovPlanAction" style="font-size:14px; font-weight:900; color:#34d399; font-family:var(--font-mono); letter-spacing:0.3px;">BUY ON DEMAND PULLBACK</span>
+              <span id="ovPlanSetup" style="font-size:11px; color:#94a3b8; font-weight:600;">+OB Demand Retest & Value Area Expansion</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:11px; color:#cbd5e1;">Risk:Reward <strong id="ovPlanRR" style="color:#38bdf8; font-family:var(--font-mono);">1 : 2.8 R</strong></span>
+              <span id="ovPlanStatus" style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.2); color:#34d399; border:1px solid rgba(16,185,129,0.4);">● Active Setup</span>
+            </div>
+          </div>
+
+          <!-- Trade Execution Metrics Grid -->
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px;">
+            <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 10px;">
+              <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">Entry Zone</div>
+              <div id="ovPlanEntry" style="font-size:13px; font-weight:800; color:#f8fafc; font-family:var(--font-mono); margin-top:2px;">--</div>
+            </div>
+            <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:8px 10px;">
+              <div style="font-size:10px; color:#f87171; font-weight:700; text-transform:uppercase;">Stop Loss (SL)</div>
+              <div id="ovPlanSL" style="font-size:13px; font-weight:800; color:#fca5a5; font-family:var(--font-mono); margin-top:2px;">--</div>
+            </div>
+            <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:6px; padding:8px 10px;">
+              <div style="font-size:10px; color:#34d399; font-weight:700; text-transform:uppercase;">Target 1 (VAH)</div>
+              <div id="ovPlanT1" style="font-size:13px; font-weight:800; color:#86efac; font-family:var(--font-mono); margin-top:2px;">--</div>
+            </div>
+            <div style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.2); border-radius:6px; padding:8px 10px;">
+              <div style="font-size:10px; color:#38bdf8; font-weight:700; text-transform:uppercase;">Target 2 (Runner)</div>
+              <div id="ovPlanT2" style="font-size:13px; font-weight:800; color:#bae6fd; font-family:var(--font-mono); margin-top:2px;">--</div>
+            </div>
+          </div>
+
+          <!-- Execution Rule & Checklist Strip -->
+          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid rgba(255,255,255,0.08); padding-top:8px; font-size:11px;">
+            <div id="ovPlanRule" style="color:#cbd5e1; flex:1; min-width:260px; line-height:1.4;">
+              Scanning market structure...
+            </div>
+            <div id="ovPlanChecklist" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;"></div>
+          </div>
+        </div>
+
+        <!-- Live Crosshair HUD (Real-time IST Market Time + Candle OHLC + Volume) -->
+        <div id="ovChartHud" style="display:flex; align-items:center; gap:10px; font-size:11px; font-family:var(--font-mono); color:#475569; padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; flex-wrap:wrap; min-height:28px;">
+          <span style="color:#94a3b8;">Hover over candles to view precise Indian Standard Time (IST) & OHLCV values</span>
+        </div>
+
+        <!-- TradingView Chart Container with Volume Profile Left Histogram -->
+        <div style="position:relative; width:100%; height:520px; background:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #f1f5f9;">
+          <!-- Left Volume Profile Canvas Overlay (Pixel-Perfect Mathematical Alignment) -->
+          <canvas id="ovVolumeProfileCanvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10;"></canvas>
+
+          <!-- Chart Container -->
+          <div id="ovTvChartContainer" style="width:100%; height:100%;"></div>
+        </div>
+
+        <!-- CVD (Cumulative Volume Delta) Sub-Chart -->
+        <div id="ovCvdContainer" style="display:none; width:100%; height:160px; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; margin-top:4px;">
+          <div id="ovCvdChartContainer" style="width:100%; height:100%;"></div>
+        </div>
+
+        <!-- Candle Footprint Inspector (Click any candle to inspect bid-ask ladder) -->
+        <div id="ovFootprintDrawer" style="display:none; background:#0f172a; border:1px solid #334155; border-radius:10px; padding:14px 16px; color:#f8fafc; margin-top:4px; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="background:#be185d; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px;">👣 FOOTPRINT LADDER</span>
+              <span id="fpTime" style="font-size:12px; color:#cbd5e1; font-weight:700; font-family:var(--font-mono);"></span>
+              <div style="display:inline-flex; align-items:center; gap:4px; margin-left:8px;">
+                <button id="fpBtnPrev" title="Inspect previous candle" style="background:#1e293b; border:1px solid #475569; color:#cbd5e1; border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer;">◀ Prev</button>
+                <span id="fpCandleIdx" style="font-size:11px; color:#94a3b8; font-family:var(--font-mono); padding:0 4px;"></span>
+                <button id="fpBtnNext" title="Inspect next candle" style="background:#1e293b; border:1px solid #475569; color:#cbd5e1; border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer;">Next ▶</button>
+                <button id="fpBtnLatest" title="Jump to latest candle" style="background:#7c3aed; border:none; color:#fff; border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer; font-weight:700;">⚡ Latest</button>
+                <span id="fpLiveTrackingBadge" style="font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; background:#065f46; color:#34d399; font-family:var(--font-mono);">● LIVE TRACKING</span>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span id="fpOhlc" style="font-size:11px; color:#94a3b8; font-family:var(--font-mono);"></span>
+              <span id="fpNetDelta" style="font-size:13px; font-weight:900; font-family:var(--font-mono); padding:2px 10px; border-radius:6px;"></span>
+              <button onclick="document.getElementById('ovFootprintDrawer').style.display='none'; if(typeof _ovShowFootprint!=='undefined') _ovShowFootprint=false; const b=document.getElementById('btnOvToggleFp'); if(b) b.style.opacity='0.5'; requestAnimationFrame(renderVolumeProfileCanvas);" style="background:none; border:1px solid #475569; color:#94a3b8; border-radius:6px; padding:2px 8px; cursor:pointer; font-size:12px;">✕ Close</button>
+            </div>
+          </div>
+          <div id="fpLadder" style="display:grid; grid-template-columns:1fr 90px 1fr; gap:0; font-family:var(--font-mono); font-size:11px; max-height:260px; overflow-y:auto;">
+            <!-- Populated dynamically on candle click -->
+          </div>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:8px; font-size:10px; color:#94a3b8; border-top:1px solid #1e293b; padding-top:6px;">
+            <span>🔴 <strong>Bid Vol (Sell)</strong>: Market Sellers hitting Bid</span>
+            <span>🟢 <strong>Ask Vol (Buy)</strong>: Market Buyers lifting Ask</span>
+            <span style="color:#fbbf24;">⚡ <strong>Imbalance (◀ / ▶)</strong>: ≥ 2.5:1 aggressive institutional imbalance</span>
+            <span style="margin-left:auto; color:#a855f7; font-weight:700;">💡 Click any candle on the chart to inspect its ladder</span>
+          </div>
+        </div>
+
+        <!-- Multi-Timeframe Analysis Matrix (Image 1 Style) -->
+        <div id="ovMtfCard" style="display:none; background:#0f172a; border:1px solid #334155; border-radius:10px; padding:14px 16px; color:#f8fafc; margin-top:4px; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #1e293b; padding-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="background:#a21caf; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px;">⚡ MULTI-TIMEFRAME ANALYSIS</span>
+              <span style="font-size:12px; color:#94a3b8; font-weight:600;">Higher timeframe alignment confirmation</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span id="ovMtfOverallBadge" style="font-size:12px; font-weight:900; padding:2px 10px; border-radius:6px; background:rgba(16,185,129,0.2); color:#34d399; font-family:var(--font-mono);">OVERALL: BULLISH ▲</span>
+              <button onclick="document.getElementById('ovMtfCard').style.display='none';" style="background:none; border:1px solid #475569; color:#94a3b8; border-radius:6px; padding:2px 8px; cursor:pointer; font-size:12px;">✕ Close</button>
+            </div>
+          </div>
+          <table style="width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:12px;">
+            <thead>
+              <tr style="color:#64748b; font-size:11px; text-transform:uppercase; border-bottom:1px solid #1e293b;">
+                <th style="text-align:left; padding:6px 8px;">Timeframe</th>
+                <th style="text-align:center; padding:6px 8px;">EMA (20)</th>
+                <th style="text-align:center; padding:6px 8px;">RSI (14)</th>
+                <th style="text-align:center; padding:6px 8px;">MACD</th>
+                <th style="text-align:right; padding:6px 8px;">Signal</th>
+              </tr>
+            </thead>
+            <tbody id="ovMtfTableBody">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Legend Bar -->
+        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; font-size:11px; color:#64748b; padding-top:4px;">
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:12px; height:3px; background:#a855f7;"></span> <strong>POC</strong> (Point of Control)</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:12px; height:3px; background:#2563eb;"></span> <strong>VAH / VAL</strong> (70% Value Area)</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; background:rgba(16,185,129,0.3); border:1px solid #10b981;"></span> <strong>+OB</strong> (Bullish Order Block)</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; background:rgba(239,68,68,0.3); border:1px solid #ef4444;"></span> <strong>-OB</strong> (Bearish Order Block)</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; background:rgba(234,179,8,0.3); border:1px solid #eab308;"></span> <strong>FVG</strong> (Fair Value Gap)</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:4px; background:#dc2626; border-top:2px dashed #dc2626;"></span> <strong>BSL/SSL</strong> (Liquidity Pool)</div>
+          <div style="margin-left:auto; font-size:11px; color:#94a3b8;">TradingView Lightweight Charts + Real Upstox Engine</div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- ORDER FLOW FOOTPRINT & ABSORPTION (IMAGE 2 REPLICA) -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; margin-top:8px;">
+          
+          <!-- Card 1: Buyer/Seller Absorption Signal -->
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:16px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+              <span style="font-size:12px; font-weight:800; color:#334155; text-transform:uppercase; letter-spacing:0.5px;">Order Flow Dynamics</span>
+              <span id="ovAbsorptionBadge" style="padding:4px 10px; background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; border-radius:6px; font-size:11px; font-weight:800;">⚡ Neutral Order Flow</span>
+            </div>
+            
+            <p id="ovAbsorptionDesc" style="font-size:12px; color:#475569; margin:0 0 12px; line-height:1.5;">
+              Normal order flow distribution across recent candles.
+            </p>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:#ffffff; border:1px solid #e2e8f0; border-radius:8px;">
+              <div>
+                <div style="font-size:11px; color:#64748b; font-weight:600;">SESSION DELTA</div>
+                <div id="ovDeltaVal" style="font-size:18px; font-weight:900; color:#10b981; font-family:var(--font-mono);">+147.10 K</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-size:11px; color:#64748b; font-weight:600;">TOTAL VOLUME</div>
+                <div id="ovTotalVol" style="font-size:18px; font-weight:900; color:#0f172a; font-family:var(--font-mono);">1.48 M</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Bid-Ask Volume Cluster (Footprint Diagram) -->
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:16px;">
+            <div style="font-size:12px; font-weight:800; color:#334155; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;">
+              Footprint Delta (Sell Bid vs Buy Ask)
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:center;">
+              <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:10px;">
+                <div style="font-size:11px; font-weight:800; color:#991b1b; margin-bottom:4px;">🔴 SELL (BID) VOL</div>
+                <div id="ovSellVol" style="font-size:16px; font-weight:900; color:#dc2626; font-family:var(--font-mono);">668.5 K</div>
+                <div style="font-size:10px; color:#64748b; margin-top:2px;">Market Sellers</div>
+              </div>
+              <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px;">
+                <div style="font-size:11px; font-weight:800; color:#166534; margin-bottom:4px;">🟢 BUY (ASK) VOL</div>
+                <div id="ovBuyVol" style="font-size:16px; font-weight:900; color:#16a34a; font-family:var(--font-mono);">815.6 K</div>
+                <div style="font-size:10px; color:#64748b; margin-top:2px;">Market Buyers</div>
+              </div>
+            </div>
+
+            <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+              <div style="flex:1; height:6px; background:#e2e8f0; border-radius:99px; overflow:hidden; display:flex;">
+                <div id="ovDeltaBarBuy" style="width:55%; background:#10b981;"></div>
+                <div id="ovDeltaBarSell" style="width:45%; background:#ef4444;"></div>
+              </div>
+              <span id="ovDeltaPct" style="font-size:11px; font-weight:800; color:#10b981; font-family:var(--font-mono);">+9.9%</span>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+    </div><!-- /viewOverview -->
 
     <!-- PMH/PML Filter as a standalone view was removed - the same check is
          now a real business-logic filter in the backend (every stock in the
@@ -2623,8 +2930,11 @@
               <span class="item-setup-tag">${row.setup || "OI Confirmed"}${streakBadge}</span>
             </div>
           </div>
-          <div class="item-right">
-            <span class="item-chg ${isUp ? 'up' : 'down'}">${pct(row.percent_change)}</span>
+          <div class="item-right" style="display:flex; flex-direction:column; align-items:flex-end; gap:3px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span class="item-chg ${isUp ? 'up' : 'down'}">${pct(row.percent_change)}</span>
+              <button onclick="event.stopPropagation(); openStockInOverview('${row.symbol}')" style="background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; border-radius:4px; font-size:10px; font-weight:800; padding:1px 5px; cursor:pointer;" title="Open in Stock Overview">🔬</button>
+            </div>
             <span class="item-status-pill ${isUp ? 'leading' : 'lagging'}">${isUp ? 'LEADING' : 'LAGGING'}</span>
           </div>
         </div>
@@ -2763,7 +3073,10 @@
             </div>
           </td>
           <td>
-            <span style="font-weight:700; font-size:11px; color:${row.status === 'Priority Rally' ? 'var(--green)' : 'var(--text-dark)'};">${row.status || "Review"}</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-weight:700; font-size:11px; color:${row.status === 'Priority Rally' ? 'var(--green)' : 'var(--text-dark)'};">${row.status || "Review"}</span>
+              <button onclick="event.stopPropagation(); openStockInOverview('${row.symbol}')" style="background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; border-radius:4px; font-size:10px; font-weight:800; padding:2px 6px; cursor:pointer;" title="Open in Stock Overview">🔬 Overview</button>
+            </div>
           </td>
         </tr>
       `;
@@ -3323,7 +3636,13 @@
     if (_currentBearish.length > 0) selectStock(_currentBearish[0].symbol, _currentBearish[0]);
   });
 
-  refreshBtn?.addEventListener("click", () => loadData({ refresh: true }));
+  refreshBtn?.addEventListener("click", () => {
+    loadData({ refresh: true });
+    const viewOv = document.getElementById("viewOverview");
+    if (viewOv && viewOv.style.display !== "none" && typeof loadStockOverview === "function" && _overviewSymbol) {
+      loadStockOverview(_overviewSymbol);
+    }
+  });
   window.addEventListener("online", () => loadData());
   window.addEventListener("pageshow", event => { if (event.persisted) loadData(); });
   document.addEventListener("visibilitychange", () => {
@@ -3666,6 +3985,14 @@
               ltpEl.textContent = `₹${Number(msg.candle.close).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
             }
           }
+          if (msg.symbol === _overviewSymbol && _ovCandleSeries && msg.candle) {
+            _ovCandleSeries.update(msg.candle);
+            const ovLtp = document.getElementById("ovLtp");
+            if (ovLtp && msg.candle.close) {
+              ovLtp.textContent = `₹${Number(msg.candle.close).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+            }
+            requestAnimationFrame(renderVolumeProfileCanvas);
+          }
         } else if (msg.type === "scanner_update" && msg.payload) {
           // Instant full dashboard update from 5-minute auto-scanner push
           scannerTrace("snapshot_received", {snapshot_id:msg.payload.snapshot_id,
@@ -3783,6 +4110,8 @@
     document.getElementById("viewSectorAnalysis").style.display = targetView === "sector"    ? "flex" : "none";
     document.getElementById("viewTrackedBreakouts").style.display = targetView === "tracked" ? "flex" : "none";
     document.getElementById("viewTop5Eligible").style.display = targetView === "top5eligible" ? "flex" : "none";
+    const viewOv = document.getElementById("viewOverview");
+    if (viewOv) viewOv.style.display = targetView === "overview" ? "flex" : "none";
 
     // Update active nav item highlight
     document.querySelectorAll(".menu-item[data-view]").forEach(el => {
@@ -3799,6 +4128,9 @@
       document.getElementById("navTop5Eligible")?.classList.add("active");
       const navDot = document.getElementById("top5EligibleNavDot");
       if (navDot) navDot.style.display = "none";
+    } else if (targetView === "overview") {
+      document.getElementById("navOverview")?.classList.add("active");
+      initOverviewView();
     } else {
       document.getElementById("navDashboard")?.classList.add("active");
     }
@@ -3812,6 +4144,1165 @@
   document.querySelectorAll(".menu-item[data-view]").forEach(el => {
     el.addEventListener("click", () => switchView(el.dataset.view));
   });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // STOCK OVERVIEW ENGINE (Volume Profile, Order Blocks, Footprint Delta)
+  // ═══════════════════════════════════════════════════════════════════
+  let _ovChart = null;
+  let _ovCandleSeries = null;
+  let _ovVolumeSeries = null;
+  let _ovCvdChart = null;
+  let _ovCvdSeries = null;
+  let _overviewSymbol = "BRITANNIA";
+  let _ovPriceLines = [];
+  let _ovShowVp = true;
+  let _ovShowOb = true;
+  let _ovShowFvg = false;
+  let _ovShowLiq = false;
+  let _ovShowCvd = false;
+  let _ovShowFootprint = true;
+  let _ovFootprintLiveTracking = true;
+  let _ovCandlesData = [];
+  let _ovSelectedFootprintTime = null;
+  let _ovVolHeightMode = "compact";
+  let _ovFvgData = [];
+  let _ovLiqData = [];
+  let _ovFootprintData = {};
+  let _ovFvgMarkers = [];
+  let _lastCvdData = [];
+  let _ovShowMtf = false;
+  let _ovMtfData = null;
+
+  function setOvVolumeHeight(mode) {
+    _ovVolHeightMode = mode;
+    if (!_ovChart || !_ovVolumeSeries || !_ovCandleSeries) return;
+
+    if (mode === "hide") {
+      _ovVolumeSeries.applyOptions({ visible: false });
+      _ovCandleSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.06, bottom: 0.06 },
+      });
+    } else if (mode === "compact") {
+      _ovVolumeSeries.applyOptions({ visible: true });
+      _ovCandleSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.06, bottom: 0.18 },
+      });
+      _ovChart.priceScale('ov_vol_scale').applyOptions({
+        scaleMargins: { top: 0.86, bottom: 0.0 },
+      });
+    } else if (mode === "normal") {
+      _ovVolumeSeries.applyOptions({ visible: true });
+      _ovCandleSeries.priceScale().applyOptions({
+        scaleMargins: { top: 0.06, bottom: 0.28 },
+      });
+      _ovChart.priceScale('ov_vol_scale').applyOptions({
+        scaleMargins: { top: 0.74, bottom: 0.0 },
+      });
+    }
+
+    document.querySelectorAll(".ov-vol-pill").forEach(el => {
+      el.classList.toggle("active", el.dataset.vol === mode);
+    });
+  }
+
+  function openStockInOverview(symbol) {
+    if (!symbol) symbol = _selectedSymbol || "BRITANNIA";
+    _overviewSymbol = symbol.toUpperCase().trim();
+    switchView("overview");
+  }
+
+  function initOverviewChart() {
+    const container = document.getElementById("ovTvChartContainer");
+    if (!container || _ovChart) return;
+
+    if (typeof LightweightCharts === "undefined") {
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:#64748b;font-family:monospace;">Loading TradingView Chart Engine...</div>';
+      return;
+    }
+
+    container.innerHTML = "";
+    const rect = container.getBoundingClientRect();
+    const w = rect.width > 50 ? rect.width : (container.clientWidth || 900);
+    const h = rect.height > 50 ? rect.height : 520;
+
+    _ovChart = LightweightCharts.createChart(container, {
+      width: w,
+      height: h,
+      layout: {
+        background: { type: 'solid', color: '#ffffff' },
+        textColor: '#334155',
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', -apple-system, monospace",
+      },
+      grid: {
+        vertLines: { color: "#f1f5f9", style: 1 },
+        horzLines: { color: "#f1f5f9", style: 1 },
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+      },
+      rightPriceScale: {
+        borderColor: "#cbd5e1",
+        scaleMargins: { top: 0.06, bottom: 0.18 },
+        autoScale: true,
+      },
+      localization: {
+        locale: 'en-IN',
+        dateFormat: 'yyyy-MM-dd',
+        timeFormatter: (timestamp) => {
+          const d = new Date(timestamp * 1000);
+          return d.toLocaleTimeString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+          });
+        },
+      },
+      timeScale: {
+        borderColor: "#cbd5e1",
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: (time, tickMarkType, locale) => {
+          const d = new Date(time * 1000);
+          const timeStr = d.toLocaleTimeString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+          const dateStr = d.toLocaleDateString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit',
+            month: 'short',
+          });
+          if (tickMarkType === 0 || timeStr === '09:15') {
+            return `${dateStr} ${timeStr}`;
+          }
+          return timeStr;
+        },
+      },
+    });
+
+    _ovCandleSeries = _ovChart.addCandlestickSeries({
+      upColor: "#089981",
+      downColor: "#f23645",
+      borderUpColor: "#089981",
+      borderDownColor: "#f23645",
+      wickUpColor: "#089981",
+      wickDownColor: "#f23645",
+    });
+
+    // Dedicated non-overlapping volume scale strictly in bottom 14%
+    _ovVolumeSeries = _ovChart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'ov_vol_scale',
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+
+    _ovChart.priceScale('ov_vol_scale').applyOptions({
+      scaleMargins: {
+        top: 0.86,
+        bottom: 0.0,
+      },
+    });
+
+    // Live Crosshair HUD updating exact IST Market Time, OHLC, and Volume
+    _ovChart.subscribeCrosshairMove(param => {
+      const hud = document.getElementById("ovChartHud");
+      if (!hud) return;
+      if (!param || !param.time || !param.seriesData) return;
+      const candle = param.seriesData.get(_ovCandleSeries);
+      const vol = param.seriesData.get(_ovVolumeSeries);
+      const d = new Date(param.time * 1000);
+      const timeStr = d.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+      }) + ' ' + d.toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+
+      let html = `<span style="font-weight:800; color:#0f172a;">🕒 ${timeStr} IST</span>`;
+      if (candle) {
+        const isUp = candle.close >= candle.open;
+        const color = isUp ? "#089981" : "#f23645";
+        html += `<span style="color:#cbd5e1;">|</span> <span>O: <strong>₹${candle.open.toFixed(2)}</strong></span>
+                 <span>H: <strong>₹${candle.high.toFixed(2)}</strong></span>
+                 <span>L: <strong>₹${candle.low.toFixed(2)}</strong></span>
+                 <span>C: <strong style="color:${color}">₹${candle.close.toFixed(2)}</strong></span>`;
+      }
+      if (vol) {
+        const vVal = vol.value !== undefined ? vol.value : (vol.close !== undefined ? vol.close : 0);
+        html += `<span style="color:#cbd5e1;">|</span> <span>Vol: <strong style="color:#0284c7;">${Number(vVal).toLocaleString('en-IN')}</strong></span>`;
+      }
+      hud.innerHTML = html;
+    });
+
+    _ovChart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+      requestAnimationFrame(renderVolumeProfileCanvas);
+    });
+
+    const ro = new ResizeObserver(entries => {
+      if (!entries || !entries.length || !_ovChart) return;
+      const cr = entries[0].contentRect;
+      if (cr.width > 20 && cr.height > 20) {
+        _ovChart.applyOptions({ width: cr.width, height: cr.height });
+        requestAnimationFrame(renderVolumeProfileCanvas);
+      }
+    });
+    ro.observe(container);
+
+    document.getElementById("btnOvFitChart")?.addEventListener("click", () => {
+      if (_ovChart) _ovChart.timeScale().fitContent();
+    });
+
+    // Wire up Volume Height controls
+    document.querySelectorAll(".ov-vol-pill").forEach(btn => {
+      btn.addEventListener("click", () => {
+        setOvVolumeHeight(btn.dataset.vol);
+      });
+    });
+
+    document.getElementById("btnOvToggleVp")?.addEventListener("click", (e) => {
+      _ovShowVp = !_ovShowVp;
+      requestAnimationFrame(renderVolumeProfileCanvas);
+      e.target.style.opacity = _ovShowVp ? "1" : "0.5";
+    });
+
+    document.getElementById("btnOvToggleOb")?.addEventListener("click", (e) => {
+      _ovShowOb = !_ovShowOb;
+      loadStockOverview(_overviewSymbol);
+      e.target.style.opacity = _ovShowOb ? "1" : "0.5";
+    });
+
+    // ── FVG Toggle ──
+    document.getElementById("btnOvToggleFvg")?.addEventListener("click", (e) => {
+      _ovShowFvg = !_ovShowFvg;
+      renderFvgOverlays();
+      e.target.style.opacity = _ovShowFvg ? "1" : "0.5";
+    });
+
+    // ── Liquidity Pools Toggle ──
+    document.getElementById("btnOvToggleLiq")?.addEventListener("click", (e) => {
+      _ovShowLiq = !_ovShowLiq;
+      renderLiquidityPools();
+      e.target.style.opacity = _ovShowLiq ? "1" : "0.5";
+    });
+
+    // ── CVD Toggle ──
+    document.getElementById("btnOvToggleCvd")?.addEventListener("click", (e) => {
+      _ovShowCvd = !_ovShowCvd;
+      const cvdBox = document.getElementById("ovCvdContainer");
+      if (cvdBox) cvdBox.style.display = _ovShowCvd ? "block" : "none";
+      e.target.style.opacity = _ovShowCvd ? "1" : "0.5";
+      if (_ovShowCvd) {
+        initCvdChart();
+        renderCvdData();
+      }
+    });
+
+    // ── Footprint Toggle ──
+    document.getElementById("btnOvToggleFp")?.addEventListener("click", (e) => {
+      _ovShowFootprint = !_ovShowFootprint;
+      const drawer = document.getElementById("ovFootprintDrawer");
+      if (drawer) {
+        drawer.style.display = _ovShowFootprint ? "block" : "none";
+      }
+      e.target.style.opacity = _ovShowFootprint ? "1" : "0.5";
+      if (_ovShowFootprint) {
+        if (!_ovSelectedFootprintTime && _ovCandlesData && _ovCandlesData.length && _ovFootprintData) {
+          const latestTime = String(_ovCandlesData[_ovCandlesData.length - 1].time);
+          if (_ovFootprintData[latestTime]) {
+            openFootprintInspector(_ovFootprintData[latestTime]);
+          }
+        }
+      }
+      requestAnimationFrame(renderVolumeProfileCanvas);
+    });
+
+    // ── MTF Matrix Toggle ──
+    document.getElementById("btnOvToggleMtf")?.addEventListener("click", (e) => {
+      _ovShowMtf = !_ovShowMtf;
+      const mtfCard = document.getElementById("ovMtfCard");
+      if (mtfCard) mtfCard.style.display = _ovShowMtf ? "block" : "none";
+      e.target.style.opacity = _ovShowMtf ? "1" : "0.5";
+      if (_ovShowMtf && _ovMtfData) renderMtfMatrix();
+    });
+
+    // ── Interactive Candle Click → Footprint Inspector ──
+    _ovChart.subscribeClick(param => {
+      if (!param || !param.time || !_ovFootprintData) return;
+      const ts = String(param.time);
+      const fp = _ovFootprintData[ts];
+      if (!fp || !fp.levels || fp.levels.length === 0) return;
+      _ovShowFootprint = true;
+      const btn = document.getElementById("btnOvToggleFp");
+      if (btn) btn.style.opacity = "1";
+      const isLatest = _ovCandlesData.length && Number(_ovCandlesData[_ovCandlesData.length - 1].time) === Number(param.time);
+      _ovFootprintLiveTracking = Boolean(isLatest);
+      updateFpLiveBadge();
+      openFootprintInspector(fp);
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // CVD SUB-CHART
+  // ═══════════════════════════════════════════════════════════════════
+  function initCvdChart() {
+    const container = document.getElementById("ovCvdChartContainer");
+    if (!container || typeof LightweightCharts === "undefined") return;
+
+    if (_ovCvdChart) {
+      const rect = container.getBoundingClientRect();
+      const w = rect.width > 50 ? rect.width : (container.clientWidth || 900);
+      _ovCvdChart.applyOptions({ width: w, height: 160 });
+      return;
+    }
+
+    container.innerHTML = "";
+    const rect = container.getBoundingClientRect();
+    const w = rect.width > 50 ? rect.width : (container.clientWidth || 900);
+    const h = rect.height > 50 ? rect.height : 160;
+
+    _ovCvdChart = LightweightCharts.createChart(container, {
+      width: w,
+      height: h,
+      layout: {
+        background: { type: 'solid', color: '#ffffff' },
+        textColor: '#475569',
+        fontSize: 10,
+        fontFamily: "'JetBrains Mono', monospace",
+      },
+      grid: {
+        vertLines: { color: "#f8fafc", style: 1 },
+        horzLines: { color: "#f1f5f9", style: 1 },
+      },
+      rightPriceScale: {
+        borderColor: "#e2e8f0",
+        scaleMargins: { top: 0.10, bottom: 0.10 },
+      },
+      localization: {
+        locale: 'en-IN',
+        timeFormatter: (timestamp) => {
+          const d = new Date(timestamp * 1000);
+          return d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+        },
+      },
+      timeScale: {
+        borderColor: "#e2e8f0",
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: (time, tickMarkType) => {
+          const d = new Date(time * 1000);
+          return d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+        },
+      },
+    });
+
+    _ovCvdSeries = _ovCvdChart.addAreaSeries({
+      topColor: 'rgba(37, 99, 235, 0.3)',
+      bottomColor: 'rgba(37, 99, 235, 0.02)',
+      lineColor: '#2563eb',
+      lineWidth: 2,
+      lastValueVisible: true,
+      priceLineVisible: false,
+    });
+
+    // Add zero line
+    _ovCvdSeries.createPriceLine({
+      price: 0,
+      color: '#94a3b8',
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      axisLabelVisible: false,
+      title: '',
+    });
+
+    // Sync time scale with main chart
+    _ovChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+      if (_ovCvdChart && range) {
+        _ovCvdChart.timeScale().setVisibleLogicalRange(range);
+      }
+    });
+    _ovCvdChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+      if (_ovChart && range) {
+        try { _ovChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+      }
+    });
+
+    const ro = new ResizeObserver(entries => {
+      if (!entries || !entries.length || !_ovCvdChart) return;
+      const cr = entries[0].contentRect;
+      if (cr.width > 20 && cr.height > 20) {
+        _ovCvdChart.applyOptions({ width: cr.width, height: cr.height });
+      }
+    });
+    ro.observe(container);
+  }
+
+  function renderCvdData() {
+    if (!_ovCvdSeries || !_lastCvdData || !_lastCvdData.length) return;
+    const cvdColored = _lastCvdData.map(pt => ({
+      time: pt.time,
+      value: pt.value,
+      lineColor: pt.value >= 0 ? '#2563eb' : '#ef4444',
+      topColor: pt.value >= 0 ? 'rgba(37,99,235,0.2)' : 'rgba(239,68,68,0.2)',
+      bottomColor: pt.value >= 0 ? 'rgba(37,99,235,0.02)' : 'rgba(239,68,68,0.02)',
+    }));
+    _ovCvdSeries.setData(cvdColored);
+    if (_ovCvdChart) {
+      _ovCvdChart.timeScale().fitContent();
+    }
+  }
+
+  function renderMtfMatrix() {
+    if (!_ovMtfData) return;
+    const badge = document.getElementById("ovMtfOverallBadge");
+    const tbody = document.getElementById("ovMtfTableBody");
+    if (badge) {
+      badge.textContent = `OVERALL: ${_ovMtfData.overall || 'NEUTRAL'} (${_ovMtfData.confluence || ''})`;
+      const isBull = (_ovMtfData.overall || '').includes('BULL');
+      const isBear = (_ovMtfData.overall || '').includes('BEAR');
+      badge.style.background = isBull ? 'rgba(16,185,129,0.2)' : (isBear ? 'rgba(239,68,68,0.2)' : 'rgba(148,163,184,0.2)');
+      badge.style.color = isBull ? '#34d399' : (isBear ? '#fca5a5' : '#cbd5e1');
+    }
+    if (tbody && _ovMtfData.rows) {
+      tbody.innerHTML = _ovMtfData.rows.map(r => {
+        const emaColor = r.ema.includes('BULL') ? '#34d399' : '#f87171';
+        const rsiColor = r.rsi.includes('BULL') ? '#34d399' : (r.rsi.includes('BEAR') ? '#f87171' : '#cbd5e1');
+        const macdColor = r.macd.includes('BULL') ? '#34d399' : (r.macd.includes('BEAR') ? '#f87171' : '#64748b');
+        const sigColor = r.status === 'bull' ? '#34d399' : (r.status === 'bear' ? '#f87171' : '#cbd5e1');
+        const sigBg = r.status === 'bull' ? 'rgba(16,185,129,0.15)' : (r.status === 'bear' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)');
+
+        return `
+          <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:6px 8px; font-weight:800; color:#f8fafc;">${r.tf}</td>
+            <td style="text-align:center; padding:6px 8px; font-weight:700; color:${emaColor};">${r.ema}</td>
+            <td style="text-align:center; padding:6px 8px; font-weight:700; color:${rsiColor};">${r.rsi}</td>
+            <td style="text-align:center; padding:6px 8px; font-weight:700; color:${macdColor};">${r.macd}</td>
+            <td style="text-align:right; padding:6px 8px;">
+              <span style="display:inline-block; padding:2px 8px; border-radius:4px; font-weight:800; background:${sigBg}; color:${sigColor};">
+                ${r.signal}
+              </span>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FVG OVERLAY RENDERING (TradingView Style Shaded Rectangular Zones)
+  // ═══════════════════════════════════════════════════════════════════
+  function renderFvgOverlays() {
+    _ovFvgMarkers.forEach(l => {
+      try { _ovCandleSeries.removePriceLine(l); } catch(e) {}
+    });
+    _ovFvgMarkers = [];
+    requestAnimationFrame(renderVolumeProfileCanvas);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // LIQUIDITY POOL RENDERING (BSL / SSL Price Lines)
+  // ═══════════════════════════════════════════════════════════════════
+  let _ovLiqMarkers = [];
+
+  function renderLiquidityPools() {
+    _ovLiqMarkers.forEach(l => {
+      try { _ovCandleSeries.removePriceLine(l); } catch(e) {}
+    });
+    _ovLiqMarkers = [];
+
+    if (!_ovShowLiq || !_ovLiqData || !_ovCandleSeries) return;
+
+    _ovLiqData.forEach(pool => {
+      const isBsl = pool.type === "BSL";
+      const col = isBsl ? '#f59e0b' : '#dc2626';
+      const lineStyle = pool.status === "Active" ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Dotted;
+
+      const line = _ovCandleSeries.createPriceLine({
+        price: pool.price,
+        color: col,
+        lineWidth: pool.touches >= 2 ? 2 : 1,
+        lineStyle: lineStyle,
+        axisLabelVisible: true,
+        title: `${pool.label} [${pool.status}]`,
+      });
+      _ovLiqMarkers.push(line);
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FOOTPRINT INSPECTOR (Bid-Ask Ladder Drawer)
+  // ═══════════════════════════════════════════════════════════════════
+  function updateFpLiveBadge() {
+    const badge = document.getElementById("fpLiveTrackingBadge");
+    if (!badge) return;
+    if (_ovFootprintLiveTracking) {
+      badge.textContent = "● LIVE TRACKING";
+      badge.style.background = "#065f46";
+      badge.style.color = "#34d399";
+    } else {
+      badge.textContent = "⏸ PINNED TO CANDLE";
+      badge.style.background = "#78350f";
+      badge.style.color = "#fde68a";
+    }
+  }
+
+  function openFootprintInspector(fp) {
+    if (!fp) return;
+    _ovSelectedFootprintTime = fp.time;
+    const drawer = document.getElementById("ovFootprintDrawer");
+    if (drawer) drawer.style.display = "block";
+    updateFpLiveBadge();
+
+    // Header info
+    const d = new Date(fp.time * 1000);
+    const timeStr = d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' }) + ' ' +
+      d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const fpTimeEl = document.getElementById("fpTime");
+    if (fpTimeEl) fpTimeEl.textContent = `🕒 ${timeStr} IST`;
+
+    const fpOhlc = document.getElementById("fpOhlc");
+    if (fpOhlc) fpOhlc.textContent = `O:${fp.open} H:${fp.high} L:${fp.low} C:${fp.close}`;
+
+    const fpDelta = document.getElementById("fpNetDelta");
+    if (fpDelta) {
+      const isPos = fp.net_delta >= 0;
+      fpDelta.textContent = `Δ ${isPos ? '+' : ''}${Number(fp.net_delta).toLocaleString('en-IN')}`;
+      fpDelta.style.background = isPos ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)';
+      fpDelta.style.color = isPos ? '#34d399' : '#fca5a5';
+    }
+
+    // Candle index & navigation buttons
+    if (_ovCandlesData && _ovCandlesData.length) {
+      const currIdx = _ovCandlesData.findIndex(c => Number(c.time) === Number(fp.time));
+      const idxEl = document.getElementById("fpCandleIdx");
+      if (idxEl) idxEl.textContent = currIdx >= 0 ? `${currIdx + 1} / ${_ovCandlesData.length}` : '';
+
+      const btnPrev = document.getElementById("fpBtnPrev");
+      if (btnPrev) {
+        btnPrev.disabled = currIdx <= 0;
+        btnPrev.onclick = () => {
+          if (currIdx > 0) {
+            _ovFootprintLiveTracking = false;
+            updateFpLiveBadge();
+            const prev = _ovCandlesData[currIdx - 1];
+            if (prev && _ovFootprintData[String(prev.time)]) openFootprintInspector(_ovFootprintData[String(prev.time)]);
+          }
+        };
+      }
+
+      const btnNext = document.getElementById("fpBtnNext");
+      if (btnNext) {
+        btnNext.disabled = currIdx >= _ovCandlesData.length - 1;
+        btnNext.onclick = () => {
+          if (currIdx < _ovCandlesData.length - 1) {
+            _ovFootprintLiveTracking = (currIdx + 1 === _ovCandlesData.length - 1);
+            updateFpLiveBadge();
+            const next = _ovCandlesData[currIdx + 1];
+            if (next && _ovFootprintData[String(next.time)]) openFootprintInspector(_ovFootprintData[String(next.time)]);
+          }
+        };
+      }
+
+      const btnLatest = document.getElementById("fpBtnLatest");
+      if (btnLatest) {
+        btnLatest.onclick = () => {
+          _ovFootprintLiveTracking = true;
+          updateFpLiveBadge();
+          const latest = _ovCandlesData[_ovCandlesData.length - 1];
+          if (latest && _ovFootprintData[String(latest.time)]) openFootprintInspector(_ovFootprintData[String(latest.time)]);
+        };
+      }
+    }
+
+    // Build ladder (sorted from highest price to lowest)
+    const ladder = document.getElementById("fpLadder");
+    if (!ladder) return;
+
+    const levels = [...fp.levels].sort((a, b) => b.price - a.price);
+    const maxVol = Math.max(...levels.map(l => Math.max(l.bid_vol, l.ask_vol)), 1);
+
+    let html = `
+      <div style="text-align:right; font-weight:800; color:#f87171; padding:4px 8px; border-bottom:1px solid #1e293b;">SELL (BID) VOL</div>
+      <div style="text-align:center; font-weight:800; color:#94a3b8; padding:4px 0; border-bottom:1px solid #1e293b;">PRICE</div>
+      <div style="text-align:left; font-weight:800; color:#34d399; padding:4px 8px; border-bottom:1px solid #1e293b;">BUY (ASK) VOL</div>
+    `;
+
+    levels.forEach(lv => {
+      const bidPct = Math.round((lv.bid_vol / maxVol) * 100);
+      const askPct = Math.round((lv.ask_vol / maxVol) * 100);
+      const isSellImb = lv.imbalance === "SELL_IMBALANCE";
+      const isBuyImb = lv.imbalance === "BUY_IMBALANCE";
+      const bidColor = isSellImb ? "#f59e0b" : "#f87171";
+      const askColor = isBuyImb ? "#f59e0b" : "#34d399";
+      const bidBg = isSellImb ? "rgba(245,158,11,0.22)" : "rgba(239,68,68,0.12)";
+      const askBg = isBuyImb ? "rgba(245,158,11,0.22)" : "rgba(16,185,129,0.12)";
+
+      html += `
+        <div style="text-align:right; padding:3px 8px; position:relative; display:flex; align-items:center; justify-content:flex-end;">
+          <div style="position:absolute; top:0; right:0; bottom:0; width:${bidPct}%; background:${bidBg};"></div>
+          <span style="position:relative; color:${bidColor}; font-weight:${isSellImb ? '900' : '600'};">
+            ${isSellImb ? '⚡ ▶ ' : ''}${Number(lv.bid_vol).toLocaleString('en-IN')}
+          </span>
+        </div>
+        <div style="text-align:center; padding:3px 4px; color:#cbd5e1; font-weight:700; border-left:1px solid #1e293b; border-right:1px solid #1e293b; background:rgba(255,255,255,0.02);">
+          ₹${Number(lv.price).toFixed(2)}
+        </div>
+        <div style="text-align:left; padding:3px 8px; position:relative; display:flex; align-items:center; justify-content:flex-start;">
+          <div style="position:absolute; top:0; left:0; bottom:0; width:${askPct}%; background:${askBg};"></div>
+          <span style="position:relative; color:${askColor}; font-weight:${isBuyImb ? '900' : '600'};">
+            ${Number(lv.ask_vol).toLocaleString('en-IN')}${isBuyImb ? ' ◀ ⚡' : ''}
+          </span>
+        </div>
+      `;
+    });
+
+    // Summary row
+    const totalBid = fp.levels.reduce((s, l) => s + l.bid_vol, 0);
+    const totalAsk = fp.levels.reduce((s, l) => s + l.ask_vol, 0);
+    html += `
+      <div style="text-align:right; padding:6px 8px; border-top:2px solid #334155; color:#f87171; font-weight:900;">${Number(totalBid).toLocaleString('en-IN')}</div>
+      <div style="text-align:center; padding:6px 4px; border-top:2px solid #334155; color:#64748b; font-weight:800;">TOTAL</div>
+      <div style="text-align:left; padding:6px 8px; border-top:2px solid #334155; color:#34d399; font-weight:900;">${Number(totalAsk).toLocaleString('en-IN')}</div>
+    `;
+
+    ladder.innerHTML = html;
+    requestAnimationFrame(renderVolumeProfileCanvas);
+  }
+
+  let _ovAutoRefreshTimer = null;
+  function initOverviewView() {
+    initOverviewChart();
+
+    // Wire up search bar
+    const searchInput = document.getElementById("overviewSearchInput");
+    const searchBtn = document.getElementById("overviewSearchBtn");
+    const doSearch = () => {
+      const q = searchInput?.value?.trim().toUpperCase();
+      if (q) loadStockOverview(q);
+    };
+
+    if (searchBtn && !searchBtn.dataset.bound) {
+      searchBtn.dataset.bound = "1";
+      searchBtn.addEventListener("click", doSearch);
+      searchInput?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") doSearch();
+      });
+    }
+
+    loadStockOverview(_overviewSymbol || _selectedSymbol || "BRITANNIA");
+
+    // Auto-refresh Stock Overview every 15s so new 5m candles appear without manual reload
+    if (!_ovAutoRefreshTimer) {
+      _ovAutoRefreshTimer = setInterval(() => {
+        const viewOv = document.getElementById("viewOverview");
+        if (viewOv && viewOv.style.display !== "none" && document.visibilityState === "visible") {
+          if (_overviewSymbol) loadStockOverview(_overviewSymbol, { silent: true });
+        }
+      }, 15000);
+    }
+  }
+
+  let _lastVpData = null;
+
+  function renderVolumeProfileCanvas() {
+    const canvas = document.getElementById("ovVolumeProfileCanvas");
+    if (!canvas || !_ovCandleSeries || !_ovChart) return;
+
+    const parent = canvas.parentElement;
+    if (!parent) return;
+
+    const w = parent.clientWidth;
+    const h = parent.clientHeight;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, w, h);
+
+    // 1. Draw Left Volume Profile (if enabled)
+    if (_ovShowVp && _lastVpData && _lastVpData.bins) {
+      const vp = _lastVpData;
+      const maxVol = Math.max(...vp.bins.map(b => b.volume), 1);
+      const maxBarWidth = 140;
+
+      vp.bins.forEach(bin => {
+        const y = _ovCandleSeries.priceToCoordinate(bin.price);
+        if (y === null || y < 0 || y > h) return;
+
+        const halfBin = (vp.bin_size || 1) / 2;
+        const yTop = _ovCandleSeries.priceToCoordinate(bin.price + halfBin);
+        const yBottom = _ovCandleSeries.priceToCoordinate(bin.price - halfBin);
+        const barHeight = Math.max(3, Math.abs((yBottom || y) - (yTop || y)));
+        const barWidth = Math.max(4, (bin.volume / maxVol) * maxBarWidth);
+
+        if (bin.is_poc) {
+          ctx.fillStyle = "rgba(168, 85, 247, 0.85)"; // Bold Purple POC
+        } else if (bin.in_value_area) {
+          ctx.fillStyle = "rgba(37, 99, 235, 0.40)";  // Blue 70% Value Area
+        } else {
+          ctx.fillStyle = "rgba(147, 197, 253, 0.20)"; // Faint Blue outside
+        }
+
+        ctx.fillRect(0, y - barHeight / 2, barWidth, Math.max(1, barHeight - 1));
+      });
+    }
+
+    // 2. Draw Fair Value Gaps (FVG) as Clean Shaded Zones (TradingView Style)
+    if (_ovShowFvg && _ovFvgData && _ovFvgData.length) {
+      _ovFvgData.forEach(fvg => {
+        const yTop = _ovCandleSeries.priceToCoordinate(fvg.top);
+        const yBot = _ovCandleSeries.priceToCoordinate(fvg.bottom);
+        if (yTop === null || yBot === null) return;
+
+        const xStart = _ovChart.timeScale().timeToCoordinate(fvg.time);
+        if (xStart === null || xStart > w) return;
+
+        // Bounded to current right edge of visible canvas or mitigation time
+        let xEnd = w - 65;
+        if (fvg.mitigated_time) {
+          const xMit = _ovChart.timeScale().timeToCoordinate(fvg.mitigated_time);
+          if (xMit !== null) xEnd = Math.max(xStart + 30, xMit);
+        }
+
+        const boxX = Math.max(0, xStart);
+        const boxWidth = Math.max(30, xEnd - boxX);
+        const boxY = Math.min(yTop, yBot);
+        const boxHeight = Math.max(4, Math.abs(yBot - yTop));
+
+        const isBull = fvg.type === "Bullish";
+        // Shaded translucent fill
+        ctx.fillStyle = isBull ? "rgba(234, 179, 8, 0.20)" : "rgba(239, 68, 68, 0.20)";
+        ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+
+        // Dashed outline
+        ctx.strokeStyle = isBull ? "rgba(234, 179, 8, 0.85)" : "rgba(239, 68, 68, 0.85)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 2]);
+        ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+        ctx.setLineDash([]);
+
+        // Small badge label
+        ctx.font = "bold 9px monospace";
+        ctx.fillStyle = isBull ? "#854d0e" : "#991b1b";
+        ctx.fillText(`${isBull ? '+FVG' : '-FVG'} [₹${fvg.gap_size}]`, boxX + 6, boxY + Math.min(boxHeight - 3, 11));
+      });
+    }
+
+    // 3. Draw On-Chart Footprint Delta Badges & In-Candle Ladder (VolumeLens Image 3 Style)
+    if (_ovShowFootprint && _ovCandlesData && _ovCandlesData.length && _ovFootprintData) {
+      let candleSpacing = 16;
+      if (_ovCandlesData.length >= 2) {
+        const xA = _ovChart.timeScale().timeToCoordinate(_ovCandlesData[_ovCandlesData.length - 1].time);
+        const xB = _ovChart.timeScale().timeToCoordinate(_ovCandlesData[_ovCandlesData.length - 2].time);
+        if (xA !== null && xB !== null) candleSpacing = Math.abs(xA - xB);
+      }
+
+      _ovCandlesData.forEach(c => {
+        const x = _ovChart.timeScale().timeToCoordinate(c.time);
+        if (x === null || x < -50 || x > w + 50) return;
+
+        const yHigh = _ovCandleSeries.priceToCoordinate(c.high);
+        const yLow = _ovCandleSeries.priceToCoordinate(c.low);
+        if (yHigh === null || yLow === null) return;
+
+        const fp = _ovFootprintData[String(c.time)];
+        if (!fp) return;
+
+        const isSelected = _ovSelectedFootprintTime && Number(_ovSelectedFootprintTime) === Number(c.time);
+
+        // A. Selected Candle Highlight Indicator
+        if (isSelected) {
+          ctx.save();
+          const colW = Math.max(18, candleSpacing * 0.9);
+          ctx.fillStyle = "rgba(168, 85, 247, 0.14)";
+          ctx.fillRect(x - colW / 2, yHigh - 6, colW, (yLow - yHigh) + 12);
+
+          // Top/bottom selection brackets
+          ctx.strokeStyle = "#a855f7";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(x - colW / 2, yHigh - 6, colW, (yLow - yHigh) + 12);
+
+          // Indicator pointer below candle
+          ctx.fillStyle = "#8b5cf6";
+          ctx.beginPath();
+          ctx.moveTo(x, yLow + 8);
+          ctx.lineTo(x - 5, yLow + 14);
+          ctx.lineTo(x + 5, yLow + 14);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.font = "bold 8px 'JetBrains Mono', monospace";
+          ctx.fillStyle = "#7c3aed";
+          ctx.textAlign = "center";
+          ctx.fillText("▲ INSPECTING", x, yLow + 24);
+          ctx.restore();
+        }
+
+        // B. Net Delta Badge above candle (VolumeLens Image 3)
+        const delta = fp.net_delta || 0;
+        const isPos = delta >= 0;
+        const fmtD = (Math.abs(delta) >= 1000) ? (delta / 1000).toFixed(1) + 'K' : String(delta);
+        const dText = `Δ ${isPos ? '+' : ''}${fmtD}`;
+
+        ctx.font = "bold 9px 'JetBrains Mono', monospace";
+        const tw = ctx.measureText(dText).width;
+        const badgeY = Math.max(16, yHigh - 10);
+
+        ctx.fillStyle = isPos ? "rgba(236, 253, 245, 0.94)" : "rgba(254, 242, 242, 0.94)";
+        ctx.strokeStyle = isPos ? "#10b981" : "#ef4444";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const pillW = tw + 8;
+        ctx.roundRect(x - pillW / 2, badgeY - 11, pillW, 13, 3);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isPos ? "#065f46" : "#991b1b";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(dText, x, badgeY - 5);
+
+        // C. If zoomed in sufficiently (candle spacing >= 32px), draw Bid x Ask numbers & Imbalances!
+        if (candleSpacing >= 32 && fp.levels && fp.levels.length) {
+          const boxW = Math.min(68, candleSpacing * 0.88);
+          ctx.fillStyle = c.close >= c.open ? "rgba(16, 185, 129, 0.05)" : "rgba(239, 68, 68, 0.05)";
+          ctx.fillRect(x - boxW / 2, yHigh, boxW, yLow - yHigh);
+
+          fp.levels.forEach(lv => {
+            const yLv = _ovCandleSeries.priceToCoordinate(lv.price);
+            if (yLv === null || yLv < yHigh - 3 || yLv > yLow + 3) return;
+
+            const bidStr = String(lv.bid_vol);
+            const askStr = String(lv.ask_vol);
+            ctx.font = "700 8px 'JetBrains Mono', monospace";
+
+            // Imbalance Highlight Tag (VolumeLens Image 3 style)
+            if (lv.imbalance === "SELL_IMBALANCE") {
+              ctx.fillStyle = "rgba(245, 158, 11, 0.30)";
+              ctx.strokeStyle = "#f59e0b";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.roundRect(x - boxW / 2 + 1, yLv - 5, (boxW / 2) - 2, 10, 2);
+              ctx.fill();
+              ctx.stroke();
+
+              ctx.fillStyle = "#b45309";
+              ctx.textAlign = "right";
+              ctx.fillText(`▶ ${bidStr}`, x - 2, yLv + 3);
+            } else {
+              ctx.fillStyle = "#dc2626";
+              ctx.textAlign = "right";
+              ctx.fillText(bidStr, x - 2, yLv + 3);
+            }
+
+            if (lv.imbalance === "BUY_IMBALANCE") {
+              ctx.fillStyle = "rgba(245, 158, 11, 0.30)";
+              ctx.strokeStyle = "#f59e0b";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.roundRect(x + 2, yLv - 5, (boxW / 2) - 2, 10, 2);
+              ctx.fill();
+              ctx.stroke();
+
+              ctx.fillStyle = "#b45309";
+              ctx.textAlign = "left";
+              ctx.fillText(`${askStr} ◀`, x + 3, yLv + 3);
+            } else {
+              ctx.fillStyle = "#16a34a";
+              ctx.textAlign = "left";
+              ctx.fillText(askStr, x + 3, yLv + 3);
+            }
+          });
+        }
+      });
+    }
+  }
+
+  async function loadStockOverview(symbol, options = {}) {
+    if (!symbol) return;
+    _overviewSymbol = symbol.toUpperCase().trim();
+    initOverviewChart();
+
+    // Subscribe WebSocket to this symbol so live ticks and candles stream immediately
+    if (_wsClient && _wsClient.readyState === WebSocket.OPEN) {
+      try { _wsClient.send(JSON.stringify({ action: "subscribe", symbol: _overviewSymbol })); } catch(e) {}
+    }
+
+    // Update active pill highlight
+    document.querySelectorAll(".overview-pill").forEach(pill => {
+      pill.classList.toggle("active", pill.textContent.trim().toUpperCase() === _overviewSymbol);
+    });
+
+    const searchInput = document.getElementById("overviewSearchInput");
+    if (searchInput) searchInput.value = _overviewSymbol;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/stock_overview?symbol=${encodeURIComponent(_overviewSymbol)}`);
+      const data = await res.json();
+      if (!data || !data.ok) return;
+
+      // Update Header
+      const symEl = document.getElementById("ovSymbol");
+      const nameEl = document.getElementById("ovName");
+      const ltpEl = document.getElementById("ovLtp");
+      const chgEl = document.getElementById("ovChg");
+      const pocChip = document.getElementById("ovPocChip");
+      const vahChip = document.getElementById("ovVahChip");
+      const valChip = document.getElementById("ovValChip");
+      const structChip = document.getElementById("ovStructureChip");
+      const telemChip = document.getElementById("ovTelemetryChip");
+
+      if (symEl) symEl.textContent = data.symbol;
+      if (nameEl) nameEl.textContent = data.name || data.symbol;
+      if (ltpEl && data.ltp) ltpEl.textContent = `₹${Number(data.ltp).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+      if (chgEl && data.percent_change !== undefined) {
+        const isUp = data.percent_change >= 0;
+        chgEl.className = `chart-active-chg ${isUp ? "up" : "down"}`;
+        chgEl.textContent = `${isUp ? "+" : ""}${data.percent_change.toFixed(2)}%`;
+      }
+
+      const vp = data.volume_profile || {};
+      if (pocChip && vp.poc) pocChip.textContent = `POC: ₹${vp.poc.toFixed(2)}`;
+      if (vahChip && vp.vah) vahChip.textContent = `VAH: ₹${vp.vah.toFixed(2)}`;
+      if (valChip && vp.val) valChip.textContent = `VAL: ₹${vp.val.toFixed(2)}`;
+
+      const ms = data.market_structure || {};
+      if (structChip) {
+        structChip.textContent = `⚡ Trend: ${ms.trend || "Neutral"}`;
+        structChip.style.color = ms.trend?.toLowerCase().includes("bull") ? "#065f46" : "#991b1b";
+      }
+
+      if (telemChip && data.telemetry) {
+        const timeNow = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+        telemChip.textContent = `🟢 Live Sync: ${timeNow} | Bar: ${data.telemetry.latest_candle || "Live"}`;
+        telemChip.style.background = "#ecfdf5";
+        telemChip.style.color = "#065f46";
+        telemChip.style.borderColor = "#a7f3d0";
+      }
+
+      // Update Automated Institutional Trade Plan Box
+      const tp = data.trade_plan || {};
+      const planAction = document.getElementById("ovPlanAction");
+      const planSetup = document.getElementById("ovPlanSetup");
+      const planStatus = document.getElementById("ovPlanStatus");
+      const planRR = document.getElementById("ovPlanRR");
+      const planEntry = document.getElementById("ovPlanEntry");
+      const planSL = document.getElementById("ovPlanSL");
+      const planT1 = document.getElementById("ovPlanT1");
+      const planT2 = document.getElementById("ovPlanT2");
+      const planRule = document.getElementById("ovPlanRule");
+      const planChecklist = document.getElementById("ovPlanChecklist");
+
+      if (planAction) {
+        planAction.textContent = tp.action || "WAIT FOR SETUP";
+        planAction.style.color = tp.bias === "Bullish" ? "#34d399" : (tp.bias === "Bearish" ? "#f87171" : "#f59e0b");
+      }
+      if (planSetup) planSetup.textContent = tp.setup_name || "Scanning Market Structure";
+      if (planRR) planRR.textContent = tp.rr_ratio || "--";
+      if (planEntry) planEntry.textContent = tp.entry_zone || "--";
+      if (planSL) planSL.textContent = tp.stop_loss ? `₹${Number(tp.stop_loss).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "--";
+      if (planT1) planT1.textContent = tp.target_1 ? `₹${Number(tp.target_1).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "--";
+      if (planT2) planT2.textContent = tp.target_2 ? `₹${Number(tp.target_2).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "--";
+      if (planRule) planRule.textContent = tp.rule || "Scanning candles...";
+
+      if (planChecklist && tp.checklist) {
+        planChecklist.innerHTML = tp.checklist.map(item => `
+          <span style="display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:${item.pass ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'}; color:${item.pass ? '#34d399' : '#fca5a5'}; border:1px solid ${item.pass ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'};">
+            ${item.pass ? '✓' : '✗'} ${item.label}: ${item.detail}
+          </span>
+        `).join("");
+      }
+
+      // Paint Candles
+      if (_ovCandleSeries && data.candles && data.candles.length) {
+        _ovCandleSeries.priceScale().applyOptions({ autoScale: true });
+        _ovCandleSeries.setData(data.candles);
+        _ovCandlesData = data.candles;
+      }
+      if (_ovVolumeSeries && data.volumes && data.volumes.length) {
+        _ovVolumeSeries.setData(data.volumes);
+        setOvVolumeHeight(_ovVolHeightMode);
+      }
+
+      // Clear existing price lines
+      _ovPriceLines.forEach(l => {
+        try { _ovCandleSeries.removePriceLine(l); } catch(e) {}
+      });
+      _ovPriceLines = [];
+
+      // Add POC line
+      if (vp.poc) {
+        const pocLine = _ovCandleSeries.createPriceLine({
+          price: vp.poc,
+          color: '#a855f7',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          axisLabelVisible: true,
+          title: 'POC',
+        });
+        _ovPriceLines.push(pocLine);
+      }
+
+      // Add VAH / VAL lines
+      if (vp.vah) {
+        const vahLine = _ovCandleSeries.createPriceLine({
+          price: vp.vah,
+          color: '#2563eb',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'VAH',
+        });
+        _ovPriceLines.push(vahLine);
+      }
+      if (vp.val) {
+        const valLine = _ovCandleSeries.createPriceLine({
+          price: vp.val,
+          color: '#2563eb',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'VAL',
+        });
+        _ovPriceLines.push(valLine);
+      }
+
+      // Add Order Block price lines (clean, filtered to at most 2 major key levels)
+      if (_ovShowOb && ms.order_blocks && ms.order_blocks.length) {
+        ms.order_blocks.forEach(ob => {
+          const isBull = ob.type === "BULLISH";
+          const col = isBull ? '#10b981' : '#ef4444';
+          const level = isBull ? ob.bottom : ob.top;
+          const line = _ovCandleSeries.createPriceLine({
+            price: level,
+            color: col,
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `${isBull ? '+OB Demand' : '-OB Supply'} [${ob.status}]`,
+          });
+          _ovPriceLines.push(line);
+        });
+      }
+
+      // Render Left Volume Profile on Canvas (Mathematically aligned to price scale)
+      _lastVpData = vp;
+      setTimeout(() => {
+        renderVolumeProfileCanvas();
+      }, 80);
+
+      // ── Store & Render FVG Data ──
+      _ovFvgData = data.fvg || [];
+      if (_ovShowFvg) renderFvgOverlays();
+
+      // ── Store & Render Liquidity Pool Data ──
+      _ovLiqData = data.liquidity_pools || [];
+      if (_ovShowLiq) renderLiquidityPools();
+
+      // ── Store Footprint Data (for candle-click inspector & chart overlay) ──
+      _ovFootprintData = data.footprints || {};
+      if (_ovShowFootprint && _ovCandlesData.length && _ovFootprintData) {
+        const latestTime = String(_ovCandlesData[_ovCandlesData.length - 1].time);
+        if (_ovFootprintData[latestTime]) {
+          if (_ovFootprintLiveTracking || !_ovSelectedFootprintTime || !_ovFootprintData[String(_ovSelectedFootprintTime)]) {
+            openFootprintInspector(_ovFootprintData[latestTime]);
+          } else {
+            openFootprintInspector(_ovFootprintData[String(_ovSelectedFootprintTime)]);
+          }
+        }
+      }
+
+      // ── Feed CVD Sub-Chart ──
+      _lastCvdData = data.cvd_series || [];
+      if (_lastCvdData.length > 0 && _ovShowCvd) {
+        initCvdChart();
+        renderCvdData();
+      }
+
+      // ── Store & Render MTF Matrix Data ──
+      _ovMtfData = data.mtf_matrix || null;
+      if (_ovShowMtf) renderMtfMatrix();
+
+      // Update Order Flow / Footprint Card (Image 2)
+      const of = data.order_flow || {};
+      const deltaVal = document.getElementById("ovDeltaVal");
+      const totalVol = document.getElementById("ovTotalVol");
+      const sellVol = document.getElementById("ovSellVol");
+      const buyVol = document.getElementById("ovBuyVol");
+      const deltaBarBuy = document.getElementById("ovDeltaBarBuy");
+      const deltaBarSell = document.getElementById("ovDeltaBarSell");
+      const deltaPct = document.getElementById("ovDeltaPct");
+      const absBadge = document.getElementById("ovAbsorptionBadge");
+      const absDesc = document.getElementById("ovAbsorptionDesc");
+
+      const fmtVol = (v) => {
+        if (!v) return "0";
+        if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(2) + " M";
+        if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + " K";
+        return String(Math.round(v));
+      };
+
+      if (deltaVal) {
+        const isPos = (of.delta || 0) >= 0;
+        deltaVal.textContent = `${isPos ? '+' : ''}${fmtVol(of.delta)}`;
+        deltaVal.style.color = isPos ? '#10b981' : '#ef4444';
+      }
+      if (totalVol) totalVol.textContent = fmtVol(of.total_volume);
+      if (sellVol) sellVol.textContent = fmtVol(of.sell_volume);
+      if (buyVol) buyVol.textContent = fmtVol(of.buy_volume);
+
+      const buyShare = of.total_volume > 0 ? (of.buy_volume / of.total_volume) * 100 : 50;
+      if (deltaBarBuy) deltaBarBuy.style.width = `${buyShare}%`;
+      if (deltaBarSell) deltaBarSell.style.width = `${100 - buyShare}%`;
+      if (deltaPct) {
+        const pct = of.delta_pct || 0;
+        deltaPct.textContent = `${pct >= 0 ? '+' : ''}${pct}%`;
+        deltaPct.style.color = pct >= 0 ? '#10b981' : '#ef4444';
+      }
+
+      const abs = of.absorption || {};
+      if (absBadge) {
+        absBadge.textContent = abs.label || "⚡ Neutral Order Flow";
+        if (abs.type === "Buyer Side Absorption") {
+          absBadge.style.background = "#ecfdf5";
+          absBadge.style.color = "#065f46";
+          absBadge.style.borderColor = "#a7f3d0";
+        } else if (abs.type === "Seller Side Absorption") {
+          absBadge.style.background = "#fef2f2";
+          absBadge.style.color = "#991b1b";
+          absBadge.style.borderColor = "#fecaca";
+        } else {
+          absBadge.style.background = "#f1f5f9";
+          absBadge.style.color = "#475569";
+          absBadge.style.borderColor = "#cbd5e1";
+        }
+      }
+      if (absDesc) absDesc.textContent = abs.description || "Normal order flow distribution.";
+
+      if (_ovChart) {
+        if (!options.silent) {
+          _ovChart.timeScale().fitContent();
+        } else {
+          try { _ovChart.timeScale().scrollToRealTime(); } catch(e) {}
+        }
+      }
+      requestAnimationFrame(renderVolumeProfileCanvas);
+
+    } catch (err) {
+      console.error("loadStockOverview error:", err);
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════════════
   // SECTOR ANALYSIS ENGINE

@@ -64,10 +64,11 @@ def _payload_has_signal(payload: Any) -> bool:
 
 def _payload_signature(payload: dict[str, Any]) -> str:
     rows = list(payload.get("bullish") or []) + list(payload.get("bearish") or [])
-    return "|".join(
-        f"{r.get('symbol')}:{r.get('five_min_status')}:{r.get('is_breakout')}:{r.get('one_side_rally_score')}"
+    row_sig = "|".join(
+        f"{r.get('symbol')}:{r.get('five_min_status')}:{r.get('is_breakout')}:{r.get('one_side_rally_score')}:{r.get('ltp')}"
         for r in rows
     )
+    return f"{payload.get('snapshot_id', '')}:{row_sig}"
 
 IST_TZ = timezone(timedelta(hours=5, minutes=30))
 
@@ -534,6 +535,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             self._serve_stock_candles(parse_qs(parsed_path.query))
             return
 
+        if parsed_path.path == "/api/stock_overview":
+            self._serve_stock_overview(parse_qs(parsed_path.query))
+            return
+
         if parsed_path.path == "/api/index_live":
             self._serve_index_live()
             return
@@ -829,8 +834,9 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 # On trading days (weekday >= 09:00 AM IST), NEVER serve yesterday's stock list
                 # to the browser as active trades! Serve a clean reset state instead so the
                 # user never sees phantom stocks that vanish 15 seconds later.
+                # Tightly bounded to the 9:00-9:15 AM pre-market window only
                 current_minutes = now_ist.hour * 60 + now_ist.minute
-                if now_ist.weekday() < 5 and current_minutes >= PREMARKET_RESET_START_MINUTES:
+                if now_ist.weekday() < 5 and (PREMARKET_RESET_START_MINUTES <= current_minutes < PREMARKET_RESET_END_MINUTES):
                     from stock_suggestion_index import build_premarket_reset_payload
                     reset_payload = build_premarket_reset_payload(now_ist)
                     reset_payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
@@ -1055,6 +1061,82 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {
                 "ok": False,
                 "error": "stock_candles_failed",
+                "message": str(e),
+            })
+
+    def _serve_stock_overview(self, query: dict[str, list[str]]) -> None:
+        symbol = (query.get("symbol") or ["BRITANNIA"])[0].strip().upper()
+        try:
+            from stock_suggestion_index import fetch_5m_candles_pipeline
+            from smc_volume_profile_engine import analyze_stock_overview
+            import upstox_provider
+
+            pipe_res = fetch_5m_candles_pipeline(symbol, full_range=True)
+            candles = pipe_res.get("completed_candles") or []
+            forming_c = pipe_res.get("forming_candle")
+            all_candles = list(candles)
+            if forming_c:
+                all_candles.append(forming_c)
+
+            analysis = analyze_stock_overview(symbol, all_candles)
+
+            tv_candles = []
+            tv_volumes = []
+            for c in all_candles:
+                tv_candles.append({
+                    "time": c["timestamp"],
+                    "open": round(c["open"], 2),
+                    "high": round(c["high"], 2),
+                    "low": round(c["low"], 2),
+                    "close": round(c["close"], 2),
+                })
+                is_up = c["close"] >= c["open"]
+                tv_volumes.append({
+                    "time": c["timestamp"],
+                    "value": int(c.get("volume", 0)),
+                    "color": "rgba(8, 153, 129, 0.5)" if is_up else "rgba(242, 54, 69, 0.5)",
+                })
+
+            name = symbol
+            if upstox_provider._INSTRUMENTS_CACHE is None and upstox_provider.INSTRUMENTS_FILE.exists():
+                try:
+                    upstox_provider._INSTRUMENTS_CACHE = json.loads(upstox_provider.INSTRUMENTS_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            if upstox_provider._INSTRUMENTS_CACHE and symbol in upstox_provider._INSTRUMENTS_CACHE:
+                name = upstox_provider._INSTRUMENTS_CACHE[symbol].get("name", symbol)
+
+            ltp = all_candles[-1]["close"] if all_candles else None
+            prev_close = all_candles[0]["open"] if all_candles else None
+            pct_change = round(((ltp - prev_close) / prev_close) * 100, 2) if ltp and prev_close else 0.0
+
+            self._send_json(HTTPStatus.OK, {
+                "ok": True,
+                "symbol": symbol,
+                "name": name,
+                "ltp": ltp,
+                "percent_change": pct_change,
+                "candles": tv_candles,
+                "volumes": tv_volumes,
+                "volume_profile": analysis["volume_profile"],
+                "market_structure": analysis["market_structure"],
+                "order_flow": analysis["order_flow"],
+                "trade_plan": analysis.get("trade_plan", {}),
+                "fvg": analysis.get("fvg", []),
+                "liquidity_pools": analysis.get("liquidity_pools", []),
+                "cvd_series": analysis.get("cvd_series", []),
+                "footprints": analysis.get("footprints", {}),
+                "mtf_matrix": analysis.get("mtf_matrix", {}),
+                "telemetry": {
+                    "provider": pipe_res.get("provider", "Unknown"),
+                    "latest_candle": pipe_res.get("latest_completed_candle_ist"),
+                    "latency_ms": pipe_res.get("observed_latency_ms", 0),
+                }
+            })
+        except Exception as e:
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {
+                "ok": False,
+                "error": "stock_overview_failed",
                 "message": str(e),
             })
 
