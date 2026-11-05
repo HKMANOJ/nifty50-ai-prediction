@@ -152,9 +152,14 @@ def get_instrument_key(symbol: str) -> str | None:
             try:
                 _INSTRUMENTS_CACHE = json.loads(INSTRUMENTS_FILE.read_text(encoding="utf-8"))
             except Exception:
+                _INSTRUMENTS_CACHE = None
+        if not _INSTRUMENTS_CACHE:
+            try:
+                from download_upstox_instruments import download_and_index
+                _INSTRUMENTS_CACHE = download_and_index()
+            except Exception as dl_err:
+                print(f"[UPSTOX WARNING] Failed to download NSE instruments: {dl_err}")
                 _INSTRUMENTS_CACHE = {}
-        else:
-            _INSTRUMENTS_CACHE = {}
 
     entry = _INSTRUMENTS_CACHE.get(sym)
     if entry and isinstance(entry, dict):
