@@ -508,8 +508,8 @@
       display: flex;
       flex-direction: column;
       box-shadow: var(--shadow-sm);
-      overflow: hidden;
-      max-height: 520px;
+      min-height: 580px;
+      max-height: 640px;
     }
 
     .list-panel-header {
@@ -689,8 +689,7 @@
       display: flex;
       flex-direction: column;
       box-shadow: var(--shadow-sm);
-      overflow: hidden;
-      max-height: 520px;
+      min-height: 580px;
     }
 
     .chart-panel-header {
@@ -800,21 +799,23 @@
 
     #tvCandleContainer {
       width: 100%;
-      height: 420px;
+      height: 440px;
+      min-height: 440px;
       background: #ffffff;
       position: relative;
     }
 
     .chart-legend-bar {
-      padding: 6px 14px;
+      padding: 8px 14px;
       background: #f8fafc;
       border-top: 1px solid var(--border);
       display: flex;
       align-items: center;
-      gap: 16px;
-      font-size: 10px;
+      gap: 14px;
+      font-size: 11px;
       font-weight: 600;
       color: var(--text-muted);
+      flex-wrap: wrap;
     }
 
     .legend-item {
@@ -1350,7 +1351,11 @@
     <!-- Main Content Container -->
     <div id="viewDashboard" class="content-container">
       <!-- Row 1: Vardhaan Metrics Summary Bar -->
-      <section class="metrics-row">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:-6px;">
+        <span style="font-size:11px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:0.04em;">Market Metrics & Top Leaders</span>
+        <button id="btnToggleMetrics" onclick="toggleMetricsRow()" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; font-size:10px; font-weight:700; color:#475569; padding:2px 8px; cursor:pointer;" title="Collapse summary cards to maximize chart visibility">⯅ Compact View</button>
+      </div>
+      <section class="metrics-row" id="metricsRow">
         <!-- Session Leaders -->
         <div class="summary-card">
           <div class="summary-card-title">
@@ -1497,10 +1502,14 @@
           <div id="tvCandleContainer"></div>
 
           <div class="chart-legend-bar">
-            <div class="legend-item"><span class="dot" style="background:#089981;"></span> 5m Green Candles</div>
-            <div class="legend-item"><span class="dot" style="background:#f23645;"></span> 5m Red Candles</div>
-            <div class="legend-item"><span class="dot" style="background:#2563eb;"></span> PMH / PML Prior Levels</div>
-            <div class="legend-item" style="color:#64748b; margin-left:auto;">Scroll / drag left to view previous 5 days of price action</div>
+            <div class="legend-item"><span class="dot" style="background:#089981;"></span> 5m Green</div>
+            <div class="legend-item"><span class="dot" style="background:#f23645;"></span> 5m Red</div>
+            <div class="legend-item"><span class="dot" style="background:#2563eb;"></span> PMH / PML</div>
+            <div class="legend-item"><span class="dot" style="background:#7c3aed;"></span> POC</div>
+            <div class="legend-item"><span class="dot" style="background:#d97706;"></span> Day High / Low</div>
+            <div class="legend-item"><span class="dot" style="background:#10b981;"></span> Entry / Target</div>
+            <div class="legend-item"><span class="dot" style="background:#ef4444;"></span> Stop Loss</div>
+            <div class="legend-item" style="color:#64748b; margin-left:auto;">Scroll / drag left for 5-day history</div>
           </div>
         </div>
       </section>
@@ -2376,8 +2385,35 @@
     return `${num >= 0 ? "+" : ""}${num.toFixed(2)}%`;
   }
 
-  let _pmhLine = null;
-  let _pmlLine = null;
+  let _chartPriceLines = [];
+
+  function computePocFromCandles(candles) {
+    if (!Array.isArray(candles) || candles.length === 0) return null;
+    let minP = Infinity, maxP = -Infinity;
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i];
+      if (c.low < minP) minP = c.low;
+      if (c.high > maxP) maxP = c.high;
+    }
+    if (minP >= maxP || !isFinite(minP) || !isFinite(maxP)) return null;
+    const numBins = 30;
+    const binSize = (maxP - minP) / numBins;
+    const bins = new Float64Array(numBins);
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i];
+      const p = (c.close + c.open + c.high + c.low) / 4;
+      const binIdx = Math.min(numBins - 1, Math.max(0, Math.floor((p - minP) / binSize)));
+      bins[binIdx] += (c.volume || 1);
+    }
+    let maxVol = -1, maxBin = 0;
+    for (let i = 0; i < numBins; i++) {
+      if (bins[i] > maxVol) {
+        maxVol = bins[i];
+        maxBin = i;
+      }
+    }
+    return Number((minP + (maxBin + 0.5) * binSize).toFixed(2));
+  }
 
   /* ── Initialize TradingView Lightweight Chart ── */
   function initChart() {
@@ -2392,7 +2428,7 @@
     container.innerHTML = "";
     const rect = container.getBoundingClientRect();
     const w = rect.width > 50 ? rect.width : (container.clientWidth || 800);
-    const h = rect.height > 50 ? rect.height : 420;
+    const h = rect.height > 50 ? rect.height : 440;
 
     _tvChart = LightweightCharts.createChart(container, {
       width: w,
@@ -2405,14 +2441,14 @@
       },
       grid: {
         vertLines: { color: "#f1f5f9", style: 1 },
-        horzLines: { color: "#f1f5f9", style: 1 },
+        horzLines: { color: "#e2e8f0", style: 1 },
       },
       crosshair: {
         mode: LightweightCharts.CrosshairMode.Normal,
       },
       rightPriceScale: {
         borderColor: "#cbd5e1",
-        scaleMargins: { top: 0.08, bottom: 0.08 },
+        scaleMargins: { top: 0.08, bottom: 0.12 },
         autoScale: true,
       },
       localization: {
@@ -2429,6 +2465,7 @@
         },
       },
       timeScale: {
+        visible: true,
         borderColor: "#cbd5e1",
         timeVisible: true,
         secondsVisible: false,
@@ -2637,42 +2674,105 @@
         _candleSeries.priceScale().applyOptions({ autoScale: true });
         _candleSeries.setData(data.candles);
 
-        // Add PMH (Prior Day High) & PML (Prior Day Low) blue price lines
-        if (_pmhLine) {
-          try { _candleSeries.removePriceLine(_pmhLine); } catch(e) {}
-          _pmhLine = null;
+        // Clear all previous price lines
+        if (_chartPriceLines && _chartPriceLines.length) {
+          _chartPriceLines.forEach(pl => {
+            try { _candleSeries.removePriceLine(pl); } catch(e) {}
+          });
         }
-        if (_pmlLine) {
-          try { _candleSeries.removePriceLine(_pmlLine); } catch(e) {}
-          _pmlLine = null;
-        }
+        _chartPriceLines = [];
 
         const pmhPrice = data.orb_high || data.day_high;
         const pmlPrice = data.orb_low || data.day_low;
 
+        // 1. PMH (Prior Morning High) - Blue Solid (width 2)
         if (pmhPrice) {
-          _pmhLine = _candleSeries.createPriceLine({
+          _chartPriceLines.push(_candleSeries.createPriceLine({
             price: pmhPrice,
             color: '#2563eb',
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Solid,
             axisLabelVisible: true,
             title: 'PMH',
-          });
+          }));
         }
+
+        // 2. PML (Prior Morning Low) - Blue Solid (width 2)
         if (pmlPrice) {
-          _pmlLine = _candleSeries.createPriceLine({
+          _chartPriceLines.push(_candleSeries.createPriceLine({
             price: pmlPrice,
             color: '#2563eb',
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Solid,
             axisLabelVisible: true,
             title: 'PML',
-          });
+          }));
+        }
+
+        // 3. Day High (if distinct from PMH) - Amber Dashed
+        if (data.day_high && (!pmhPrice || Math.abs(data.day_high - pmhPrice) > (pmhPrice * 0.001))) {
+          _chartPriceLines.push(_candleSeries.createPriceLine({
+            price: data.day_high,
+            color: '#d97706',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'Day High',
+          }));
+        }
+
+        // 4. Day Low (if distinct from PML) - Amber Dashed
+        if (data.day_low && (!pmlPrice || Math.abs(data.day_low - pmlPrice) > (pmlPrice * 0.001))) {
+          _chartPriceLines.push(_candleSeries.createPriceLine({
+            price: data.day_low,
+            color: '#d97706',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'Day Low',
+          }));
+        }
+
+        // 5. POC (Point of Control) - Dotted Purple
+        const pocVal = computePocFromCandles(data.candles);
+        if (pocVal) {
+          _chartPriceLines.push(_candleSeries.createPriceLine({
+            price: pocVal,
+            color: '#7c3aed',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: 'POC',
+          }));
+        }
+
+        // 6. Stop Loss & Target lines (when Early Ignition / Sweet Spot is active)
+        if (isEarly && meta.ltp) {
+          const ltpVal = Number(meta.ltp);
+          const slVal = Number((ltpVal * 0.991).toFixed(2));
+          const t1Val = Number((ltpVal * 1.018).toFixed(2));
+          _chartPriceLines.push(_candleSeries.createPriceLine({
+            price: slVal,
+            color: '#ef4444',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'SL (-0.9%)',
+          }));
+          _chartPriceLines.push(_candleSeries.createPriceLine({
+            price: t1Val,
+            color: '#10b981',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'T1 (+1.8%)',
+          }));
         }
 
         setTimeout(() => {
-          if (_tvChart) _tvChart.timeScale().fitContent();
+          if (_tvChart) {
+            _tvChart.timeScale().fitContent();
+          }
         }, 50);
       }
     } catch (e) {
@@ -3982,11 +4082,25 @@
       if (_tvChart && tvContainer) {
         _tvChart.applyOptions({
           width: tvContainer.clientWidth,
-          height: tvContainer.clientHeight || 420
+          height: tvContainer.clientHeight || 440
         });
         _tvChart.timeScale().fitContent();
       }
     }, 280);
+  }
+
+  function toggleMetricsRow() {
+    const row = document.getElementById("metricsRow");
+    const btn = document.getElementById("btnToggleMetrics");
+    if (!row || !btn) return;
+    if (row.style.display === "none") {
+      row.style.display = "grid";
+      btn.textContent = "⯅ Compact View";
+    } else {
+      row.style.display = "none";
+      btn.textContent = "⯆ Show Metrics";
+    }
+    triggerChartResize();
   }
 
   // Desktop/Laptop toggle (Collapse / Expand)
@@ -4015,7 +4129,7 @@
     if (_tvChart && tvContainer) {
       _tvChart.applyOptions({
         width: tvContainer.clientWidth,
-        height: tvContainer.clientHeight || 420
+        height: tvContainer.clientHeight || 440
       });
     }
   });
