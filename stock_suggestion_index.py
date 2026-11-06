@@ -334,6 +334,11 @@ class Suggestion:
     claimed_at: float | None = None
     is_failed_trend: bool = False
     top5_streak_minutes: int = 0
+    is_early_ignition: bool = False
+    is_extended: bool = False
+    prev_rank: int | None = None
+    rank_velocity: str = "STABLE"
+    rank_progression: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -403,6 +408,11 @@ class Suggestion:
             "claimed_at": self.claimed_at,
             "is_failed_trend": self.is_failed_trend,
             "top5_streak_minutes": self.top5_streak_minutes,
+            "is_early_ignition": self.is_early_ignition,
+            "is_extended": self.is_extended,
+            "prev_rank": self.prev_rank,
+            "rank_velocity": self.rank_velocity,
+            "rank_progression": self.rank_progression,
         }
 
 
@@ -3020,6 +3030,7 @@ def _process_candidate_lifecycle(
             "claimed_at": None,
             "claim_expires_at": None,
             "current_rank": rank,
+            "prev_rank": rank,
             "is_active": True,
             "is_invalidated": False,
             "invalidated_at": None,
@@ -3050,6 +3061,9 @@ def _process_candidate_lifecycle(
     else:
         # Candidate already exists in lifecycle store
         entry["is_active"] = True
+        prev_rank = entry.get("current_rank", rank)
+        if prev_rank != rank:
+            entry["prev_rank"] = prev_rank
         entry["current_rank"] = rank
         entry["last_structure"] = item.chart_structure
         entry["ltp"] = item.ltp
@@ -3176,9 +3190,37 @@ def _process_candidate_lifecycle(
         and not entry.get("alert_acknowledged_at")
     )
 
+    # Early Ignition & Rank Velocity Evaluation
+    prev_r = entry.get("prev_rank", rank)
+    if prev_r > rank:
+        rank_vel = "SURGING" if (prev_r - rank >= 2) else "CLIMBING"
+        rank_prog = f"#{prev_r} ➔ #{rank}"
+    elif prev_r < rank:
+        rank_vel = "DROPPING"
+        rank_prog = f"#{prev_r} ➔ #{rank}"
+    else:
+        rank_vel = "STABLE"
+        rank_prog = f"#{rank}"
+
+    pct_chg = item.percent_change or 0.0
+    st_setup = (item.setup or "").lower()
+    vol_rat = max(float(getattr(item, "vc_ranking", 1.0) or 1.0), float(getattr(item, "rvol_5m", 1.0) or 1.0))
+
+    if side == "bullish":
+        is_early_ign = (1.5 <= pct_chg <= 2.8) and ("long buildup" in st_setup or "buildup" in st_setup) and (rank <= 8 or rank_vel in ("SURGING", "CLIMBING")) and (vol_rat >= 1.1)
+        is_ext = pct_chg >= 4.5
+    else:
+        is_early_ign = (-2.8 <= pct_chg <= -1.5) and ("short buildup" in st_setup or "buildup" in st_setup) and (rank <= 8 or rank_vel in ("SURGING", "CLIMBING")) and (vol_rat >= 1.1)
+        is_ext = pct_chg <= -4.5
+
     # Return updated Suggestion with lifecycle attributes
     d = item.to_dict()
     d["rank"] = rank
+    d["is_early_ignition"] = is_early_ign
+    d["is_extended"] = is_ext
+    d["prev_rank"] = prev_r
+    d["rank_velocity"] = rank_vel
+    d["rank_progression"] = rank_prog
     d["first_qualified_at"] = entry.get("first_qualified_at")
     d["first_top5_at"] = entry.get("first_top5_at")
     d["first_rank1_at"] = entry.get("first_rank1_at")
