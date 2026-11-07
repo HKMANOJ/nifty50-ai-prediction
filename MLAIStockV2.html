@@ -797,13 +797,77 @@
       font-weight: 800;
     }
 
-    #tvCandleContainer {
+    .dashboard-chart-wrapper {
+      position: relative;
       width: 100%;
       height: 440px;
       min-height: 440px;
       background: #ffffff;
+      border-radius: 8px;
+    }
+
+    .ov-chart-wrapper {
+      position: relative;
+      width: 100%;
+      height: 520px;
+      min-height: 520px;
+      background: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #f1f5f9;
+    }
+
+    #tvCandleContainer,
+    #ovTvChartContainer {
+      width: 100%;
+      height: 100%;
+      min-height: 100%;
       position: relative;
     }
+
+    .ov-search-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .ov-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      margin-top: 8px;
+    }
+
+    .ov-pills-scroll {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      max-width: 100%;
+      padding: 2px 0;
+    }
+    .ov-pills-scroll::-webkit-scrollbar { display: none; }
+
+    .ov-toolbar-scroll {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      max-width: 100%;
+      padding: 2px 0;
+    }
+    .ov-toolbar-scroll::-webkit-scrollbar { display: none; }
 
     .chart-legend-bar {
       padding: 8px 14px;
@@ -1200,7 +1264,9 @@
       .metrics-row > .summary-card:nth-child(1),
       .metrics-row > .summary-card:nth-child(2) { grid-column: 1 / -1; }
       .chart-panel, .list-panel { max-height: none; }
-      #tvCandleContainer { height: 340px; }
+      .dashboard-chart-wrapper { height: 350px !important; min-height: 350px !important; }
+      .ov-chart-wrapper { height: 400px !important; min-height: 400px !important; }
+      #viewOverview { padding: 12px 14px !important; gap: 12px !important; }
       #toastContainer { left: 8px; right: 8px; max-width: none; }
     }
 
@@ -1221,7 +1287,16 @@
 
       .chart-panel-header { flex-direction: column; align-items: flex-start; gap: 8px; }
       .chart-title-area { flex-wrap: wrap; }
-      #tvCandleContainer { height: 288px; }
+      .dashboard-chart-wrapper { height: 290px !important; min-height: 290px !important; }
+      .ov-chart-wrapper { height: 330px !important; min-height: 330px !important; }
+      #viewOverview { padding: 8px 10px !important; gap: 10px !important; }
+      .overview-main-panel { padding: 10px !important; gap: 10px !important; }
+      #ovSymbol { font-size: 18px !important; }
+      #ovLtp { font-size: 17px !important; }
+      #ovTradePlanBox { padding: 10px !important; gap: 8px !important; }
+      .ov-plan-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+      .ov-cards-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+      #fpLadder { font-size: 10px !important; }
 
       /* the F&O scanner table: scroll horizontally instead of crushing columns */
       table.vc-table { min-width: 720px; }
@@ -1481,6 +1556,7 @@
             <div class="chart-toolbar">
               <button class="tf-btn active" id="btnTf5m">5m (5-Day)</button>
               <button class="tf-btn" id="btnFitChart">Fit View</button>
+              <button class="tf-btn active" id="btnToggleDashboardSmc" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;" title="Toggle Fair Value Gaps and Order Blocks on Dashboard Chart">📦 SMC (FVG & OB)</button>
               <button class="tf-btn" id="btnOpenOverview" onclick="openStockInOverview(_selectedSymbol)" style="background:linear-gradient(135deg, #4f46e5, #6366f1); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated Stock Overview with Volume Profile & Order Blocks">🔬 Open in Stock Overview</button>
             </div>
           </div>
@@ -1498,8 +1574,11 @@
             </div>
           </div>
 
-          <!-- TradingView Lightweight Chart Container -->
-          <div id="tvCandleContainer"></div>
+          <!-- TradingView Lightweight Chart Container with SMC Canvas Overlay -->
+          <div id="tvCandleWrapper" class="dashboard-chart-wrapper">
+            <canvas id="tvSmcCanvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10;"></canvas>
+            <div id="tvCandleContainer"></div>
+          </div>
 
           <div class="chart-legend-bar">
             <div class="legend-item"><span class="dot" style="background:#089981;"></span> 5m Green</div>
@@ -1507,8 +1586,8 @@
             <div class="legend-item"><span class="dot" style="background:#2563eb;"></span> PMH / PML</div>
             <div class="legend-item"><span class="dot" style="background:#7c3aed;"></span> POC</div>
             <div class="legend-item"><span class="dot" style="background:#d97706;"></span> Day High / Low</div>
-            <div class="legend-item"><span class="dot" style="background:#10b981;"></span> Entry / Target</div>
-            <div class="legend-item"><span class="dot" style="background:#ef4444;"></span> Stop Loss</div>
+            <div class="legend-item"><span style="display:inline-block; width:12px; height:8px; background:rgba(16,185,129,0.25); border:1px solid #10b981; border-radius:2px; vertical-align:middle; margin-right:3px;"></span> DEMAND / FVG+</div>
+            <div class="legend-item"><span style="display:inline-block; width:12px; height:8px; background:rgba(245,158,11,0.25); border:1px solid #f59e0b; border-radius:2px; vertical-align:middle; margin-right:3px;"></span> BEAR OB / FVG-</div>
             <div class="legend-item" style="color:#64748b; margin-left:auto;">Scroll / drag left for 5-day history</div>
           </div>
         </div>
@@ -1737,17 +1816,17 @@
     <div id="viewOverview" class="content-container" style="display:none; flex-direction:column; padding:16px 20px; gap:18px;">
       
       <!-- Top Search & Quick Selector Bar -->
-      <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:12px 16px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
-        <div style="display:flex; align-items:center; gap:10px; flex:1 1 360px; min-width:280px;">
+      <div class="ov-search-bar">
+        <div style="display:flex; align-items:center; gap:8px; flex:1 1 300px; min-width:240px;">
           <span style="font-size:16px;">🔍</span>
           <input type="text" id="overviewSearchInput" placeholder="Search any stock (e.g. BRITANNIA, RELIANCE, TCS, INFY)..." 
                  style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px; font-weight:600; outline:none;" />
-          <button id="overviewSearchBtn" style="padding:8px 16px; background:#4f46e5; color:#fff; border:none; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer;">Search</button>
+          <button id="overviewSearchBtn" style="padding:8px 14px; background:#4f46e5; color:#fff; border:none; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;">Search</button>
         </div>
 
-        <!-- Quick Ticker Pills -->
-        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-          <span style="font-size:11px; font-weight:700; color:#64748b; margin-right:4px;">POPULAR:</span>
+        <!-- Quick Ticker Pills with horizontal scroll on mobile -->
+        <div class="ov-pills-scroll">
+          <span style="font-size:11px; font-weight:700; color:#64748b; margin-right:4px; white-space:nowrap;">POPULAR:</span>
           <button class="overview-pill active" onclick="loadStockOverview('BRITANNIA')">BRITANNIA</button>
           <button class="overview-pill" onclick="loadStockOverview('RELIANCE')">RELIANCE</button>
           <button class="overview-pill" onclick="loadStockOverview('TCS')">TCS</button>
@@ -1757,7 +1836,7 @@
           <button class="overview-pill" onclick="loadStockOverview('PHOENIXLTD')">PHOENIXLTD</button>
         </div>
 
-        <button onclick="switchView('dashboard')" style="padding:6px 12px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">← Back to Dashboard</button>
+        <button onclick="switchView('dashboard')" style="padding:6px 12px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;">← Back to Dashboard</button>
       </div>
 
       <!-- Main Overview Chart & Order Flow Workspace -->
@@ -1766,7 +1845,7 @@
         <!-- Stock Header Bar -->
         <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid #f1f5f9; padding-bottom:12px;">
           <div>
-            <div style="display:flex; align-items:center; gap:10px;">
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px;">
               <span id="ovSymbol" style="font-size:22px; font-weight:900; color:#0f172a; font-family:var(--font-mono);">BRITANNIA</span>
               <span id="ovName" style="font-size:13px; color:#64748b; font-weight:600;">BRITANNIA INDUSTRIES LTD</span>
               <span id="ovLtp" style="font-size:20px; font-weight:800; color:#0f172a; font-family:var(--font-mono);">₹4,946.30</span>
@@ -1782,17 +1861,17 @@
             </div>
           </div>
 
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <div style="display:flex; align-items:center; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:2px; gap:2px;">
-              <span style="font-size:10px; font-weight:800; color:#64748b; padding:0 6px;">VOL BARS:</span>
-              <button class="ov-vol-pill active" data-vol="compact" title="Compact volume in bottom 14%">Compact (12%)</button>
-              <button class="ov-vol-pill" data-vol="normal" title="Normal volume in bottom 24%">Medium (20%)</button>
+          <div class="ov-toolbar-scroll">
+            <div style="display:flex; align-items:center; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:2px; gap:2px; flex-shrink:0;">
+              <span style="font-size:10px; font-weight:800; color:#64748b; padding:0 6px;">VOL:</span>
+              <button class="ov-vol-pill active" data-vol="compact" title="Compact volume in bottom 14%">Compact</button>
+              <button class="ov-vol-pill" data-vol="normal" title="Normal volume in bottom 24%">Medium</button>
               <button class="ov-vol-pill" data-vol="hide" title="Hide vertical volume bars">Hide</button>
             </div>
             <button class="tf-btn active" id="btnOvFitChart">Fit View</button>
             <button class="tf-btn" id="btnOvToggleVp" style="background:#f5f3ff; color:#7c3aed; border-color:#ddd6fe; font-weight:700;">Volume Profile</button>
-            <button class="tf-btn" id="btnOvToggleOb" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;">Order Blocks</button>
-            <button class="tf-btn" id="btnOvToggleFvg" style="background:#fefce8; color:#a16207; border-color:#fde68a; font-weight:700; opacity:0.5;">📦 FVG</button>
+            <button class="tf-btn active" id="btnOvToggleOb" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;">Order Blocks</button>
+            <button class="tf-btn active" id="btnOvToggleFvg" style="background:#ecfdf5; color:#047857; border-color:#a7f3d0; font-weight:700;">📦 FVG (50% CE)</button>
             <button class="tf-btn" id="btnOvToggleLiq" style="background:#fef2f2; color:#b91c1c; border-color:#fecaca; font-weight:700; opacity:0.5;">🎯 Liquidity</button>
             <button class="tf-btn" id="btnOvToggleCvd" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:700; opacity:0.5;">📈 CVD</button>
             <button class="tf-btn" id="btnOvToggleFp" style="background:#fdf2f8; color:#be185d; border-color:#fbcfe8; font-weight:700;">👣 Footprint</button>
@@ -1803,45 +1882,48 @@
         <!-- ═══════════════════════════════════════════════════════════════ -->
         <!-- AUTOMATED INSTITUTIONAL TRADE PLAN BOX (SMC + ORDER FLOW) -->
         <!-- ═══════════════════════════════════════════════════════════════ -->
-        <div id="ovTradePlanBox" style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border:1px solid #334155; border-radius:10px; padding:14px 16px; color:#f8fafc; display:flex; flex-direction:column; gap:10px; box-shadow:0 4px 12px rgba(0,0,0,0.06);">
+        <div id="ovTradePlanBox" style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border:1px solid #334155; border-radius:10px; padding:12px 14px; color:#f8fafc; display:flex; flex-direction:column; gap:10px; box-shadow:0 4px 12px rgba(0,0,0,0.06);">
           <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <span style="background:#3b82f6; color:#ffffff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; letter-spacing:0.5px;">🏛️ INSTITUTIONAL TRADE PLAN</span>
               <span id="ovPlanAction" style="font-size:14px; font-weight:900; color:#34d399; font-family:var(--font-mono); letter-spacing:0.3px;">BUY ON DEMAND PULLBACK</span>
               <span id="ovPlanSetup" style="font-size:11px; color:#94a3b8; font-weight:600;">+OB Demand Retest & Value Area Expansion</span>
             </div>
-            <div style="display:flex; align-items:center; gap:10px;">
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px;">
               <span style="font-size:11px; color:#cbd5e1;">Risk:Reward <strong id="ovPlanRR" style="color:#38bdf8; font-family:var(--font-mono);">1 : 2.8 R</strong></span>
               <span id="ovPlanStatus" style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.2); color:#34d399; border:1px solid rgba(16,185,129,0.4);">● Active Setup</span>
+              <button id="btnToggleOvPlan" onclick="toggleOvTradePlan()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.25); color:#f8fafc; border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:700;">▲ Collapse</button>
             </div>
           </div>
 
-          <!-- Trade Execution Metrics Grid -->
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px;">
-            <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 10px;">
-              <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">Entry Zone</div>
-              <div id="ovPlanEntry" style="font-size:13px; font-weight:800; color:#f8fafc; font-family:var(--font-mono); margin-top:2px;">--</div>
+          <div id="ovTradePlanDetails" style="display:flex; flex-direction:column; gap:10px;">
+            <!-- Trade Execution Metrics Grid -->
+            <div class="ov-plan-metrics-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px;">
+              <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 10px;">
+                <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">Entry Zone</div>
+                <div id="ovPlanEntry" style="font-size:13px; font-weight:800; color:#f8fafc; font-family:var(--font-mono); margin-top:2px;">--</div>
+              </div>
+              <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:8px 10px;">
+                <div style="font-size:10px; color:#f87171; font-weight:700; text-transform:uppercase;">Stop Loss (SL)</div>
+                <div id="ovPlanSL" style="font-size:13px; font-weight:800; color:#fca5a5; font-family:var(--font-mono); margin-top:2px;">--</div>
+              </div>
+              <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:6px; padding:8px 10px;">
+                <div style="font-size:10px; color:#34d399; font-weight:700; text-transform:uppercase;">Target 1 (VAH)</div>
+                <div id="ovPlanT1" style="font-size:13px; font-weight:800; color:#86efac; font-family:var(--font-mono); margin-top:2px;">--</div>
+              </div>
+              <div style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.2); border-radius:6px; padding:8px 10px;">
+                <div style="font-size:10px; color:#38bdf8; font-weight:700; text-transform:uppercase;">Target 2 (Runner)</div>
+                <div id="ovPlanT2" style="font-size:13px; font-weight:800; color:#bae6fd; font-family:var(--font-mono); margin-top:2px;">--</div>
+              </div>
             </div>
-            <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:8px 10px;">
-              <div style="font-size:10px; color:#f87171; font-weight:700; text-transform:uppercase;">Stop Loss (SL)</div>
-              <div id="ovPlanSL" style="font-size:13px; font-weight:800; color:#fca5a5; font-family:var(--font-mono); margin-top:2px;">--</div>
-            </div>
-            <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:6px; padding:8px 10px;">
-              <div style="font-size:10px; color:#34d399; font-weight:700; text-transform:uppercase;">Target 1 (VAH)</div>
-              <div id="ovPlanT1" style="font-size:13px; font-weight:800; color:#86efac; font-family:var(--font-mono); margin-top:2px;">--</div>
-            </div>
-            <div style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.2); border-radius:6px; padding:8px 10px;">
-              <div style="font-size:10px; color:#38bdf8; font-weight:700; text-transform:uppercase;">Target 2 (Runner)</div>
-              <div id="ovPlanT2" style="font-size:13px; font-weight:800; color:#bae6fd; font-family:var(--font-mono); margin-top:2px;">--</div>
-            </div>
-          </div>
 
-          <!-- Execution Rule & Checklist Strip -->
-          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid rgba(255,255,255,0.08); padding-top:8px; font-size:11px;">
-            <div id="ovPlanRule" style="color:#cbd5e1; flex:1; min-width:260px; line-height:1.4;">
-              Scanning market structure...
+            <!-- Execution Rule & Checklist Strip -->
+            <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid rgba(255,255,255,0.08); padding-top:8px; font-size:11px;">
+              <div id="ovPlanRule" style="color:#cbd5e1; flex:1; min-width:260px; line-height:1.4;">
+                Scanning market structure...
+              </div>
+              <div id="ovPlanChecklist" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;"></div>
             </div>
-            <div id="ovPlanChecklist" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;"></div>
           </div>
         </div>
 
@@ -1851,12 +1933,12 @@
         </div>
 
         <!-- TradingView Chart Container with Volume Profile Left Histogram -->
-        <div style="position:relative; width:100%; height:520px; background:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #f1f5f9;">
+        <div id="ovChartWrapper" class="ov-chart-wrapper">
           <!-- Left Volume Profile Canvas Overlay (Pixel-Perfect Mathematical Alignment) -->
           <canvas id="ovVolumeProfileCanvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10;"></canvas>
 
           <!-- Chart Container -->
-          <div id="ovTvChartContainer" style="width:100%; height:100%;"></div>
+          <div id="ovTvChartContainer"></div>
         </div>
 
         <!-- CVD (Cumulative Volume Delta) Sub-Chart -->
@@ -1878,7 +1960,7 @@
                 <span id="fpLiveTrackingBadge" style="font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; background:#065f46; color:#34d399; font-family:var(--font-mono);">● LIVE TRACKING</span>
               </div>
             </div>
-            <div style="display:flex; align-items:center; gap:10px;">
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px;">
               <span id="fpOhlc" style="font-size:11px; color:#94a3b8; font-family:var(--font-mono);"></span>
               <span id="fpNetDelta" style="font-size:13px; font-weight:900; font-family:var(--font-mono); padding:2px 10px; border-radius:6px;"></span>
               <button onclick="document.getElementById('ovFootprintDrawer').style.display='none'; if(typeof _ovShowFootprint!=='undefined') _ovShowFootprint=false; const b=document.getElementById('btnOvToggleFp'); if(b) b.style.opacity='0.5'; requestAnimationFrame(renderVolumeProfileCanvas);" style="background:none; border:1px solid #475569; color:#94a3b8; border-radius:6px; padding:2px 8px; cursor:pointer; font-size:12px;">✕ Close</button>
@@ -1902,7 +1984,7 @@
               <span style="background:#a21caf; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px;">⚡ MULTI-TIMEFRAME ANALYSIS</span>
               <span style="font-size:12px; color:#94a3b8; font-weight:600;">Higher timeframe alignment confirmation</span>
             </div>
-            <div style="display:flex; align-items:center; gap:10px;">
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px;">
               <span id="ovMtfOverallBadge" style="font-size:12px; font-weight:900; padding:2px 10px; border-radius:6px; background:rgba(16,185,129,0.2); color:#34d399; font-family:var(--font-mono);">OVERALL: BULLISH ▲</span>
               <button onclick="document.getElementById('ovMtfCard').style.display='none';" style="background:none; border:1px solid #475569; color:#94a3b8; border-radius:6px; padding:2px 8px; cursor:pointer; font-size:12px;">✕ Close</button>
             </div>
@@ -1927,9 +2009,10 @@
         <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; font-size:11px; color:#64748b; padding-top:4px;">
           <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:12px; height:3px; background:#a855f7;"></span> <strong>POC</strong> (Point of Control)</div>
           <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:12px; height:3px; background:#2563eb;"></span> <strong>VAH / VAL</strong> (70% Value Area)</div>
-          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; background:rgba(16,185,129,0.3); border:1px solid #10b981;"></span> <strong>+OB</strong> (Bullish Order Block)</div>
-          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; background:rgba(239,68,68,0.3); border:1px solid #ef4444;"></span> <strong>-OB</strong> (Bearish Order Block)</div>
-          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; background:rgba(234,179,8,0.3); border:1px solid #eab308;"></span> <strong>FVG</strong> (Fair Value Gap)</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:12px; height:8px; background:rgba(16,185,129,0.25); border:1px solid #10b981; border-radius:2px;"></span> <strong>DEMAND</strong> (Bullish OB)</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:12px; height:8px; background:rgba(245,158,11,0.25); border:1px solid #f59e0b; border-radius:2px;"></span> <strong>BEAR OB</strong> (Supply Zone)</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:12px; height:8px; background:rgba(16,185,129,0.15); border:1px solid #10b981; border-top:1px dashed #10b981; border-radius:2px;"></span> <strong>FVG+</strong> (50% CE)</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:12px; height:8px; background:rgba(244,63,94,0.15); border:1px solid #f43f5e; border-top:1px dashed #f43f5e; border-radius:2px;"></span> <strong>FVG-</strong> (50% CE)</div>
           <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:4px; background:#dc2626; border-top:2px dashed #dc2626;"></span> <strong>BSL/SSL</strong> (Liquidity Pool)</div>
           <div style="margin-left:auto; font-size:11px; color:#94a3b8;">TradingView Lightweight Charts + Real Upstox Engine</div>
         </div>
@@ -1937,7 +2020,7 @@
         <!-- ═══════════════════════════════════════════════════════════════ -->
         <!-- ORDER FLOW FOOTPRINT & ABSORPTION (IMAGE 2 REPLICA) -->
         <!-- ═══════════════════════════════════════════════════════════════ -->
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; margin-top:8px;">
+        <div class="ov-cards-grid">
           
           <!-- Card 1: Buyer/Seller Absorption Signal -->
           <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:16px;">
@@ -2415,6 +2498,331 @@
     return Number((minP + (maxBin + 0.5) * binSize).toFixed(2));
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // INSTITUTIONAL SMC RENDER ENGINE (FVG with 50% CE & Order Blocks)
+  // Clean-cut horizontal rectangular zones matching Pro Stock Hunter
+  // ═══════════════════════════════════════════════════════════════════
+  let _dashboardShowSmc = true;
+  let _dashboardObData = [];
+  let _dashboardFvgData = [];
+
+  function drawPillRect(ctx, x, y, width, height, radius) {
+    if (typeof ctx.roundRect === "function") {
+      ctx.roundRect(x, y, width, height, radius);
+    } else {
+      ctx.rect(x, y, width, height);
+    }
+  }
+
+  function drawSmcZones(ctx, chart, series, w, h, obs, fvgs, options = {}) {
+    if (!ctx || !chart || !series || w <= 0 || h <= 0) return;
+    const showOb = options.showOb !== false;
+    const showFvg = options.showFvg !== false;
+
+    // Detect exact chart plot width (excluding the right price scale)
+    let chartPlotWidth = w - 65;
+    try {
+      if (chart.timeScale && typeof chart.timeScale().width === 'function') {
+        const tw = chart.timeScale().width();
+        if (tw > 40) chartPlotWidth = tw;
+      }
+    } catch(e) {}
+
+    let visRange = null;
+    try {
+      if (chart.timeScale && typeof chart.timeScale().getVisibleRange === 'function') {
+        visRange = chart.timeScale().getVisibleRange();
+      }
+    } catch(e) {}
+
+    // 1. Draw Order Blocks (DEMAND and BEAR OB)
+    if (showOb && Array.isArray(obs) && obs.length) {
+      obs.forEach(ob => {
+        const yTop = series.priceToCoordinate(ob.top);
+        const yBot = series.priceToCoordinate(ob.bottom);
+        if (yTop === null || yBot === null) return;
+
+        let xStart = chart.timeScale().timeToCoordinate(ob.time);
+        if (xStart === null && visRange && visRange.from) {
+          if (ob.time < visRange.from) xStart = -100;
+        }
+        if (xStart === null || xStart > chartPlotWidth) return;
+
+        let xEnd = chartPlotWidth;
+        if (ob.mitigated && ob.mitigated_time) {
+          let xMit = chart.timeScale().timeToCoordinate(ob.mitigated_time);
+          if (xMit === null && visRange && visRange.from && ob.mitigated_time < visRange.from) {
+            return; // Mitigated completely before visible range
+          }
+          if (xMit !== null) xEnd = Math.max(xStart + 35, xMit);
+        }
+
+        if (xEnd <= 0) return;
+
+        const boxX = Math.max(0, xStart);
+        const boxWidth = Math.max(30, Math.min(xEnd, chartPlotWidth) - boxX);
+        const boxY = Math.min(yTop, yBot);
+        const boxHeight = Math.max(5, Math.abs(yBot - yTop));
+
+        const isBull = (ob.type || "").toUpperCase() === "BULLISH";
+        const isFresh = ob.status === "Fresh";
+
+        // DEMAND: emerald green with solid border
+        // BEAR OB: golden amber with solid border
+        const fillColor = isBull 
+          ? (isFresh ? "rgba(16, 185, 129, 0.16)" : "rgba(16, 185, 129, 0.10)")
+          : (isFresh ? "rgba(245, 158, 11, 0.16)" : "rgba(245, 158, 11, 0.10)");
+        const strokeColor = isBull ? "#10b981" : "#f59e0b";
+        const textColor = isBull ? "#065f46" : "#92400e";
+        const tagText = isBull ? "DEMAND" : "BEAR OB";
+
+        ctx.save();
+        if (ob.mitigated) {
+          ctx.globalAlpha = 0.45;
+        }
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+        // Crisp tag label inside the box at left
+        if (boxWidth >= 30) {
+          ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
+          const statusLabel = ob.status ? ` · ${ob.status.toUpperCase()}` : '';
+          const labelStr = `${tagText}${statusLabel}`;
+          const textWidth = ctx.measureText(labelStr).width;
+
+          // Small translucent pill background for tag to ensure 100% crisp contrast over candles
+          ctx.fillStyle = isBull ? "rgba(236, 253, 245, 0.95)" : "rgba(254, 243, 199, 0.95)";
+          ctx.beginPath();
+          const pillH = Math.min(14, Math.max(10, boxHeight - 2));
+          const pillY = boxY + (boxHeight - pillH) / 2;
+          const pillW = Math.min(boxWidth - 6, textWidth + 8);
+          drawPillRect(ctx, boxX + 4, pillY, pillW, pillH, 2);
+          ctx.fill();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+
+          if (pillW >= textWidth) {
+            ctx.fillStyle = textColor;
+            ctx.textBaseline = "middle";
+            ctx.fillText(labelStr, boxX + 8, pillY + pillH / 2);
+          }
+        }
+        ctx.restore();
+      });
+    }
+
+    // 2. Draw Fair Value Gaps (FVG+ and FVG-) with 50% Consequent Encroachment (CE)
+    if (showFvg && Array.isArray(fvgs) && fvgs.length) {
+      fvgs.forEach(fvg => {
+        const yTop = series.priceToCoordinate(fvg.top);
+        const yBot = series.priceToCoordinate(fvg.bottom);
+        if (yTop === null || yBot === null) return;
+
+        const cePrice = fvg.ce_level || ((fvg.top + fvg.bottom) / 2.0);
+        const yCe = series.priceToCoordinate(cePrice);
+
+        let xStart = chart.timeScale().timeToCoordinate(fvg.time);
+        if (xStart === null && visRange && visRange.from) {
+          if (fvg.time < visRange.from) xStart = -100;
+        }
+        if (xStart === null || xStart > chartPlotWidth) return;
+
+        let xEnd = chartPlotWidth;
+        if (fvg.mitigated && fvg.filled_time) {
+          let xFill = chart.timeScale().timeToCoordinate(fvg.filled_time);
+          if (xFill === null && visRange && visRange.from && fvg.filled_time < visRange.from) {
+            return; // Filled completely before visible range
+          }
+          if (xFill !== null) xEnd = Math.max(xStart + 35, xFill);
+        }
+
+        if (xEnd <= 0) return;
+
+        const boxX = Math.max(0, xStart);
+        const boxWidth = Math.max(30, Math.min(xEnd, chartPlotWidth) - boxX);
+        const boxY = Math.min(yTop, yBot);
+        const boxHeight = Math.max(4, Math.abs(yBot - yTop));
+
+        const isBull = (fvg.type || "").toLowerCase().includes("bull");
+        const fillColor = isBull ? "rgba(16, 185, 129, 0.12)" : "rgba(244, 63, 94, 0.12)";
+        const strokeColor = isBull ? "#10b981" : "#f43f5e";
+        const tagColor = isBull ? "#047857" : "#be123c";
+        const tagText = isBull ? "FVG+" : "FVG-";
+
+        ctx.save();
+        if (fvg.mitigated) {
+          ctx.globalAlpha = 0.45;
+        }
+        // Translucent background
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+
+        // Solid top and bottom borders
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(boxX, boxY);
+        ctx.lineTo(boxX + boxWidth, boxY);
+        ctx.moveTo(boxX, boxY + boxHeight);
+        ctx.lineTo(boxX + boxWidth, boxY + boxHeight);
+        ctx.moveTo(boxX, boxY);
+        ctx.lineTo(boxX, boxY + boxHeight);
+        ctx.stroke();
+
+        // 50% Consequent Encroachment (CE) Dashed Centerline
+        const midY = (yCe !== null) ? yCe : (boxY + boxHeight / 2);
+        ctx.beginPath();
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1;
+        ctx.moveTo(boxX, midY);
+        ctx.lineTo(boxX + boxWidth, midY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Clean FVG label at left
+        if (boxWidth >= 30) {
+          ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
+          const gapLabel = `${tagText} [₹${fvg.gap_size}]`;
+          const tw = ctx.measureText(gapLabel).width;
+          ctx.fillStyle = isBull ? "rgba(236, 253, 245, 0.92)" : "rgba(255, 241, 242, 0.92)";
+          ctx.beginPath();
+          const pillH = Math.min(13, Math.max(9, boxHeight - 2));
+          const pillY = boxY + (boxHeight - pillH) / 2;
+          const pillW = Math.min(boxWidth - 6, tw + 6);
+          drawPillRect(ctx, boxX + 4, pillY, pillW, pillH, 2);
+          ctx.fill();
+
+          if (pillW >= tw) {
+            ctx.fillStyle = tagColor;
+            ctx.textBaseline = "middle";
+            ctx.fillText(gapLabel, boxX + 7, pillY + pillH / 2);
+          }
+        }
+        ctx.restore();
+      });
+    }
+  }
+
+  function renderDashboardSmcOverlay() {
+    const canvas = document.getElementById("tvSmcCanvas");
+    if (!canvas || !_candleSeries || !_tvChart) return;
+    const parent = canvas.parentElement;
+    if (!parent) return;
+
+    const w = parent.clientWidth;
+    const h = parent.clientHeight;
+    if (w <= 0 || h <= 0) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const targetW = Math.round(w * dpr);
+    const targetH = Math.round(h * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+
+    const ctx = canvas.getContext("2d");
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    if (_dashboardShowSmc) {
+      drawSmcZones(ctx, _tvChart, _candleSeries, w, h, _dashboardObData, _dashboardFvgData, {
+        showOb: true,
+        showFvg: true,
+      });
+    }
+    ctx.restore();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ZERO-DELAY HIGH-FREQUENCY CHART DRAG & PAN SYNCHRONIZER
+  // Locks overlay canvas at 60Hz/120Hz display refresh during mouse/touch drag
+  // ═══════════════════════════════════════════════════════════════════
+  function attachChartDragSync(containerEl, renderFn, chart) {
+    if (!containerEl || typeof renderFn !== "function") return;
+    const targetEl = containerEl.parentElement || containerEl;
+
+    let isInteracting = false;
+    let animId = null;
+
+    function renderLoop() {
+      renderFn();
+      if (isInteracting) {
+        animId = requestAnimationFrame(renderLoop);
+      } else {
+        animId = null;
+      }
+    }
+
+    function startSync() {
+      isInteracting = true;
+      if (!animId) {
+        animId = requestAnimationFrame(renderLoop);
+      }
+    }
+
+    function stopSync() {
+      if (!isInteracting) return;
+      isInteracting = false;
+      // Kinetic inertia deceleration tail: keep rendering for 350ms after release
+      const kineticEndTime = performance.now() + 350;
+      function tailLoop() {
+        renderFn();
+        if (performance.now() < kineticEndTime && !isInteracting) {
+          requestAnimationFrame(tailLoop);
+        }
+      }
+      requestAnimationFrame(tailLoop);
+    }
+
+    // Pointer events (handles mouse dragging on candles & price scale)
+    targetEl.addEventListener("pointerdown", startSync, { passive: true });
+    window.addEventListener("pointerup", stopSync, { passive: true });
+    window.addEventListener("pointercancel", stopSync, { passive: true });
+
+    // Touch events (iOS Safari & Android Chrome)
+    targetEl.addEventListener("touchstart", startSync, { passive: true });
+    window.addEventListener("touchend", stopSync, { passive: true });
+    window.addEventListener("touchcancel", stopSync, { passive: true });
+
+    // Mouse wheel and trackpad pinch/zoom
+    let wheelTimeout = null;
+    targetEl.addEventListener("wheel", () => {
+      startSync();
+      clearTimeout(wheelTimeout);
+      wheelTimeout = setTimeout(stopSync, 200);
+    }, { passive: true });
+
+    // Crosshair hover synchronization
+    if (chart && typeof chart.subscribeCrosshairMove === "function") {
+      chart.subscribeCrosshairMove(() => {
+        if (!isInteracting) renderFn();
+      });
+    }
+
+    // Fallback range change subscriptions
+    if (chart && chart.timeScale) {
+      const ts = chart.timeScale();
+      if (typeof ts.subscribeVisibleLogicalRangeChange === "function") {
+        ts.subscribeVisibleLogicalRangeChange(() => {
+          if (!isInteracting) requestAnimationFrame(renderFn);
+        });
+      }
+      if (typeof ts.subscribeVisibleTimeRangeChange === "function") {
+        ts.subscribeVisibleTimeRangeChange(() => {
+          if (!isInteracting) requestAnimationFrame(renderFn);
+        });
+      }
+    }
+  }
+
   /* ── Initialize TradingView Lightweight Chart ── */
   function initChart() {
     const container = document.getElementById("tvCandleContainer");
@@ -2499,17 +2907,27 @@
       wickDownColor: "#f23645",
     });
 
+    // Zero-delay chart drag & price scale synchronizer
+    attachChartDragSync(container, renderDashboardSmcOverlay, _tvChart);
+
     const ro = new ResizeObserver(entries => {
       if (!entries || !entries.length || !_tvChart) return;
       const cr = entries[0].contentRect;
       if (cr.width > 20 && cr.height > 20) {
         _tvChart.applyOptions({ width: cr.width, height: cr.height });
+        requestAnimationFrame(renderDashboardSmcOverlay);
       }
     });
     ro.observe(container);
 
     document.getElementById("btnFitChart")?.addEventListener("click", () => {
       if (_tvChart) _tvChart.timeScale().fitContent();
+    });
+
+    document.getElementById("btnToggleDashboardSmc")?.addEventListener("click", (e) => {
+      _dashboardShowSmc = !_dashboardShowSmc;
+      e.target.style.opacity = _dashboardShowSmc ? "1" : "0.5";
+      requestAnimationFrame(renderDashboardSmcOverlay);
     });
   }
 
@@ -2769,9 +3187,15 @@
           }));
         }
 
+        // Store and render SMC overlay (FVG with 50% CE & Order Blocks) on dashboard chart
+        _dashboardFvgData = data.fvg || [];
+        _dashboardObData = data.order_blocks || [];
+        requestAnimationFrame(renderDashboardSmcOverlay);
+
         setTimeout(() => {
           if (_tvChart) {
             _tvChart.timeScale().fitContent();
+            requestAnimationFrame(renderDashboardSmcOverlay);
           }
         }, 50);
       }
@@ -4053,6 +4477,19 @@
     }
 
     loadData();
+
+    // Check URL parameters for direct deep-linking (e.g. ?view=overview&symbol=BRITANNIA)
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const targetView = urlParams.get("view");
+      const targetSym = urlParams.get("symbol");
+      if (targetView === "overview") {
+        setTimeout(() => {
+          switchView("overview");
+          if (targetSym) loadStockOverview(targetSym);
+        }, 120);
+      }
+    } catch (e) {}
   });
   /* ── Live Real-Time Ticking Clock (Every Second) ── */
   function updateLiveClock() {
@@ -4079,14 +4516,22 @@
   function triggerChartResize() {
     setTimeout(() => {
       const tvContainer = document.getElementById("tvCandleContainer");
-      if (_tvChart && tvContainer) {
+      if (_tvChart && tvContainer && tvContainer.clientWidth > 50) {
         _tvChart.applyOptions({
           width: tvContainer.clientWidth,
           height: tvContainer.clientHeight || 440
         });
-        _tvChart.timeScale().fitContent();
+        requestAnimationFrame(renderDashboardSmcOverlay);
       }
-    }, 280);
+      const ovContainer = document.getElementById("ovTvChartContainer");
+      if (_ovChart && ovContainer && ovContainer.clientWidth > 50) {
+        _ovChart.applyOptions({
+          width: ovContainer.clientWidth,
+          height: ovContainer.clientHeight || 520
+        });
+        requestAnimationFrame(renderVolumeProfileCanvas);
+      }
+    }, 150);
   }
 
   function toggleMetricsRow() {
@@ -4131,6 +4576,7 @@
         width: tvContainer.clientWidth,
         height: tvContainer.clientHeight || 440
       });
+      requestAnimationFrame(renderDashboardSmcOverlay);
     }
   });
 
@@ -4491,7 +4937,7 @@
   let _ovPriceLines = [];
   let _ovShowVp = true;
   let _ovShowOb = true;
-  let _ovShowFvg = false;
+  let _ovShowFvg = true;
   let _ovShowLiq = false;
   let _ovShowCvd = false;
   let _ovShowFootprint = true;
@@ -4499,6 +4945,7 @@
   let _ovCandlesData = [];
   let _ovSelectedFootprintTime = null;
   let _ovVolHeightMode = "compact";
+  let _ovObData = [];
   let _ovFvgData = [];
   let _ovLiqData = [];
   let _ovFootprintData = {};
@@ -4677,9 +5124,8 @@
       hud.innerHTML = html;
     });
 
-    _ovChart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-      requestAnimationFrame(renderVolumeProfileCanvas);
-    });
+    // Zero-delay chart drag & price scale synchronizer
+    attachChartDragSync(container, renderVolumeProfileCanvas, _ovChart);
 
     const ro = new ResizeObserver(entries => {
       if (!entries || !entries.length || !_ovChart) return;
@@ -4710,15 +5156,15 @@
 
     document.getElementById("btnOvToggleOb")?.addEventListener("click", (e) => {
       _ovShowOb = !_ovShowOb;
-      loadStockOverview(_overviewSymbol);
       e.target.style.opacity = _ovShowOb ? "1" : "0.5";
+      requestAnimationFrame(renderVolumeProfileCanvas);
     });
 
     // ── FVG Toggle ──
     document.getElementById("btnOvToggleFvg")?.addEventListener("click", (e) => {
       _ovShowFvg = !_ovShowFvg;
-      renderFvgOverlays();
       e.target.style.opacity = _ovShowFvg ? "1" : "0.5";
+      requestAnimationFrame(renderVolumeProfileCanvas);
     });
 
     // ── Liquidity Pools Toggle ──
@@ -4800,6 +5246,17 @@
       openFootprintInspector(fp);
       requestAnimationFrame(renderVolumeProfileCanvas);
     });
+  }
+
+  function toggleOvTradePlan() {
+    const details = document.getElementById("ovTradePlanDetails");
+    const btn = document.getElementById("btnToggleOvPlan");
+    if (!details || !btn) return;
+    const isHidden = details.style.display === "none";
+    details.style.display = isHidden ? "flex" : "none";
+    btn.textContent = isHidden ? "▲ Collapse" : "▼ Expand Plan";
+    triggerChartResize();
+    requestAnimationFrame(renderVolumeProfileCanvas);
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -5191,12 +5648,19 @@
 
     const w = parent.clientWidth;
     const h = parent.clientHeight;
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
+    if (w <= 0 || h <= 0) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const targetW = Math.round(w * dpr);
+    const targetH = Math.round(h * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
     }
 
     const ctx = canvas.getContext("2d");
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
     // 1. Draw Left Volume Profile (if enabled)
@@ -5227,46 +5691,11 @@
       });
     }
 
-    // 2. Draw Fair Value Gaps (FVG) as Clean Shaded Zones (TradingView Style)
-    if (_ovShowFvg && _ovFvgData && _ovFvgData.length) {
-      _ovFvgData.forEach(fvg => {
-        const yTop = _ovCandleSeries.priceToCoordinate(fvg.top);
-        const yBot = _ovCandleSeries.priceToCoordinate(fvg.bottom);
-        if (yTop === null || yBot === null) return;
-
-        const xStart = _ovChart.timeScale().timeToCoordinate(fvg.time);
-        if (xStart === null || xStart > w) return;
-
-        // Bounded to current right edge of visible canvas or mitigation time
-        let xEnd = w - 65;
-        if (fvg.mitigated_time) {
-          const xMit = _ovChart.timeScale().timeToCoordinate(fvg.mitigated_time);
-          if (xMit !== null) xEnd = Math.max(xStart + 30, xMit);
-        }
-
-        const boxX = Math.max(0, xStart);
-        const boxWidth = Math.max(30, xEnd - boxX);
-        const boxY = Math.min(yTop, yBot);
-        const boxHeight = Math.max(4, Math.abs(yBot - yTop));
-
-        const isBull = fvg.type === "Bullish";
-        // Shaded translucent fill
-        ctx.fillStyle = isBull ? "rgba(234, 179, 8, 0.20)" : "rgba(239, 68, 68, 0.20)";
-        ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
-
-        // Dashed outline
-        ctx.strokeStyle = isBull ? "rgba(234, 179, 8, 0.85)" : "rgba(239, 68, 68, 0.85)";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 2]);
-        ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
-        ctx.setLineDash([]);
-
-        // Small badge label
-        ctx.font = "bold 9px monospace";
-        ctx.fillStyle = isBull ? "#854d0e" : "#991b1b";
-        ctx.fillText(`${isBull ? '+FVG' : '-FVG'} [₹${fvg.gap_size}]`, boxX + 6, boxY + Math.min(boxHeight - 3, 11));
-      });
-    }
+    // 2. Draw Institutional Order Blocks (DEMAND & BEAR OB) and Fair Value Gaps (FVG+ & FVG- with 50% CE)
+    drawSmcZones(ctx, _ovChart, _ovCandleSeries, w, h, _ovObData, _ovFvgData, {
+      showOb: _ovShowOb,
+      showFvg: _ovShowFvg,
+    });
 
     // 3. Draw On-Chart Footprint Focus Indicator (Inspected Candle Only - Keeps Main Chart Clean)
     if (_ovShowFootprint && _ovCandlesData && _ovCandlesData.length) {
@@ -5332,7 +5761,7 @@
             ctx.lineWidth = 1;
             ctx.beginPath();
             const pillW = tw + 8;
-            ctx.roundRect(x - pillW / 2, badgeY - 11, pillW, 13, 3);
+            drawPillRect(ctx, x - pillW / 2, badgeY - 11, pillW, 13, 3);
             ctx.fill();
             ctx.stroke();
 
@@ -5346,6 +5775,7 @@
         }
       }
     }
+    ctx.restore();
   }
 
   async function loadStockOverview(symbol, options = {}) {
@@ -5509,25 +5939,10 @@
         _ovPriceLines.push(valLine);
       }
 
-      // Add Order Block price lines (clean, filtered to at most 2 major key levels)
-      if (_ovShowOb && ms.order_blocks && ms.order_blocks.length) {
-        ms.order_blocks.forEach(ob => {
-          const isBull = ob.type === "BULLISH";
-          const col = isBull ? '#10b981' : '#ef4444';
-          const level = isBull ? ob.bottom : ob.top;
-          const line = _ovCandleSeries.createPriceLine({
-            price: level,
-            color: col,
-            lineWidth: 2,
-            lineStyle: LightweightCharts.LineStyle.Solid,
-            axisLabelVisible: true,
-            title: `${isBull ? '+OB Demand' : '-OB Supply'} [${ob.status}]`,
-          });
-          _ovPriceLines.push(line);
-        });
-      }
+      // Store Order Block data for clean rectangular box rendering on canvas (Pro Stock Hunter SMC mapping)
+      _ovObData = (ms && ms.order_blocks) || [];
 
-      // Render Left Volume Profile on Canvas (Mathematically aligned to price scale)
+      // Render Left Volume Profile, Order Blocks & FVG on Canvas (Mathematically aligned to price scale)
       _lastVpData = vp;
       setTimeout(() => {
         renderVolumeProfileCanvas();
@@ -5535,7 +5950,7 @@
 
       // ── Store & Render FVG Data ──
       _ovFvgData = data.fvg || [];
-      if (_ovShowFvg) renderFvgOverlays();
+      renderFvgOverlays();
 
       // ── Store & Render Liquidity Pool Data ──
       _ovLiqData = data.liquidity_pools || [];

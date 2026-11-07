@@ -1036,6 +1036,17 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     "color": "rgba(10, 143, 79, 0.6)" if is_up else "rgba(255, 80, 80, 0.6)",
                 })
 
+            # Detect Institutional SMC zones (FVG with 50% CE & Order Blocks) for clean overlay mapping
+            fvg_data = []
+            order_blocks = []
+            try:
+                from smc_volume_profile_engine import detect_fair_value_gaps, detect_order_blocks_and_structure
+                fvg_data = detect_fair_value_gaps(all_display_candles)
+                ob_structure = detect_order_blocks_and_structure(all_display_candles)
+                order_blocks = ob_structure.get("order_blocks", [])
+            except Exception:
+                pass
+
             self._send_json(HTTPStatus.OK, {
                 "ok": True,
                 "symbol": symbol,
@@ -1048,6 +1059,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "day_low": round(min(lows), 2) if lows else None,
                 "day_open": round(opens[0], 2) if opens else None,
                 "ltp": round(closes[-1], 2) if closes else None,
+                "fvg": fvg_data,
+                "order_blocks": order_blocks,
                 "telemetry": {
                     "provider": pipe_res.get("provider", "Unknown"),
                     "latest_completed_candle": pipe_res.get("latest_completed_candle_ist"),

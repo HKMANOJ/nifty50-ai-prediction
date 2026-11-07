@@ -204,95 +204,141 @@ def detect_order_blocks_and_structure(
                 trend = "Bullish Reversal"
             last_low = sw
 
-    # 3. Order Block Detection
-    # Bullish OB: Last down candle before an impulsive rally that causes a breakout
-    # Bearish OB: Last up candle before an impulsive drop that causes a breakdown
+    # 3. Order Block Detection (Institutional SMC: Demand & Supply Zones)
+    # Bullish OB (DEMAND): Origin pivot low candle before an impulsive rally that creates displacement/FVG/BOS
+    # Bearish OB (BEAR OB): Origin pivot high candle before an impulsive drop that causes breakdown
     order_blocks = []
     atr = sum(abs(c["high"] - c["low"]) for c in candles[-14:]) / max(1, min(len(candles), 14))
+    ltp = float(candles[-1]["close"]) if candles else 100.0
+    min_ob_height = max(atr * 0.15, ltp * 0.0004)
 
     for i in range(1, n - 2):
         c_prev = candles[i]
         c_curr = candles[i + 1]
         c_next = candles[i + 2]
 
-        # Check for Strong Bullish Displacement (require at least 1.6x ATR)
+        # Check for Strong Bullish Displacement (Demand Setup)
+        # Origin candle: bearish or tight base at a pivot low
+        is_pivot_low = (c_prev["low"] <= candles[i - 1]["low"] or c_prev["close"] <= c_prev["open"])
+        curr_body_bull = c_curr["close"] - c_curr["open"]
         is_bull_displacement = (
-            c_prev["close"] <= c_prev["open"] and  # Red candle
-            c_curr["close"] > c_curr["open"] and   # Green impulse
-            (c_next["close"] - c_prev["low"]) >= (atr * 1.6)
+            is_pivot_low and
+            c_curr["close"] > c_curr["open"] and
+            curr_body_bull >= (atr * 0.6) and
+            (
+                (c_curr["high"] - c_prev["low"]) >= (atr * 1.2) or
+                (c_next["close"] - c_prev["low"]) >= (atr * 1.5)
+            )
         )
 
         if is_bull_displacement:
-            ob_top = round(max(c_prev["open"], c_prev["close"]), 2)
-            ob_bottom = round(c_prev["low"], 2)
+            ob_top = round(float(c_prev["high"]), 2)
+            ob_bottom = round(float(c_prev["low"]), 2)
+            if (ob_top - ob_bottom) < min_ob_height:
+                ob_top = round(ob_bottom + min_ob_height, 2)
+
             mitigated = False
+            tested = False
             mitigated_time = None
             for f in range(i + 2, n):
-                if candles[f]["low"] <= ob_top:
+                c_f = candles[f]
+                low_f = float(c_f["low"])
+                close_f = float(c_f["close"])
+                if low_f <= ob_top and low_f >= ob_bottom:
+                    tested = True
+                if close_f < ob_bottom or low_f < ob_bottom:
                     mitigated = True
-                    mitigated_time = candles[f]["timestamp"]
+                    mitigated_time = c_f["timestamp"]
                     break
 
             order_blocks.append({
                 "id": f"ob_bull_{i}",
                 "type": "BULLISH",
+                "label": "DEMAND",
                 "top": ob_top,
                 "bottom": ob_bottom,
                 "time": c_prev["timestamp"],
-                "status": "Mitigated" if mitigated else "Fresh",
+                "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
+                "mitigated": mitigated,
+                "tested": tested,
                 "mitigated_time": mitigated_time,
             })
 
-        # Check for Strong Bearish Displacement (require at least 1.6x ATR)
+        # Check for Strong Bearish Displacement (Supply Setup)
+        # Origin candle: bullish or tight base at a pivot high
+        is_pivot_high = (c_prev["high"] >= candles[i - 1]["high"] or c_prev["close"] >= c_prev["open"])
+        curr_body_bear = c_curr["open"] - c_curr["close"]
         is_bear_displacement = (
-            c_prev["close"] >= c_prev["open"] and  # Green candle
-            c_curr["close"] < c_curr["open"] and   # Red impulse
-            (c_prev["high"] - c_next["close"]) >= (atr * 1.6)
+            is_pivot_high and
+            c_curr["close"] < c_curr["open"] and
+            curr_body_bear >= (atr * 0.6) and
+            (
+                (c_prev["high"] - c_curr["low"]) >= (atr * 1.2) or
+                (c_prev["high"] - c_next["close"]) >= (atr * 1.5)
+            )
         )
 
         if is_bear_displacement:
-            ob_top = round(c_prev["high"], 2)
-            ob_bottom = round(min(c_prev["open"], c_prev["close"]), 2)
+            ob_top = round(float(c_prev["high"]), 2)
+            ob_bottom = round(float(c_prev["low"]), 2)
+            if (ob_top - ob_bottom) < min_ob_height:
+                ob_bottom = round(ob_top - min_ob_height, 2)
+
             mitigated = False
+            tested = False
             mitigated_time = None
             for f in range(i + 2, n):
-                if candles[f]["high"] >= ob_bottom:
+                c_f = candles[f]
+                high_f = float(c_f["high"])
+                close_f = float(c_f["close"])
+                if high_f >= ob_bottom and high_f <= ob_top:
+                    tested = True
+                if close_f > ob_top or high_f > ob_top:
                     mitigated = True
-                    mitigated_time = candles[f]["timestamp"]
+                    mitigated_time = c_f["timestamp"]
                     break
 
             order_blocks.append({
                 "id": f"ob_bear_{i}",
                 "type": "BEARISH",
+                "label": "BEAR OB",
                 "top": ob_top,
                 "bottom": ob_bottom,
                 "time": c_prev["timestamp"],
-                "status": "Mitigated" if mitigated else "Fresh",
+                "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
+                "mitigated": mitigated,
+                "tested": tested,
                 "mitigated_time": mitigated_time,
             })
 
-    # Filter & Deduplicate: Keep only the cleanest, most relevant Order Blocks (max 2 bullish, max 2 bearish)
-    # Prefer Fresh over Mitigated, and avoid overlapping price levels (< 0.5% distance)
-    filtered_obs = []
-    
-    # 1. Fresh Bullish OBs
-    fresh_bull = [ob for ob in order_blocks if ob["type"] == "BULLISH" and ob["status"] == "Fresh"]
-    if fresh_bull:
-        filtered_obs.append(fresh_bull[-1])
-    else:
-        # If no fresh, keep the latest significant mitigated one
-        mit_bull = [ob for ob in order_blocks if ob["type"] == "BULLISH"]
-        if mit_bull:
-            filtered_obs.append(mit_bull[-1])
+    # Filter & Deduplicate: Keep cleanest non-overlapping Order Blocks (up to 3 Bullish DEMAND, up to 3 BEAR OB)
+    # Prioritize active (Fresh / Tested) over Mitigated, avoiding duplicate levels within 0.35%
+    def _dedup_obs(obs_subset: list[dict[str, Any]], max_count: int = 3) -> list[dict[str, Any]]:
+        if not obs_subset:
+            return []
+        # Sort so active ones come first, then most recent by time
+        active = [o for o in obs_subset if not o["mitigated"]]
+        mitigated = [o for o in obs_subset if o["mitigated"]]
+        active.sort(key=lambda o: o["time"], reverse=True)
+        mitigated.sort(key=lambda o: o["time"], reverse=True)
 
-    # 2. Fresh Bearish OBs
-    fresh_bear = [ob for ob in order_blocks if ob["type"] == "BEARISH" and ob["status"] == "Fresh"]
-    if fresh_bear:
-        filtered_obs.append(fresh_bear[-1])
-    else:
-        mit_bear = [ob for ob in order_blocks if ob["type"] == "BEARISH"]
-        if mit_bear:
-            filtered_obs.append(mit_bear[-1])
+        chosen: list[dict[str, Any]] = []
+        for cand in active + mitigated:
+            cand_mid = (cand["top"] + cand["bottom"]) / 2.0
+            is_overlap = any(
+                abs(cand_mid - ((x["top"] + x["bottom"]) / 2.0)) / max(1.0, cand_mid) < 0.0035
+                for x in chosen
+            )
+            if not is_overlap:
+                chosen.append(cand)
+            if len(chosen) >= max_count:
+                break
+        return chosen
+
+    filtered_obs = (
+        _dedup_obs([ob for ob in order_blocks if ob["type"] == "BULLISH"], max_count=3) +
+        _dedup_obs([ob for ob in order_blocks if ob["type"] == "BEARISH"], max_count=3)
+    )
 
     return {
         "trend": trend,
@@ -614,15 +660,23 @@ def analyze_stock_overview(
 
 def detect_fair_value_gaps(
     candles: list[dict[str, Any]],
-    max_fvgs: int = 3,
+    max_fvgs: int = 4,
 ) -> list[dict[str, Any]]:
-    """Detects institutional Fair Value Gaps (FVG) with displacement thresholds.
+    """Detects institutional Fair Value Gaps (FVG) with 50% Consequent Encroachment (CE)
+    and clean mitigation lifecycles matching Pro Stock Hunter / ICT SMC standards.
 
     Rules:
-    1. Candle 1 (middle candle) must have real displacement body >= 0.35 * ATR.
-    2. Gap size between Candle 0 and Candle 2 must be >= 0.20 * ATR.
-    3. Gaps that have been completely filled (traded through) are discarded.
-    4. Only returns active, unfilled/open gaps (Fresh or Partially Mitigated) closest to LTP.
+    1. Bullish FVG (FVG+): 3-candle sequence where Candle 1 (impulse) creates an imbalance:
+       gap_bottom = Candle 0 High, gap_top = Candle 2 Low (gap_top > gap_bottom).
+    2. Bearish FVG (FVG-): 3-candle sequence where Candle 1 (impulse) drops aggressively:
+       gap_top = Candle 0 Low, gap_bottom = Candle 2 High (gap_top > gap_bottom).
+    3. 50% Consequent Encroachment (CE): Exactly (gap_top + gap_bottom) / 2.
+    4. Mitigation lifecycle:
+       - Fresh: Price has not entered the gap.
+       - Tested: Price wicks into the gap.
+       - CE Tested: Price reaches or touches 50% CE level.
+       - Filled: Price trades completely through or closes through the opposing boundary.
+    5. Returns the cleanest active gaps with 50% CE levels.
     """
     n = len(candles)
     if n < 3:
@@ -630,8 +684,9 @@ def detect_fair_value_gaps(
 
     atrs = [abs(float(c["high"]) - float(c["low"])) for c in candles[-20:]]
     atr = (sum(atrs) / len(atrs)) if atrs else 5.0
-    min_gap = max(0.4, atr * 0.20)
-    min_body = max(0.8, atr * 0.35)
+    ltp = float(candles[-1]["close"]) if candles else 100.0
+    min_gap = max(atr * 0.15, ltp * 0.0003)
+    min_body = max(atr * 0.30, ltp * 0.0006)
 
     fvg_list: list[dict[str, Any]] = []
 
@@ -647,76 +702,117 @@ def detect_fair_value_gaps(
         c2_high = float(c2["high"])
         c2_low = float(c2["low"])
 
-        # Bullish FVG: Strong green impulse candle, gap between c0 high and c2 low
+        # Bullish FVG (FVG+): Strong green displacement candle, gap between c0 high and c2 low
         c1_body_bull = c1_close - c1_open
         if c1_body_bull >= min_body and c2_low > c0_high:
-            gap_top = c2_low
-            gap_bottom = c0_high
-            gap_size = gap_top - gap_bottom
+            gap_top = round(c2_low, 2)
+            gap_bottom = round(c0_high, 2)
+            gap_size = round(gap_top - gap_bottom, 2)
+            ce_level = round((gap_top + gap_bottom) / 2.0, 2)
+
             if gap_size >= min_gap:
-                mitigated = False
                 filled = False
-                mitigated_time = None
+                tested = False
+                ce_tested = False
+                filled_time = None
+
                 for j in range(i + 1, n):
                     low_j = float(candles[j]["low"])
+                    close_j = float(candles[j]["close"])
+
                     if low_j <= gap_top:
-                        mitigated = True
-                        if mitigated_time is None:
-                            mitigated_time = candles[j]["timestamp"]
-                    if low_j <= gap_bottom:
+                        tested = True
+                    if low_j <= ce_level:
+                        ce_tested = True
+                    if close_j < gap_bottom or low_j < gap_bottom:
                         filled = True
+                        filled_time = candles[j]["timestamp"]
                         break
 
-                if not filled:
+                # Keep active gaps, or very recently filled gaps (< 30 bars ago)
+                is_recent = (n - i) <= 40
+                if not filled or is_recent:
                     fvg_list.append({
+                        "id": f"fvg_bull_{i}",
                         "type": "Bullish",
-                        "top": round(gap_top, 2),
-                        "bottom": round(gap_bottom, 2),
+                        "label": "FVG+",
+                        "top": gap_top,
+                        "bottom": gap_bottom,
+                        "ce_level": ce_level,
                         "time": c1["timestamp"],
                         "time_end": c2["timestamp"],
-                        "gap_size": round(gap_size, 2),
-                        "mitigated": mitigated,
-                        "status": "Partially Open" if mitigated else "Fresh",
-                        "mitigated_time": mitigated_time,
+                        "gap_size": gap_size,
+                        "mitigated": filled,
+                        "tested": tested,
+                        "ce_tested": ce_tested,
+                        "status": "Filled" if filled else ("CE Tested" if ce_tested else ("Tested" if tested else "Fresh")),
+                        "filled_time": filled_time,
+                        "mitigated_time": filled_time,
                     })
 
-        # Bearish FVG: Strong red impulse candle, gap between c0 low and c2 high
+        # Bearish FVG (FVG-): Strong red displacement candle, gap between c0 low and c2 high
         c1_body_bear = c1_open - c1_close
         if c1_body_bear >= min_body and c0_low > c2_high:
-            gap_top = c0_low
-            gap_bottom = c2_high
-            gap_size = gap_top - gap_bottom
+            gap_top = round(c0_low, 2)
+            gap_bottom = round(c2_high, 2)
+            gap_size = round(gap_top - gap_bottom, 2)
+            ce_level = round((gap_top + gap_bottom) / 2.0, 2)
+
             if gap_size >= min_gap:
-                mitigated = False
                 filled = False
-                mitigated_time = None
+                tested = False
+                ce_tested = False
+                filled_time = None
+
                 for j in range(i + 1, n):
                     high_j = float(candles[j]["high"])
+                    close_j = float(candles[j]["close"])
+
                     if high_j >= gap_bottom:
-                        mitigated = True
-                        if mitigated_time is None:
-                            mitigated_time = candles[j]["timestamp"]
-                    if high_j >= gap_top:
+                        tested = True
+                    if high_j >= ce_level:
+                        ce_tested = True
+                    if close_j > gap_top or high_j > gap_top:
                         filled = True
+                        filled_time = candles[j]["timestamp"]
                         break
 
-                if not filled:
+                is_recent = (n - i) <= 40
+                if not filled or is_recent:
                     fvg_list.append({
+                        "id": f"fvg_bear_{i}",
                         "type": "Bearish",
-                        "top": round(gap_top, 2),
-                        "bottom": round(gap_bottom, 2),
+                        "label": "FVG-",
+                        "top": gap_top,
+                        "bottom": gap_bottom,
+                        "ce_level": ce_level,
                         "time": c1["timestamp"],
                         "time_end": c2["timestamp"],
-                        "gap_size": round(gap_size, 2),
-                        "mitigated": mitigated,
-                        "status": "Partially Open" if mitigated else "Fresh",
-                        "mitigated_time": mitigated_time,
+                        "gap_size": gap_size,
+                        "mitigated": filled,
+                        "tested": tested,
+                        "ce_tested": ce_tested,
+                        "status": "Filled" if filled else ("CE Tested" if ce_tested else ("Tested" if tested else "Fresh")),
+                        "filled_time": filled_time,
+                        "mitigated_time": filled_time,
                     })
 
-    # Sort by closeness to current price, keeping at most max_fvgs active gaps
-    ltp = float(candles[-1]["close"]) if candles else 0
-    fvg_list.sort(key=lambda f: abs(((f["top"] + f["bottom"]) / 2) - ltp))
-    return fvg_list[:max_fvgs]
+    # Sort & Filter: Keep cleanest active FVGs (up to max_fvgs, prioritizing active unfilled gaps closest to price)
+    active_bull = [f for f in fvg_list if f["type"] == "Bullish" and not f["mitigated"]]
+    active_bear = [f for f in fvg_list if f["type"] == "Bearish" and not f["mitigated"]]
+    filled_gaps = [f for f in fvg_list if f["mitigated"]]
+
+    active_bull.sort(key=lambda f: f["time"], reverse=True)
+    active_bear.sort(key=lambda f: f["time"], reverse=True)
+    filled_gaps.sort(key=lambda f: f["time"], reverse=True)
+
+    selected = active_bull[:2] + active_bear[:2]
+    if len(selected) < max_fvgs and filled_gaps:
+        selected.extend(filled_gaps[:(max_fvgs - len(selected))])
+
+    # Sort chronologically by time so rendering flows naturally from left to right
+    selected.sort(key=lambda f: f["time"])
+    return selected
 
 
 # ═══════════════════════════════════════════════════════════════════════
