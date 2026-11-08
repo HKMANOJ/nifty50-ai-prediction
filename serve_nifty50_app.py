@@ -30,6 +30,8 @@ for _sp in glob.glob(str(ROOT / "venv/lib/python*/site-packages")):
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+import db_adapter
+
 DOWNLOADER = ROOT / "download_real_market_inputs.py"
 COLLECTOR = ROOT / "collect_nifty50_market_data.py"
 MOST_ACTIVE_FETCHER = ROOT / "fetch_most_active_nse.py"
@@ -1428,20 +1430,26 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(json.dumps({"ok": True, "url": f"http://{args.host}:{args.port}/MLAIStockV2.html"}, indent=2))
 
-    # Production-only archive maintenance, isolated from request/scanner work.
-    # Local checkouts and PR previews must not silently prune a shared database.
+    # Autonomous 7-day data retention maintenance worker
     retention_stop = threading.Event()
     retention_thread = None
     try:
-        from scanner_log_retention import retention_enabled, start_retention_worker
+        from scanner_log_retention import retention_enabled, start_retention_worker, run_daily_db_purge
         if retention_enabled():
             retention_thread = start_retention_worker(stop_event=retention_stop)
-            print("[scanner-retention] Autonomous 7-day data retention worker started on Render", file=sys.stderr)
+            print("[scanner-retention] Autonomous 7-day data retention worker active", file=sys.stderr)
+            # Immediate non-blocking startup purge check
+            def _startup_retention_purge():
+                try:
+                    res = run_daily_db_purge(retention_days=7)
+                    print(f"[scanner-retention] Startup DB purge check completed: {res}", file=sys.stderr)
+                except Exception as p_err:
+                    print(f"[scanner-retention] Startup DB purge skipped: {p_err}", file=sys.stderr)
+            threading.Thread(target=_startup_retention_purge, daemon=True, name="StartupRetentionPurge").start()
         else:
             print(f"[scanner-retention] Worker inactive (host={os.environ.get('RENDER_EXTERNAL_HOSTNAME')}, render={os.environ.get('RENDER')})", file=sys.stderr)
-    except Exception:
-        # Do not expose connection details or stop the market app on maintenance failure.
-        print("[scanner-retention] worker_start_failed", file=sys.stderr)
+    except Exception as exc:
+        print(f"[scanner-retention] worker_start_failed: {exc}", file=sys.stderr)
     
     # Launch autonomous 5-minute background auto-scanner
     start_background_auto_scanner(interval_seconds=300)
