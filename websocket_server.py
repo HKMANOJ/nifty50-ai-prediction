@@ -146,23 +146,26 @@ async def handle_message(ws: WebSocketServerProtocol, message: str) -> None:
 
 
 async def push_single_symbol_candle(symbol: str, target_ws: WebSocketServerProtocol | None = None) -> None:
-    """Fetches latest candle for symbol and pushes to target_ws (or all watching clients)."""
+    """Fetches latest candle for symbol (including real-time forming candle) and pushes to target_ws."""
     try:
+        from stock_suggestion_index import fetch_5m_candles_pipeline
         loop = asyncio.get_running_loop()
-        candles = await loop.run_in_executor(None, fetch_5m_candles_for_symbol, symbol, False)
-        if not candles:
+        pipe_res = await loop.run_in_executor(None, fetch_5m_candles_pipeline, symbol, False)
+        forming = pipe_res.get("forming_candle")
+        completed = pipe_res.get("completed_candles") or []
+        last = forming if forming else (completed[-1] if completed else None)
+        if not last:
             return
-        last = candles[-1]
         candle_payload = {
             "type": "candle_update",
             "symbol": symbol,
             "candle": {
                 "time": last["timestamp"],
-                "open": last["open"],
-                "high": last["high"],
-                "low": last["low"],
-                "close": last["close"],
-                "volume": last["volume"],
+                "open": round(last["open"], 2),
+                "high": round(last["high"], 2),
+                "low": round(last["low"], 2),
+                "close": round(last["close"], 2),
+                "volume": int(last.get("volume") or 0),
             },
         }
         msg = json.dumps(candle_payload)

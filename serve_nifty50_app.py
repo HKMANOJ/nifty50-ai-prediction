@@ -1000,8 +1000,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             opens = [c["open"] for c in today_candles if c.get("open") is not None]
             highs = [c["high"] for c in today_candles if c.get("high") is not None]
             lows = [c["low"] for c in today_candles if c.get("low") is not None]
-            closes = [c["close"] for c in candles if c.get("close") is not None]
-            volumes = [c["volume"] for c in candles if c.get("volume") is not None]
+            closes = [c["close"] for c in all_display_candles if c.get("close") is not None]
+            volumes = [c["volume"] for c in all_display_candles if c.get("volume") is not None]
 
             # Morning opening range (first 3 to 6 candles e.g. 09:15 - 09:45)
             # of TODAY specifically, not the oldest day in the 5-day fetch.
@@ -1009,21 +1009,21 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             orb_high = max(c["high"] for c in today_candles[:base_count]) if today_candles else None
             orb_low = min(c["low"] for c in today_candles[:base_count]) if today_candles else None
 
-            # Calculate 9 EMA line
+            # Calculate 9 EMA line across all display candles (including forming bar)
             ema9_series = []
             if closes:
                 k = 2.0 / (9 + 1)
                 curr_ema = closes[0]
-                for c in candles:
+                for c in all_display_candles:
                     p = c["close"]
                     curr_ema = (p * k) + (curr_ema * (1.0 - k))
                     ema9_series.append({"time": c["timestamp"], "value": round(curr_ema, 2)})
 
-            # Format candles for TradingView Lightweight Charts
+            # Format candles for TradingView Lightweight Charts (including live forming candle)
             # Lightweight charts expects: { time: unix_timestamp (seconds), open, high, low, close, volume }
             tv_candles = []
             tv_volumes = []
-            for c in candles:
+            for c in all_display_candles:
                 tv_candles.append({
                     "time": c["timestamp"],
                     "open": round(c["open"], 2),
@@ -1034,7 +1034,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 is_up = c["close"] >= c["open"]
                 tv_volumes.append({
                     "time": c["timestamp"],
-                    "value": int(c["volume"]),
+                    "value": int(c.get("volume") or 0),
                     "color": "rgba(10, 143, 79, 0.6)" if is_up else "rgba(255, 80, 80, 0.6)",
                 })
 
@@ -1048,6 +1048,11 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 order_blocks = ob_structure.get("order_blocks", [])
             except Exception:
                 pass
+
+            latest_bar_label = pipe_res.get("latest_completed_candle_ist")
+            if forming_c:
+                forming_dt = datetime.fromtimestamp(forming_c["timestamp"], tz=_ist)
+                latest_bar_label = f"{forming_dt.strftime('%I:%M %p')} (Live)"
 
             self._send_json(HTTPStatus.OK, {
                 "ok": True,
@@ -1063,9 +1068,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "ltp": round(closes[-1], 2) if closes else None,
                 "fvg": fvg_data,
                 "order_blocks": order_blocks,
+                "forming_candle": forming_c,
                 "telemetry": {
                     "provider": pipe_res.get("provider", "Unknown"),
-                    "latest_completed_candle": pipe_res.get("latest_completed_candle_ist"),
+                    "latest_completed_candle": latest_bar_label,
                     "fetched_time": datetime.now(_ist).strftime("%H:%M:%S IST"),
                     "fallback_used": pipe_res.get("fallback_used", False),
                     "observed_latency_ms": pipe_res.get("observed_latency_ms", 0),

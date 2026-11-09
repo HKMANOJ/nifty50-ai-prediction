@@ -4693,6 +4693,41 @@
   setInterval(updateMarketStatusBadge, 60000); // refresh badge every 1 min
   updateMarketStatusBadge();               // set correct badge immediately on load
 
+  // Active chart live candle poller: ensures on-spot forming candle updates every 15s during market hours
+  setInterval(() => {
+    if (document.visibilityState === "visible" && (isMarketHours() || isPreMarket()) && _selectedSymbol && _candleSeries) {
+      fetch(`${API_BASE}/api/stock_candles?symbol=${encodeURIComponent(_selectedSymbol)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data.ok || !Array.isArray(data.candles) || data.candles.length === 0) return;
+          const lastC = data.candles[data.candles.length - 1];
+          if (_candleSeries && lastC) {
+            _candleSeries.update(lastC);
+            if (_volumeSeries && lastC.volume !== undefined) {
+              const isUp = lastC.close >= lastC.open;
+              _volumeSeries.update({
+                time: lastC.time,
+                value: lastC.volume,
+                color: isUp ? "rgba(10, 143, 79, 0.6)" : "rgba(255, 80, 80, 0.6)",
+              });
+            }
+            const ltpEl = document.getElementById("chartLtp");
+            if (ltpEl && lastC.close) {
+              ltpEl.textContent = `₹${Number(lastC.close).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+            }
+            const telemEl = document.getElementById("chartTelemetryChip");
+            if (telemEl && data.telemetry) {
+              const prov = data.telemetry.provider || "Upstox";
+              const bar = data.telemetry.latest_completed_candle || "--";
+              const fetched = data.telemetry.fetched_time || "";
+              telemEl.textContent = `⚡ Feed: ${prov} | Bar: ${bar} | Fetched: ${fetched}`;
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, 15000);
+
   // ═══════════════════════════════════════════════════════════════════
   // WEBSOCKET REAL-TIME PUSH ENGINE
   // Streams live 5m candles to TradingView chart & broadcasts scan updates
@@ -4760,9 +4795,23 @@
           // Native TradingView lightweight chart update without refresh!
           if (msg.symbol === _selectedSymbol && _candleSeries && msg.candle) {
             _candleSeries.update(msg.candle);
+            if (_volumeSeries && msg.candle.volume !== undefined) {
+              const isUp = msg.candle.close >= msg.candle.open;
+              _volumeSeries.update({
+                time: msg.candle.time,
+                value: msg.candle.volume,
+                color: isUp ? "rgba(10, 143, 79, 0.6)" : "rgba(255, 80, 80, 0.6)",
+              });
+            }
             const ltpEl = document.getElementById("chartLtp");
             if (ltpEl && msg.candle.close) {
               ltpEl.textContent = `₹${Number(msg.candle.close).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+            }
+            const telemEl = document.getElementById("chartTelemetryChip");
+            if (telemEl) {
+              const barTime = new Date(msg.candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true });
+              const nowTime = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+              telemEl.textContent = `⚡ Feed: Upstox | Bar: ${barTime} (Live) | Fetched: ${nowTime}`;
             }
           }
           if (msg.symbol === _overviewSymbol && _ovCandleSeries && msg.candle) {
