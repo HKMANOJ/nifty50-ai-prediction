@@ -4402,7 +4402,13 @@
       const dot = document.getElementById("upstoxDot");
       if (!btn || !text || !dot) return;
       if (data.feed_active) {
-        text.textContent = data.authenticated ? `🟢 Upstox L2: ${(data.profile && data.profile.user_name ? data.profile.user_name.split(" ")[0] : "Active")}` : `🟢 Upstox Feed: Active`;
+        let dispName = "Active";
+        if (data.profile && data.profile.user_name) {
+          const parts = data.profile.user_name.trim().split(/\s+/);
+          // If multi-word name like "HITHALAMANE KRISHNA MURTHY MANOJ", display "MANOJ"
+          dispName = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+        }
+        text.textContent = data.authenticated ? `🟢 Upstox L2: ${dispName}` : `🟢 Upstox Feed: Active`;
         dot.style.background = "#16a34a";
         btn.style.background = "#f0fdf4";
         btn.style.color = "#166534";
