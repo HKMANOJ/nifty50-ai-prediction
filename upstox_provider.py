@@ -146,6 +146,8 @@ def get_instrument_key(symbol: str) -> str | None:
         return "NSE_INDEX|Nifty 50"
     if sym in ("NIFTY BANK", "BANKNIFTY", "BANK NIFTY"):
         return "NSE_INDEX|Nifty Bank"
+    if sym in ("SENSEX", "BSESENSEX", "^BSESN", "BSE SENSEX"):
+        return "BSE_INDEX|SENSEX"
 
     if _INSTRUMENTS_CACHE is None:
         if INSTRUMENTS_FILE.exists():

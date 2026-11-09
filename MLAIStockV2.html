@@ -285,6 +285,21 @@
       border: 1px solid var(--border);
     }
 
+    .clickable-index-chip {
+      cursor: pointer;
+      transition: all 0.15s ease-in-out;
+      user-select: none;
+    }
+    .clickable-index-chip:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+      border-color: #3b82f6 !important;
+      background: #f8fafc;
+    }
+    .clickable-index-chip:active {
+      transform: translateY(0);
+    }
+
     .ticker-chip.up .val { color: var(--green); }
     .ticker-chip.down .val { color: var(--red); }
 
@@ -1388,13 +1403,17 @@
           <span class="bar"></span>
         </button>
         <div class="navbar-ticker">
-          <div class="ticker-chip up">
-            <span>NIFTY 50</span>
+          <div class="ticker-chip up clickable-index-chip" id="niftyTickerChip" onclick="openStockInOverview('NIFTY50')" title="Click to open interactive 5m SMC chart for NIFTY 50 in Stock Overview">
+            <span style="display:inline-flex; align-items:center; gap:4px;">📊 NIFTY 50</span>
             <span class="val" id="niftyVal">--</span>
           </div>
-          <div class="ticker-chip up">
-            <span>BANK NIFTY</span>
+          <div class="ticker-chip up clickable-index-chip" id="bankTickerChip" onclick="openStockInOverview('BANKNIFTY')" title="Click to open interactive 5m SMC chart for BANK NIFTY in Stock Overview">
+            <span style="display:inline-flex; align-items:center; gap:4px;">🏛️ BANK NIFTY</span>
             <span class="val" id="bankVal">--</span>
+          </div>
+          <div class="ticker-chip up clickable-index-chip" id="sensexTickerChip" onclick="openStockInOverview('SENSEX')" title="Click to open interactive 5m SMC chart for SENSEX in Stock Overview">
+            <span style="display:inline-flex; align-items:center; gap:4px;">📈 SENSEX</span>
+            <span class="val" id="sensexVal">--</span>
           </div>
         </div>
       </div>
@@ -1554,6 +1573,8 @@
               <span class="chart-stat-chip" id="chartTelemetryChip" style="font-weight:700; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;" title="Live candle feed provider, latest completed bar, fetched time, and observed latency">⚡ Feed: Checking...</span>
             </div>
             <div class="chart-toolbar">
+              <button class="tf-btn" onclick="selectStock('NIFTY50')" style="background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; font-weight:700;" title="Quick preview NIFTY 50 5m candles">📊 NIFTY</button>
+              <button class="tf-btn" onclick="selectStock('BANKNIFTY')" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:700;" title="Quick preview BANK NIFTY 5m candles">🏛️ BANK</button>
               <button class="tf-btn active" id="btnTf5m">5m (5-Day)</button>
               <button class="tf-btn" id="btnFitChart">Fit View</button>
               <button class="tf-btn active" id="btnToggleDashboardSmc" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;" title="Toggle Fair Value Gaps and Order Blocks on Dashboard Chart">📦 SMC (FVG & OB)</button>
@@ -1827,6 +1848,9 @@
         <!-- Quick Ticker Pills with horizontal scroll on mobile -->
         <div class="ov-pills-scroll">
           <span style="font-size:11px; font-weight:700; color:#64748b; margin-right:4px; white-space:nowrap;">POPULAR:</span>
+          <button class="overview-pill" onclick="loadStockOverview('NIFTY50')" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0; font-weight:800;" title="Load NIFTY 50 full 5m chart with SMC & Volume Profile">📊 NIFTY 50</button>
+          <button class="overview-pill" onclick="loadStockOverview('BANKNIFTY')" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:800;" title="Load BANK NIFTY full 5m chart with SMC & Volume Profile">🏛️ BANK NIFTY</button>
+          <button class="overview-pill" onclick="loadStockOverview('SENSEX')" style="background:#fdf2f8; color:#9d174d; border-color:#fbcfe8; font-weight:800;" title="Load SENSEX full 5m chart with SMC & Volume Profile">📈 SENSEX</button>
           <button class="overview-pill active" onclick="loadStockOverview('BRITANNIA')">BRITANNIA</button>
           <button class="overview-pill" onclick="loadStockOverview('RELIANCE')">RELIANCE</button>
           <button class="overview-pill" onclick="loadStockOverview('TCS')">TCS</button>
@@ -2304,6 +2328,22 @@
     }
   }
 
+  function speakVoiceAlert(text) {
+    if (!_bellSoundEnabled) return;
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.rate = 1.05;
+        utter.pitch = 1.0;
+        utter.lang = 'en-IN';
+        window.speechSynthesis.speak(utter);
+      }
+    } catch (e) {
+      console.warn("Speech synthesis error:", e);
+    }
+  }
+
   function showStickyToast(x, isPE, force = false) {
     const container = document.getElementById("toastContainer");
     if (!container || !x || !x.symbol) return;
@@ -2338,11 +2378,24 @@
     const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
     const freshTag = item.breakout_freshness === "FRESH" ? " · ⚡ FRESH" : (item.breakout_freshness === "RETEST" ? " · 🔄 RETEST" : "");
     const timeDisplay = item.block_surge_time || item.breakout_time || item.alert_created_at || "";
-    
+
+    // Check SMC Demand Fresh & Supply Zone triggers:
+    const qTags = item.quality_tags || [];
+    const isDemand = Boolean(item.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH") || t.includes("Retest Hold")));
+    const isSupply = Boolean(item.is_supply_zone || qTags.some(t => t.includes("SUPPLY ZONE")));
+
     let statusText = isPE ? `🔴 BREAKDOWN ${timeDisplay}${freshTag}` : `🟢 BREAKOUT ${timeDisplay}${freshTag}`;
     let bannerText = `<div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ ALL PRIORITY CRITERIA MET</div>`;
-    
-    if (isSurge) {
+
+    if (isDemand && !isPE) {
+      const dZone = item.demand_zone ? ` [${item.demand_zone}]` : "";
+      statusText = `🟢 DEMAND · FRESH${dZone} ${timeDisplay}`;
+      bannerText = `<div style="font-size:10px; font-weight:800; color:#047857; background:#d1fae5; border:1px solid #6ee7b7; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">🛡️ DEMAND FRESH BASE DEFENDED · LOW-RISK SWEET SPOT</div>`;
+    } else if (isSupply && isPE) {
+      const sZone = item.supply_zone ? ` [${item.supply_zone}]` : "";
+      statusText = `🔴 SUPPLY ZONE TESTED${sZone} ${timeDisplay}`;
+      bannerText = `<div style="font-size:10px; font-weight:800; color:#b91c1c; background:#fee2e2; border:1px solid #fca5a5; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL SUPPLY REJECTION · SHORT ENTRY</div>`;
+    } else if (isSurge) {
       statusText = item.block_surge_type || (isPE ? "⚡ BLOCK SURGE (SELL)" : "⚡ BLOCK SURGE (BUY)");
       bannerText = `<div style="font-size:10px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:4px; padding:2px 4px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BLOCK SURGE · ₹${item.block_surge_turnover_cr || 0}Cr (${item.block_surge_rvol || 1}x)</div>`;
     }
@@ -2399,8 +2452,20 @@
       const isActualBreakout = !isNear && !isConsolidating && (isBreakout || isBreakdown);
       const isBlockSurge = Boolean(row.is_block_surge);
 
-      // Rings the instant a breakout is CONFIRMED or an Institutional Block Surge arrives
-      if (!isActualBreakout && !isBlockSurge) return;
+      // SMC Demand Fresh & Supply Zone triggers (Precision Alerting):
+      const qTags = row.quality_tags || [];
+      const isDemandFresh = Boolean(row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH") || t.includes("Retest Hold")));
+      const isSupplyZone = Boolean(row.is_supply_zone || qTags.some(t => t.includes("SUPPLY ZONE")));
+      const absMove = Math.abs(row.percent_change || 0);
+      const isSweetSpot = Boolean(row.is_early_ignition || (absMove >= 1.2 && absMove <= 2.8));
+
+      // Noise reduction: Late extended moves (>= 3.8%) are suppressed to prevent chasing extended tops
+      const isTooExtended = Boolean(row.is_extended || (absMove >= 3.8 && !isBlockSurge && !isDemandFresh));
+
+      // Trigger condition: Rings on Demand Fresh defense, Supply Zone test, early Sweet Spot breakout, or Block Surge
+      const isEligibleTrigger = (isDemandFresh || isSupplyZone || (isSweetSpot && isActualBreakout) || isBlockSurge) && !isTooExtended;
+
+      if (!isEligibleTrigger) return;
 
       // Regular breakouts stop alerting after 12:45 PM IST.
       // BUT Institutional Block Surges (multi-crore footprints) continue alerting up to 3:15 PM IST!
@@ -2435,6 +2500,17 @@
 
         playBellRangSound();
         showStickyToast(row, isBreakdown);
+
+        // Institutional Desk Voice Announcement
+        if (isDemandFresh && !isBreakdown) {
+          speakVoiceAlert(`Demand Fresh on ${row.symbol} at ${Math.round(row.ltp || row.entry || 0)}`);
+        } else if (isSupplyZone && isBreakdown) {
+          speakVoiceAlert(`Supply Zone on ${row.symbol} at ${Math.round(row.ltp || row.entry || 0)}`);
+        } else if (isBlockSurge) {
+          speakVoiceAlert(`Block Surge on ${row.symbol}`);
+        } else {
+          speakVoiceAlert(`Breakout on ${row.symbol}`);
+        }
 
         // Acknowledge alert delivery to backend state machine
         if (row.alert_event_id) {
@@ -3905,8 +3981,11 @@
     const idxs = payload.index_context || {};
     const n50 = idxs["NIFTY 50"] || {};
     const bnk = idxs["NIFTY BANK"] || {};
+    const snx = idxs["SENSEX"] || idxs["BSE SENSEX"] || {};
     const n50El = document.getElementById("niftyVal");
     const bnkEl = document.getElementById("bankVal");
+    const snxEl = document.getElementById("sensexVal");
+    const snxChip = document.getElementById("sensexTickerChip");
     if (n50El && n50.percent_change !== undefined) {
       const p = n50.percent_change;
       const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
@@ -3918,6 +3997,13 @@
       const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
       bnkEl.textContent = `${ltpStr}(${pct(p)})`;
       bnkEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+    }
+    if (snxEl && snx.percent_change !== undefined) {
+      if (snxChip) snxChip.style.display = "flex";
+      const p = snx.percent_change;
+      const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
+      snxEl.textContent = `${ltpStr}(${pct(p)})`;
+      snxEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
     }
 
     // Auto-Scan Badge Telemetry
@@ -4465,20 +4551,33 @@
         unlockAudio();
         playBellRangSound();
         _testTogglePE = !_testTogglePE;
+        const testSym = _testTogglePE ? "DIXON" : "ATHERENERG";
+        const testLtp = _testTogglePE ? 14100.0 : 1845.0;
         showStickyToast({
-          symbol: _testTogglePE ? "DIXON" : "ATHERENERG",
-          breakout_time: _testTogglePE ? "10:05 AM" : "11:25 AM",
+          symbol: testSym,
+          breakout_time: _testTogglePE ? "10:05 AM" : "10:20 AM",
           score: 100,
           one_side_rally_score: 100,
           status: "Priority Rally",
           lot_size: _testTogglePE ? 50 : 375,
-          entry: _testTogglePE ? 14100.0 : 1649.9,
-          stop_loss: _testTogglePE ? 14350.0 : 1607.4,
-          target: _testTogglePE ? 13650.0 : 1722.2,
+          entry: testLtp,
+          ltp: testLtp,
+          stop_loss: _testTogglePE ? 14350.0 : 1828.0,
+          target: _testTogglePE ? 13650.0 : 1920.0,
           vc_ranking: _testTogglePE ? 3.8 : 6.0,
           range_position_percent: _testTogglePE ? 14.0 : 83.0,
-          is_breakout: true
+          is_breakout: true,
+          is_demand_fresh: !_testTogglePE,
+          demand_zone: "₹1840.0-₹1846.0",
+          is_supply_zone: _testTogglePE,
+          supply_zone: "₹14150.0-₹14200.0"
         }, _testTogglePE, true);
+
+        if (!_testTogglePE) {
+          speakVoiceAlert(`Demand Fresh on ${testSym} at ${Math.round(testLtp)}`);
+        } else {
+          speakVoiceAlert(`Supply Zone on ${testSym} at ${Math.round(testLtp)}`);
+        }
       });
     }
 
@@ -4674,8 +4773,11 @@
       if (!d.ok || !d.index_context) return;
       const n50 = d.index_context["NIFTY 50"] || {};
       const bnk = d.index_context["NIFTY BANK"] || {};
+      const snx = d.index_context["SENSEX"] || d.index_context["BSE SENSEX"] || {};
       const n50El = document.getElementById("niftyVal");
       const bnkEl = document.getElementById("bankVal");
+      const snxEl = document.getElementById("sensexVal");
+      const snxChip = document.getElementById("sensexTickerChip");
       if (n50El && n50.percent_change !== undefined) {
         const p = n50.percent_change;
         const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
@@ -4687,6 +4789,13 @@
         const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
         bnkEl.textContent = `${ltpStr}(${pct(p)})`;
         bnkEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+      }
+      if (snxEl && snx.percent_change !== undefined) {
+        if (snxChip) snxChip.style.display = "flex";
+        const p = snx.percent_change;
+        const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
+        snxEl.textContent = `${ltpStr}(${pct(p)})`;
+        snxEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
       }
       if (_sectorPayload) {
         _sectorPayload.index_context = d.index_context;
@@ -4890,8 +4999,11 @@
         } else if (msg.type === "index_update" && msg.index_context) {
           const n50 = msg.index_context["NIFTY 50"] || {};
           const bnk = msg.index_context["NIFTY BANK"] || {};
+          const snx = msg.index_context["SENSEX"] || msg.index_context["BSE SENSEX"] || {};
           const n50El = document.getElementById("niftyVal");
           const bnkEl = document.getElementById("bankVal");
+          const snxEl = document.getElementById("sensexVal");
+          const snxChip = document.getElementById("sensexTickerChip");
           if (n50El && n50.percent_change !== undefined) {
             const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
             n50El.textContent = `${ltpStr}(${pct(n50.percent_change)})`;
@@ -4901,6 +5013,12 @@
             const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
             bnkEl.textContent = `${ltpStr}(${pct(bnk.percent_change)})`;
             bnkEl.style.color = (bnk.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
+          }
+          if (snxEl && snx.percent_change !== undefined) {
+            if (snxChip) snxChip.style.display = "flex";
+            const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
+            snxEl.textContent = `${ltpStr}(${pct(snx.percent_change)})`;
+            snxEl.style.color = (snx.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
           }
         }
       } catch (err) {

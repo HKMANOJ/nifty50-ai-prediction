@@ -569,10 +569,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         except Exception:
             pass
 
-        # Fallback if NSE failed: try Yahoo Finance
-        if not result or "NIFTY 50" not in result:
+        # Ensure SENSEX or any missing index is fetched from Yahoo Finance
+        if "SENSEX" not in result or "NIFTY 50" not in result or "NIFTY BANK" not in result:
             import urllib.request as _ur
-            for symbol, label in [("^NSEI", "NIFTY 50"), ("^NSEBANK", "NIFTY BANK")]:
+            for symbol, label in [("^NSEI", "NIFTY 50"), ("^NSEBANK", "NIFTY BANK"), ("^BSESN", "SENSEX")]:
                 if label in result:
                     continue
                 try:
@@ -1119,7 +1119,13 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 })
 
             name = symbol
-            if upstox_provider._INSTRUMENTS_CACHE is None and upstox_provider.INSTRUMENTS_FILE.exists():
+            if symbol in ("NIFTY 50", "NIFTY50", "NIFTY"):
+                name = "NIFTY 50 Index"
+            elif symbol in ("NIFTY BANK", "BANKNIFTY", "BANK NIFTY"):
+                name = "NIFTY BANK Index"
+            elif symbol in ("SENSEX", "BSESENSEX", "^BSESN", "BSE SENSEX"):
+                name = "BSE SENSEX Index"
+            elif upstox_provider._INSTRUMENTS_CACHE is None and upstox_provider.INSTRUMENTS_FILE.exists():
                 try:
                     upstox_provider._INSTRUMENTS_CACHE = json.loads(upstox_provider.INSTRUMENTS_FILE.read_text(encoding="utf-8"))
                 except Exception:

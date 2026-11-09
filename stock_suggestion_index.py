@@ -336,6 +336,10 @@ class Suggestion:
     top5_streak_minutes: int = 0
     is_early_ignition: bool = False
     is_extended: bool = False
+    is_demand_fresh: bool = False
+    demand_zone: str = ""
+    is_supply_zone: bool = False
+    supply_zone: str = ""
     prev_rank: int | None = None
     rank_velocity: str = "STABLE"
     rank_progression: str = ""
@@ -410,6 +414,10 @@ class Suggestion:
             "top5_streak_minutes": self.top5_streak_minutes,
             "is_early_ignition": self.is_early_ignition,
             "is_extended": self.is_extended,
+            "is_demand_fresh": self.is_demand_fresh,
+            "demand_zone": self.demand_zone,
+            "is_supply_zone": self.is_supply_zone,
+            "supply_zone": self.supply_zone,
             "prev_rank": self.prev_rank,
             "rank_velocity": self.rank_velocity,
             "rank_progression": self.rank_progression,
@@ -846,7 +854,15 @@ def fetch_5m_candles_pipeline(symbol: str, full_range: bool = False) -> dict[str
     # 2. Secondary Fallback: Yahoo Finance
     import scanner_trace
     trace_start = _time.monotonic()
-    yahoo_sym = f"{symbol}.NS"
+    sym_clean = symbol.upper().strip()
+    if sym_clean in ("NIFTY 50", "NIFTY50", "NIFTY"):
+        yahoo_sym = "^NSEI"
+    elif sym_clean in ("NIFTY BANK", "BANKNIFTY", "BANK NIFTY"):
+        yahoo_sym = "^NSEBANK"
+    elif sym_clean in ("SENSEX", "BSESENSEX", "^BSESN", "BSE SENSEX"):
+        yahoo_sym = "^BSESN"
+    else:
+        yahoo_sym = f"{symbol}.NS"
     chart_range = "5d" if full_range else "1d"
     url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range={chart_range}"
     req = urllib.request.Request(
@@ -1004,7 +1020,15 @@ def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], lis
     candidate pool beyond NSE's arbitrary top-20 cutoff."""
     import scanner_trace
     trace_start = _time.monotonic()
-    yahoo_sym = f"{symbol}.NS"
+    sym_clean = symbol.upper().strip()
+    if sym_clean in ("NIFTY 50", "NIFTY50", "NIFTY"):
+        yahoo_sym = "^NSEI"
+    elif sym_clean in ("NIFTY BANK", "BANKNIFTY", "BANK NIFTY"):
+        yahoo_sym = "^NSEBANK"
+    elif sym_clean in ("SENSEX", "BSESENSEX", "^BSESN", "BSE SENSEX"):
+        yahoo_sym = "^BSESN"
+    else:
+        yahoo_sym = f"{symbol}.NS"
     url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range=1d"
     req = urllib.request.Request(
         url,
@@ -2499,9 +2523,66 @@ def build_suggestions(
         status_val = rally["status"] or status_from_score(rally_score, setup)
         if (bo_info.get("is_cascade") or surge_info.get("is_block_surge")) and rally_score >= 65:
             status_val = "Priority Rally"
-        # Matches the frontend bell (MLAIStockV2.html checkAndTriggerBellAlerts):
-        # rings on confirmed breakout or active institutional block surge
-        bell_rang = bool((is_breakout or bo_info.get("is_cascade") or surge_info.get("is_block_surge")) and "near" not in five_min_status.lower())
+
+        # SMC Demand / Supply Order Block Analysis for Precision Audio & Chime Timing
+        is_demand_fresh = False
+        demand_zone_str = ""
+        is_supply_zone = False
+        supply_zone_str = ""
+        try:
+            from smc_volume_profile_engine import detect_order_blocks_and_structure
+            ob_res = detect_order_blocks_and_structure(sym_candles)
+            obs = ob_res.get("order_blocks", [])
+            live_ltp_ob = float(row.get("ltp") or (sym_candles[-1]["close"] if sym_candles else 0.0))
+            recent_candles_ob = sym_candles[-min(len(sym_candles), 6):] if sym_candles else []
+            if side == "bullish":
+                bull_obs = [ob for ob in obs if ob.get("type") == "BULLISH" and not ob.get("mitigated")]
+                for ob in bull_obs:
+                    top_b = float(ob["top"])
+                    bot_b = float(ob["bottom"])
+                    touched = any(c["low"] <= top_b * 1.005 and c["low"] >= bot_b * 0.995 for c in recent_candles_ob)
+                    held = live_ltp_ob >= bot_b * 0.995
+                    in_zone = (bot_b * 0.995 <= live_ltp_ob <= top_b * 1.015)
+                    if (touched and held) or in_zone:
+                        is_demand_fresh = True
+                        st_label = ob.get("status", "Fresh")
+                        demand_zone_str = f"₹{bot_b:.1f}-₹{top_b:.1f} ({st_label})"
+                        break
+            else:
+                bear_obs = [ob for ob in obs if ob.get("type") == "BEARISH" and not ob.get("mitigated")]
+                for ob in bear_obs:
+                    top_s = float(ob["top"])
+                    bot_s = float(ob["bottom"])
+                    touched = any(c["high"] >= bot_s * 0.995 and c["high"] <= top_s * 1.005 for c in recent_candles_ob)
+                    held = live_ltp_ob <= top_s * 1.005
+                    in_zone = (bot_s * 0.985 <= live_ltp_ob <= top_s * 1.005)
+                    if (touched and held) or in_zone:
+                        is_supply_zone = True
+                        st_label = ob.get("status", "Fresh")
+                        supply_zone_str = f"₹{bot_s:.1f}-₹{top_s:.1f} ({st_label})"
+                        break
+        except Exception:
+            pass
+
+        if is_demand_fresh and side == "bullish":
+            rally_score = min(100, rally_score + 10)
+            quality_tags.insert(0, f"🟢 DEMAND · FRESH ({demand_zone_str})")
+        elif is_supply_zone and side == "bearish":
+            rally_score = min(100, rally_score + 10)
+            quality_tags.insert(0, f"🔴 SUPPLY ZONE ({supply_zone_str})")
+
+        # Audio bell trigger condition:
+        # Ring chime on DEMAND · FRESH defense, SUPPLY ZONE test, early Sweet Spot breakout (<2.5%),
+        # or Institutional Block Surge. Extended stocks (>= 3.8%) are suppressed to reduce noise.
+        pct_move_now = abs(float(row.get("percent_change") or 0.0))
+        is_too_ext = (pct_move_now >= 3.8) and not surge_info.get("is_block_surge") and not is_demand_fresh
+        is_sweet_spot_pct = (pct_move_now <= 2.8)
+
+        bell_rang = bool(
+            (is_demand_fresh or is_supply_zone or (is_sweet_spot_pct and is_breakout) or surge_info.get("is_block_surge"))
+            and not is_too_ext
+            and "near" not in five_min_status.lower()
+        )
 
         _high, _low, _prev_close = row.get("high"), row.get("low"), row.get("prev_close")
         day_range_percent = (
@@ -2559,6 +2640,10 @@ def build_suggestions(
                 block_surge_time=surge_info.get("block_surge_time"),
                 block_surge_turnover_cr=float(surge_info.get("block_surge_turnover_cr") or 0.0),
                 block_surge_rvol=float(surge_info.get("block_surge_rvol") or 1.0),
+                is_demand_fresh=is_demand_fresh,
+                demand_zone=demand_zone_str,
+                is_supply_zone=is_supply_zone,
+                supply_zone=supply_zone_str,
             )
         )
 
