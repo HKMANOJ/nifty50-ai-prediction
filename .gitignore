@@ -26,3 +26,4 @@ inputs/upstox_token.json
 scanner_event_log.json
 scanner_event_log.xlsx
 scanner_event_log_full.json
+scratch/
