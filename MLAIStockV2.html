@@ -5654,12 +5654,20 @@
     const fpOhlc = document.getElementById("fpOhlc");
     if (fpOhlc) fpOhlc.textContent = `O:${fp.open} H:${fp.high} L:${fp.low} C:${fp.close}`;
 
+    const isIndexSymbol = ["NIFTY50", "NIFTY 50", "NIFTY", "BANKNIFTY", "BANK NIFTY", "NIFTY BANK", "SENSEX", "BSESENSEX", "^BSESN"].includes((_overviewSymbol || "").toUpperCase());
+
     const fpDelta = document.getElementById("fpNetDelta");
     if (fpDelta) {
-      const isPos = fp.net_delta >= 0;
-      fpDelta.textContent = `Δ ${isPos ? '+' : ''}${Number(fp.net_delta).toLocaleString('en-IN')}`;
-      fpDelta.style.background = isPos ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)';
-      fpDelta.style.color = isPos ? '#34d399' : '#fca5a5';
+      if (isIndexSymbol && (!fp.levels || fp.levels.length === 0)) {
+        fpDelta.textContent = `Spot Benchmark (Vol: 0)`;
+        fpDelta.style.background = 'rgba(56,189,248,0.15)';
+        fpDelta.style.color = '#38bdf8';
+      } else {
+        const isPos = fp.net_delta >= 0;
+        fpDelta.textContent = `Δ ${isPos ? '+' : ''}${Number(fp.net_delta).toLocaleString('en-IN')}`;
+        fpDelta.style.background = isPos ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)';
+        fpDelta.style.color = isPos ? '#34d399' : '#fca5a5';
+      }
     }
 
     // Candle index & navigation buttons
@@ -5728,11 +5736,42 @@
     `;
 
     if (levels.length === 0) {
-      html += `
-        <div style="grid-column: 1 / -1; text-align:center; padding:18px 8px; color:#94a3b8; font-style:italic;">
-          No granular Level-2 depth recorded for this candle bar (OHLC: ₹${fp.open} - ₹${fp.close}).
-        </div>
-      `;
+      if (isIndexSymbol) {
+        html += `
+          <div style="grid-column: 1 / -1; padding: 18px 20px; text-align: left; background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; border-radius: 8px; margin: 10px 4px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px; flex-wrap:wrap; gap:6px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:16px;">🏛️</span>
+                <span style="font-size:12px; font-weight:800; color:#38bdf8; letter-spacing:0.5px;">CASH INDEX BENCHMARK — NO SPOT ORDER BOOK</span>
+              </div>
+              <span style="font-size:10px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3); padding:2px 8px; border-radius:12px; font-weight:700;">
+                Zero Traded Volume on Spot
+              </span>
+            </div>
+            <p style="font-size:11px; color:#cbd5e1; line-height:1.6; margin:0 0 10px 0;">
+              <b>${_overviewSymbol}</b> is a computed composite index (weighted market capitalisation benchmark), <b>not a tradable asset with an order matching book</b>. 
+              Because no buy or sell orders are matched against an index ticker directly, the exchange broadcasts <b>Volume: 0</b> for all spot index candles.
+            </p>
+            <div style="font-size:11px; color:#94a3b8; line-height:1.5; padding:10px 14px; background:rgba(30,41,59,0.7); border-radius:6px; border-left:3px solid #38bdf8;">
+              <div style="color:#e2e8f0; font-weight:700; margin-bottom:4px;">💡 Where Institutional Order Flow & Footprint Live:</div>
+              Real Level-2 Bid/Ask ladders, Aggressor Delta, and Absorption exist on <b>Index Futures</b> or its heavyweight underlying constituents.
+              <div style="margin-top:8px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <span style="font-size:10px; color:#94a3b8; font-weight:600;">Inspect Leading Drivers:</span>
+                <button type="button" onclick="loadStockOverview('HDFCBANK')" style="padding:3px 9px; font-size:10px; font-weight:700; background:#0f172a; color:#38bdf8; border:1px solid #334155; border-radius:4px; cursor:pointer;">HDFCBANK (13%)</button>
+                <button type="button" onclick="loadStockOverview('RELIANCE')" style="padding:3px 9px; font-size:10px; font-weight:700; background:#0f172a; color:#38bdf8; border:1px solid #334155; border-radius:4px; cursor:pointer;">RELIANCE (10%)</button>
+                <button type="button" onclick="loadStockOverview('ICICIBANK')" style="padding:3px 9px; font-size:10px; font-weight:700; background:#0f172a; color:#38bdf8; border:1px solid #334155; border-radius:4px; cursor:pointer;">ICICIBANK (8%)</button>
+                <button type="button" onclick="loadStockOverview('INFY')" style="padding:3px 9px; font-size:10px; font-weight:700; background:#0f172a; color:#38bdf8; border:1px solid #334155; border-radius:4px; cursor:pointer;">INFY (6%)</button>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        html += `
+          <div style="grid-column: 1 / -1; text-align:center; padding:18px 8px; color:#94a3b8; font-style:italic;">
+            No granular Level-2 depth recorded for this candle bar (OHLC: ₹${fp.open} - ₹${fp.close}).
+          </div>
+        `;
+      }
     } else {
       levels.forEach(lv => {
         const bidPct = Math.round(((lv.bid_vol || 0) / maxVol) * 100);
@@ -5765,13 +5804,15 @@
     }
 
     // Summary row
-    const totalBid = (fp.levels || []).reduce((s, l) => s + (l.bid_vol || 0), 0);
-    const totalAsk = (fp.levels || []).reduce((s, l) => s + (l.ask_vol || 0), 0);
-    html += `
-      <div style="text-align:right; padding:6px 8px; border-top:2px solid #334155; color:#f87171; font-weight:900;">${Number(totalBid).toLocaleString('en-IN')}</div>
-      <div style="text-align:center; padding:6px 4px; border-top:2px solid #334155; color:#64748b; font-weight:800;">TOTAL</div>
-      <div style="text-align:left; padding:6px 8px; border-top:2px solid #334155; color:#34d399; font-weight:900;">${Number(totalAsk).toLocaleString('en-IN')}</div>
-    `;
+    if (levels.length > 0) {
+      const totalBid = (fp.levels || []).reduce((s, l) => s + (l.bid_vol || 0), 0);
+      const totalAsk = (fp.levels || []).reduce((s, l) => s + (l.ask_vol || 0), 0);
+      html += `
+        <div style="text-align:right; padding:6px 8px; border-top:2px solid #334155; color:#f87171; font-weight:900;">${Number(totalBid).toLocaleString('en-IN')}</div>
+        <div style="text-align:center; padding:6px 4px; border-top:2px solid #334155; color:#64748b; font-weight:800;">TOTAL</div>
+        <div style="text-align:left; padding:6px 8px; border-top:2px solid #334155; color:#34d399; font-weight:900;">${Number(totalAsk).toLocaleString('en-IN')}</div>
+      `;
+    }
 
     ladder.innerHTML = html;
     requestAnimationFrame(renderVolumeProfileCanvas);
@@ -6191,23 +6232,37 @@
       }
 
       const abs = of.absorption || {};
+      const isIndexSymbol = ["NIFTY50", "NIFTY 50", "NIFTY", "BANKNIFTY", "BANK NIFTY", "NIFTY BANK", "SENSEX", "BSESENSEX", "^BSESN"].includes((_overviewSymbol || "").toUpperCase());
       if (absBadge) {
-        absBadge.textContent = abs.label || "⚡ Neutral Order Flow";
-        if (abs.type === "Buyer Side Absorption") {
-          absBadge.style.background = "#ecfdf5";
-          absBadge.style.color = "#065f46";
-          absBadge.style.borderColor = "#a7f3d0";
-        } else if (abs.type === "Seller Side Absorption") {
-          absBadge.style.background = "#fef2f2";
-          absBadge.style.color = "#991b1b";
-          absBadge.style.borderColor = "#fecaca";
+        if (isIndexSymbol && (!of.total_volume || of.total_volume === 0)) {
+          absBadge.textContent = "🏛️ Spot Cash Index";
+          absBadge.style.background = "rgba(56,189,248,0.15)";
+          absBadge.style.color = "#38bdf8";
+          absBadge.style.borderColor = "rgba(56,189,248,0.3)";
         } else {
-          absBadge.style.background = "#f1f5f9";
-          absBadge.style.color = "#475569";
-          absBadge.style.borderColor = "#cbd5e1";
+          absBadge.textContent = abs.label || "⚡ Neutral Order Flow";
+          if (abs.type === "Buyer Side Absorption") {
+            absBadge.style.background = "#ecfdf5";
+            absBadge.style.color = "#065f46";
+            absBadge.style.borderColor = "#a7f3d0";
+          } else if (abs.type === "Seller Side Absorption") {
+            absBadge.style.background = "#fef2f2";
+            absBadge.style.color = "#991b1b";
+            absBadge.style.borderColor = "#fecaca";
+          } else {
+            absBadge.style.background = "#f1f5f9";
+            absBadge.style.color = "#475569";
+            absBadge.style.borderColor = "#cbd5e1";
+          }
         }
       }
-      if (absDesc) absDesc.textContent = abs.description || "Normal order flow distribution.";
+      if (absDesc) {
+        if (isIndexSymbol && (!of.total_volume || of.total_volume === 0)) {
+          absDesc.textContent = "Spot index has no central limit order book (Vol: 0). Monitor Index Futures or constituents for true order flow.";
+        } else {
+          absDesc.textContent = abs.description || "Normal order flow distribution.";
+        }
+      }
 
       if (_ovChart) {
         if (!options.silent) {
