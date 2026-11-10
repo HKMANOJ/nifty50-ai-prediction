@@ -608,10 +608,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     raise ValueError("missing alert_event_id")
                 from stock_suggestion_index import acknowledge_alert
                 acked = acknowledge_alert(event_id, client_id=body.get("client_id"))
-                if not acked:
-                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "unknown_or_invalid_event_id"})
-                    return
-                self._send_json(HTTPStatus.OK, {"ok": True, "alert_event_id": event_id, "acknowledged": True})
+                self._send_json(HTTPStatus.OK, {"ok": True, "alert_event_id": event_id, "acknowledged": bool(acked)})
             except Exception as exc:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
             return
