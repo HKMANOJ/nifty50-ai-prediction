@@ -338,8 +338,10 @@ class Suggestion:
     is_extended: bool = False
     is_demand_fresh: bool = False
     demand_zone: str = ""
+    demand_fresh_time: str | None = None
     is_supply_zone: bool = False
     supply_zone: str = ""
+    supply_zone_time: str | None = None
     prev_rank: int | None = None
     rank_velocity: str = "STABLE"
     rank_progression: str = ""
@@ -416,8 +418,10 @@ class Suggestion:
             "is_extended": self.is_extended,
             "is_demand_fresh": self.is_demand_fresh,
             "demand_zone": self.demand_zone,
+            "demand_fresh_time": self.demand_fresh_time,
             "is_supply_zone": self.is_supply_zone,
             "supply_zone": self.supply_zone,
+            "supply_zone_time": self.supply_zone_time,
             "prev_rank": self.prev_rank,
             "rank_velocity": self.rank_velocity,
             "rank_progression": self.rank_progression,
@@ -2531,8 +2535,10 @@ def build_suggestions(
         # SMC Demand / Supply Order Block Analysis for Precision Audio & Chime Timing
         is_demand_fresh = False
         demand_zone_str = ""
+        demand_fresh_time = None
         is_supply_zone = False
         supply_zone_str = ""
+        supply_zone_time = None
         try:
             from smc_volume_profile_engine import detect_order_blocks_and_structure
             ob_res = detect_order_blocks_and_structure(sym_candles)
@@ -2541,39 +2547,55 @@ def build_suggestions(
             recent_candles_ob = sym_candles[-min(len(sym_candles), 6):] if sym_candles else []
             if side == "bullish":
                 bull_obs = [ob for ob in obs if ob.get("type") == "BULLISH" and not ob.get("mitigated")]
+                # Prioritize genuinely Fresh demand bases first, then latest by time
+                bull_obs.sort(key=lambda x: (0 if x.get("status") == "Fresh" else 1, -x.get("time", 0)))
                 for ob in bull_obs:
                     top_b = float(ob["top"])
                     bot_b = float(ob["bottom"])
                     touched = any(c["low"] <= top_b * 1.005 and c["low"] >= bot_b * 0.995 for c in recent_candles_ob)
                     held = live_ltp_ob >= bot_b * 0.995
                     in_zone = (bot_b * 0.995 <= live_ltp_ob <= top_b * 1.015)
-                    if (touched and held) or in_zone:
+                    is_fresh_ob = (ob.get("status") == "Fresh")
+                    if (is_fresh_ob and held) or (touched and held) or in_zone:
                         is_demand_fresh = True
                         st_label = ob.get("status", "Fresh")
                         demand_zone_str = f"₹{bot_b:.1f}-₹{top_b:.1f} ({st_label})"
+                        if ob.get("time"):
+                            demand_fresh_time = datetime.fromtimestamp(ob["time"] + 300, tz=INDIA_TZ).strftime("%I:%M %p")
+                        elif sym_candles:
+                            demand_fresh_time = datetime.fromtimestamp(sym_candles[-1]["timestamp"] + 300, tz=INDIA_TZ).strftime("%I:%M %p")
                         break
             else:
                 bear_obs = [ob for ob in obs if ob.get("type") == "BEARISH" and not ob.get("mitigated")]
+                # Prioritize genuinely Fresh supply zones first, then latest by time
+                bear_obs.sort(key=lambda x: (0 if x.get("status") == "Fresh" else 1, -x.get("time", 0)))
                 for ob in bear_obs:
                     top_s = float(ob["top"])
                     bot_s = float(ob["bottom"])
                     touched = any(c["high"] >= bot_s * 0.995 and c["high"] <= top_s * 1.005 for c in recent_candles_ob)
                     held = live_ltp_ob <= top_s * 1.005
                     in_zone = (bot_s * 0.985 <= live_ltp_ob <= top_s * 1.005)
-                    if (touched and held) or in_zone:
+                    is_fresh_ob = (ob.get("status") == "Fresh")
+                    if (is_fresh_ob and held) or (touched and held) or in_zone:
                         is_supply_zone = True
                         st_label = ob.get("status", "Fresh")
                         supply_zone_str = f"₹{bot_s:.1f}-₹{top_s:.1f} ({st_label})"
+                        if ob.get("time"):
+                            supply_zone_time = datetime.fromtimestamp(ob["time"] + 300, tz=INDIA_TZ).strftime("%I:%M %p")
+                        elif sym_candles:
+                            supply_zone_time = datetime.fromtimestamp(sym_candles[-1]["timestamp"] + 300, tz=INDIA_TZ).strftime("%I:%M %p")
                         break
         except Exception:
             pass
 
         if is_demand_fresh and side == "bullish":
             rally_score = min(100, rally_score + 10)
-            quality_tags.insert(0, f"🟢 DEMAND · FRESH ({demand_zone_str})")
+            tag_time = f" [{demand_fresh_time}]" if demand_fresh_time else ""
+            quality_tags.insert(0, f"🟢 DEMAND · FRESH ({demand_zone_str}){tag_time}")
         elif is_supply_zone and side == "bearish":
             rally_score = min(100, rally_score + 10)
-            quality_tags.insert(0, f"🔴 SUPPLY ZONE ({supply_zone_str})")
+            tag_time = f" [{supply_zone_time}]" if supply_zone_time else ""
+            quality_tags.insert(0, f"🔴 SUPPLY ZONE ({supply_zone_str}){tag_time}")
 
         # Audio bell trigger condition:
         # Ring chime on DEMAND · FRESH defense, SUPPLY ZONE test, early Sweet Spot breakout (<2.5%),
@@ -2646,8 +2668,10 @@ def build_suggestions(
                 block_surge_rvol=float(surge_info.get("block_surge_rvol") or 1.0),
                 is_demand_fresh=is_demand_fresh,
                 demand_zone=demand_zone_str,
+                demand_fresh_time=demand_fresh_time,
                 is_supply_zone=is_supply_zone,
                 supply_zone=supply_zone_str,
+                supply_zone_time=supply_zone_time,
             )
         )
 
@@ -3183,6 +3207,14 @@ def _process_candidate_lifecycle(
             entry["block_surge_time"] = item.block_surge_time
             entry["block_surge_turnover_cr"] = item.block_surge_turnover_cr
             entry["block_surge_rvol"] = item.block_surge_rvol
+        if getattr(item, "is_demand_fresh", False):
+            entry["is_demand_fresh"] = True
+            entry["demand_zone"] = item.demand_zone
+            entry["demand_fresh_time"] = item.demand_fresh_time
+        if getattr(item, "is_supply_zone", False):
+            entry["is_supply_zone"] = True
+            entry["supply_zone"] = item.supply_zone
+            entry["supply_zone_time"] = item.supply_zone_time
 
         # Rule 9: Preserve original timestamps; do not overwrite during refreshes
         if is_qualified and not entry.get("first_qualified_at"):
@@ -3325,6 +3357,14 @@ def _process_candidate_lifecycle(
     d["should_alert"] = should_alert
     d["alert_count"] = entry.get("alert_count", 0)
     d["bell_rang"] = should_alert
+    if not d.get("demand_fresh_time") and entry.get("demand_fresh_time"):
+        d["demand_fresh_time"] = entry.get("demand_fresh_time")
+        d["is_demand_fresh"] = True
+        d["demand_zone"] = entry.get("demand_zone") or d.get("demand_zone")
+    if not d.get("supply_zone_time") and entry.get("supply_zone_time"):
+        d["supply_zone_time"] = entry.get("supply_zone_time")
+        d["is_supply_zone"] = True
+        d["supply_zone"] = entry.get("supply_zone") or d.get("supply_zone")
 
     return Suggestion(**d)
 

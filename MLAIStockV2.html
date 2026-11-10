@@ -2381,26 +2381,29 @@
     const type = isPE ? "bearish" : "bullish";
     const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
     const freshTag = item.breakout_freshness === "FRESH" ? " · ⚡ FRESH" : (item.breakout_freshness === "RETEST" ? " · 🔄 RETEST" : "");
-    const timeDisplay = item.block_surge_time || item.breakout_time || item.alert_created_at || "";
 
     // Check SMC Demand Fresh & Supply Zone triggers:
     const qTags = item.quality_tags || [];
     const isDemand = Boolean(item.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH") || t.includes("Retest Hold")));
     const isSupply = Boolean(item.is_supply_zone || qTags.some(t => t.includes("SUPPLY ZONE")));
 
+    const demandTime = item.demand_fresh_time || item.block_surge_time || item.breakout_time || item.alert_created_at || "";
+    const supplyTime = item.supply_zone_time || item.block_surge_time || item.breakout_time || item.alert_created_at || "";
+    const timeDisplay = isDemand ? demandTime : (isSupply ? supplyTime : (item.block_surge_time || item.breakout_time || item.alert_created_at || ""));
+
     let statusText = isPE ? `🔴 BREAKDOWN ${timeDisplay}${freshTag}` : `🟢 BREAKOUT ${timeDisplay}${freshTag}`;
     let bannerText = `<div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ ALL PRIORITY CRITERIA MET</div>`;
 
     if (isDemand && !isPE) {
       const dZone = item.demand_zone ? ` [${item.demand_zone}]` : "";
-      statusText = `🟢 DEMAND · FRESH${dZone} ${timeDisplay}`;
+      statusText = `🟢 DEMAND · FRESH ${timeDisplay}${dZone}`;
       bannerText = `<div style="font-size:10px; font-weight:800; color:#047857; background:#d1fae5; border:1px solid #6ee7b7; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">🛡️ DEMAND FRESH BASE DEFENDED · LOW-RISK SWEET SPOT</div>`;
     } else if (isSupply && isPE) {
       const sZone = item.supply_zone ? ` [${item.supply_zone}]` : "";
-      statusText = `🔴 SUPPLY ZONE TESTED${sZone} ${timeDisplay}`;
+      statusText = `🔴 SUPPLY ZONE TESTED ${timeDisplay}${sZone}`;
       bannerText = `<div style="font-size:10px; font-weight:800; color:#b91c1c; background:#fee2e2; border:1px solid #fca5a5; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL SUPPLY REJECTION · SHORT ENTRY</div>`;
     } else if (isSurge) {
-      statusText = item.block_surge_type || (isPE ? "⚡ BLOCK SURGE (SELL)" : "⚡ BLOCK SURGE (BUY)");
+      statusText = item.block_surge_type || (isPE ? `⚡ BLOCK SURGE (SELL) ${timeDisplay}` : `⚡ BLOCK SURGE (BUY) ${timeDisplay}`);
       bannerText = `<div style="font-size:10px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:4px; padding:2px 4px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BLOCK SURGE · ₹${item.block_surge_turnover_cr || 0}Cr (${item.block_surge_rvol || 1}x)</div>`;
     }
 
@@ -2524,9 +2527,11 @@
 
         // Institutional Desk Voice Announcement
         if (isDemandFresh && !isBreakdown) {
-          speakVoiceAlert(`Demand Fresh on ${row.symbol} at ${Math.round(row.ltp || row.entry || 0)}`);
+          const tText = row.demand_fresh_time ? ` at ${row.demand_fresh_time}` : "";
+          speakVoiceAlert(`Demand Fresh on ${row.symbol}${tText} at ${Math.round(row.ltp || row.entry || 0)}`);
         } else if (isSupplyZone && isBreakdown) {
-          speakVoiceAlert(`Supply Zone on ${row.symbol} at ${Math.round(row.ltp || row.entry || 0)}`);
+          const tText = row.supply_zone_time ? ` at ${row.supply_zone_time}` : "";
+          speakVoiceAlert(`Supply Zone on ${row.symbol}${tText} at ${Math.round(row.ltp || row.entry || 0)}`);
         } else if (isBlockSurge) {
           speakVoiceAlert(`Block Surge on ${row.symbol}`);
         } else {
@@ -3697,9 +3702,20 @@
       const streakMin = row.top5_streak_minutes || 0;
       const isEarly = isEarlyIgnitionRow(row);
       const isExt = isExtendedRow(row);
+      const qTags = row.quality_tags || [];
+      const isDemand = Boolean(row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH")));
+      const isSupply = Boolean(row.is_supply_zone || qTags.some(t => t.includes("SUPPLY ZONE")));
 
       const streakBadge = (streakMin > 0 && idx < 5)
         ? `<span class="top5-streak-pill ${isUp ? 'green' : 'red'}" style="font-size:9px; padding:0 4px;" title="Continuous time in Top 5 (resets if dropped below rank 5)">⏱️ ${streakMin}m</span>`
+        : "";
+
+      const demandPill = isDemand
+        ? `<span style="font-size:8.5px; font-weight:800; background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:1px 5px; border-radius:3px; letter-spacing:0.02em;" title="Institutional Demand Fresh Base at ${row.demand_fresh_time || ''}">🟢 DEMAND · FRESH ${row.demand_fresh_time || ''}</span>`
+        : "";
+
+      const supplyPill = isSupply
+        ? `<span style="font-size:8.5px; font-weight:800; background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; padding:1px 5px; border-radius:3px; letter-spacing:0.02em;" title="Institutional Supply Zone at ${row.supply_zone_time || ''}">🔴 SUPPLY · ZONE ${row.supply_zone_time || ''}</span>`
         : "";
 
       const earlyPill = isEarly
@@ -3722,6 +3738,8 @@
               <span class="item-symbol">${row.symbol} ${row.lot_size ? `<span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${row.lot_size}</span>` : ""} ${row.is_block_surge ? `<span style="font-size:8px; font-weight:800; background:#f5f3ff; color:#6d28d9; border:1px solid #c4b5fd; padding:1px 4px; border-radius:3px; margin-left:3px;">⚡ BLOCK ${row.block_surge_turnover_cr ? '₹' + row.block_surge_turnover_cr.toFixed(0) + 'Cr' : ''}</span>` : ""}</span>
               <div style="display:flex; align-items:center; gap:4px; margin-top:2px; flex-wrap:wrap;">
                 <span class="item-setup-tag">${row.setup || "OI Confirmed"}${streakBadge}</span>
+                ${demandPill}
+                ${supplyPill}
                 ${earlyPill}
                 ${surgePill}
                 ${extPill}
@@ -3778,12 +3796,24 @@
       const isCascade = Boolean(row.is_cascade || st.includes("waterfall") || st.includes("impulse"));
       const isBreakout = Boolean(row.is_breakout || st.includes("breakout"));
       const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
-      const timeStr = (row.breakout_time || row.cascade_time) ? ` ${row.breakout_time || row.cascade_time}` : "";
+
+      // SMC Demand Fresh & Supply Zone triggers:
+      const qTags = row.quality_tags || [];
+      const isDemand = Boolean(row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH")));
+      const isSupply = Boolean(row.is_supply_zone || qTags.some(t => t.includes("SUPPLY ZONE")));
+      const eventTime = isDemand ? (row.demand_fresh_time || row.breakout_time) : (isSupply ? (row.supply_zone_time || row.breakout_time) : (row.breakout_time || row.cascade_time));
+      const timeStr = eventTime ? ` ${eventTime}` : "";
 
       let statusBadge = "";
       let boCls = "wait";
 
-      if (isCascade) {
+      if (isDemand && !isBreakdown) {
+        statusBadge = `🟢 DEMAND · FRESH${timeStr}`;
+        boCls = "bo";
+      } else if (isSupply && isBreakdown) {
+        statusBadge = `🔴 SUPPLY ZONE${timeStr}`;
+        boCls = "bd";
+      } else if (isCascade) {
         if (!isUp || isBreakdown) {
           statusBadge = `⚡ WATERFALL${timeStr}`;
           boCls = "waterfall";
@@ -4583,6 +4613,8 @@
         showStickyToast({
           symbol: testSym,
           breakout_time: _testTogglePE ? "10:05 AM" : "10:20 AM",
+          demand_fresh_time: "02:05 PM",
+          supply_zone_time: "01:45 PM",
           score: 100,
           one_side_rally_score: 100,
           status: "Priority Rally",
@@ -4601,9 +4633,9 @@
         }, _testTogglePE, true);
 
         if (!_testTogglePE) {
-          speakVoiceAlert(`Demand Fresh on ${testSym} at ${Math.round(testLtp)}`);
+          speakVoiceAlert(`Demand Fresh on ${testSym} at 02:05 PM at ${Math.round(testLtp)}`);
         } else {
-          speakVoiceAlert(`Supply Zone on ${testSym} at ${Math.round(testLtp)}`);
+          speakVoiceAlert(`Supply Zone on ${testSym} at 01:45 PM at ${Math.round(testLtp)}`);
         }
       });
     }
