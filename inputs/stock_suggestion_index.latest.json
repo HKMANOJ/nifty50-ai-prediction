@@ -83,7 +83,7 @@
       "move_from_open_percent": 3.91,
       "index_context": "NIFTY +0.23% | BANKNIFTY +1.51% | strong relative strength",
       "quality_tags": [
-        "\ud83d\udfe2 DEMAND \u00b7 FRESH (\u20b91271.9-\u20b91277.8 (Fresh))",
+        "\ud83d\udfe2 DEMAND \u00b7 FRESH (\u20b91271.9-\u20b91277.8 (Fresh)) [02:30 PM]",
         "\ud83d\udd04 Retest Hold",
         "\u26a1 3-Bar Impulse (02:25 PM, 18% body)",
         "massive volume buildup (70688.6x)",
@@ -153,7 +153,8 @@
       "signal_id": "sig_479d09cf0b08df5156a23a35",
       "snapshot_id": "scan_1f06c856ee5749f4bac3eea1f9ab4063",
       "wave_id": "wave_eb18cc175aaad179e565d827",
-      "first_qualified_at_ist": "2026-11-10T09:40:10.160+05:30"
+      "first_qualified_at_ist": "2026-11-10T09:40:10.160+05:30",
+      "demand_fresh_time": "02:30 PM"
     },
     {
       "symbol": "NESTLEIND",
