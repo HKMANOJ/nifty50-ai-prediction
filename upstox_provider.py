@@ -281,20 +281,22 @@ def validate_candles_integrity(
 
     latest_c = candles_5m[-1]
     candle_dt = datetime.fromtimestamp(latest_c["timestamp"], tz=INDIA_TZ)
+    is_today_candle = (candle_dt.date() == now_ist.date())
 
-    if is_live_session:
-        if candle_dt.date() != now_ist.date():
-            return False, f"stale_session_date_{candle_dt.date()}_expected_{now_ist.date()}"
-        age_minutes = (now_ist - candle_dt).total_seconds() / 60.0
-        if age_minutes > 20:
-            return False, f"excessive_lag_minutes_{round(age_minutes, 1)}"
-    elif not allow_multi_day:
-        # Verify consistent intraday session date
-        first_c = candles_5m[0]
-        first_dt = datetime.fromtimestamp(first_c["timestamp"], tz=INDIA_TZ)
-        if first_dt.date() != candle_dt.date():
-            # Spanning multiple days in a single intraday session
-            return False, "multi_date_spanning_intraday_candles"
+    # For full_range/multi-day charts (allow_multi_day=True), allow historical 5-day candles
+    # For single intraday session, only enforce lag check if today is actively trading with today's candles
+    if not allow_multi_day:
+        if is_live_session and is_today_candle:
+            age_minutes = (now_ist - candle_dt).total_seconds() / 60.0
+            if age_minutes > 25:
+                return False, f"excessive_lag_minutes_{round(age_minutes, 1)}"
+        else:
+            # Verify consistent intraday session date
+            first_c = candles_5m[0]
+            first_dt = datetime.fromtimestamp(first_c["timestamp"], tz=INDIA_TZ)
+            if first_dt.date() != candle_dt.date():
+                # Spanning multiple days in a single intraday session
+                return False, "multi_date_spanning_intraday_candles"
 
     return True, "valid"
 
@@ -317,8 +319,13 @@ def separate_completed_and_forming(
     current_minutes = now_ist.hour * 60 + now_ist.minute
     is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
 
-    if not is_live_session:
-        # Outside live market hours, all candles from the last session are closed and completed
+    latest_c = candles_5m[-1]
+    latest_dt = datetime.fromtimestamp(latest_c["timestamp"], tz=INDIA_TZ)
+    is_today_candle = (latest_dt.date() == now_ist.date())
+
+    if not is_live_session or not is_today_candle:
+        # Outside live market hours or if today is a holiday/weekend (candles are from prior session),
+        # all candles from the last session are closed and completed
         return list(candles_5m), None
 
     for c in candles_5m:

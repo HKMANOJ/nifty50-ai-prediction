@@ -963,10 +963,10 @@ def fetch_5m_candles_pipeline(symbol: str, full_range: bool = False) -> dict[str
         if c_candles:
             current_minutes = now_ist.hour * 60 + now_ist.minute
             is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
-            if is_live_session:
+            if is_live_session and not full_range:
                 latest_dt = datetime.fromtimestamp(c_candles[-1]["timestamp"], tz=INDIA_TZ).date()
                 if latest_dt != now_ist.date():
-                    c_candles = []
+                    pass
         if c_candles:
             latest_epoch = c_candles[-1]["timestamp"]
             latest_ist = datetime.fromtimestamp(latest_epoch, tz=INDIA_TZ).strftime("%I:%M %p")
@@ -1376,8 +1376,10 @@ def detect_institutional_block_surge(
     is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
     if is_live_session:
         today_date = now_ist.date()
-        candles_1m = [c for c in (candles_1m or []) if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
-        candles_5m = [c for c in (candles_5m or []) if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
+        if any(datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date for c in (candles_5m or [])):
+            candles_5m = [c for c in candles_5m if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
+        if any(datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date for c in (candles_1m or [])):
+            candles_1m = [c for c in candles_1m if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
 
     day_low = float(row.get("low") or row.get("ltp") or 0.0)
     day_high = float(row.get("high") or row.get("ltp") or 0.0)
@@ -1500,7 +1502,8 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
     is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
     if is_live_session:
         today_date = now_ist.date()
-        candles = [c for c in (candles or []) if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
+        if any(datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date for c in (candles or [])):
+            candles = [c for c in candles if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
 
     if len(candles) < 2:
         # No intraday candles came back (upstream slow/blocked or early 09:15-09:20 AM window).
