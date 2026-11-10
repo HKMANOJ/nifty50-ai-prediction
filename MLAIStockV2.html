@@ -2329,19 +2329,13 @@
   }
 
   function speakVoiceAlert(text) {
-    if (!_bellSoundEnabled) return;
+    // Disabled per user preference - only crisp bell chime sound is played
     try {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.rate = 1.05;
-        utter.pitch = 1.0;
-        utter.lang = 'en-IN';
-        window.speechSynthesis.speak(utter);
       }
-    } catch (e) {
-      console.warn("Speech synthesis error:", e);
-    }
+    } catch (e) {}
+    return;
   }
 
   function showStickyToast(x, isPE, force = false) {
