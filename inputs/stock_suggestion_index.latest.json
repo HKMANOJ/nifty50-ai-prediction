@@ -3962,7 +3962,7 @@
       "move_from_open_percent": -2.14,
       "index_context": "NIFTY +0.23% | BANKNIFTY +1.51% | strong relative weakness",
       "quality_tags": [
-        "\ud83d\udd34 SUPPLY ZONE (\u20b91272.7-\u20b91277.6 (Tested))",
+        "\ud83d\udd34 BEAR OB \u00b7 FRESH (INR 1272.7-1277.6 (Tested)) [02:20 PM]",
         "\ud83d\udd04 Retest Hold",
         "5m Breakout (09:25 AM)",
         "massive volume buildup (11663.0x)",
@@ -4024,14 +4024,15 @@
       "is_demand_fresh": false,
       "demand_zone": "",
       "is_supply_zone": true,
-      "supply_zone": "\u20b91272.7-\u20b91277.6 (Tested)",
+      "supply_zone": "INR 1272.7-1277.6 (Tested)",
       "prev_rank": 4,
       "rank_velocity": "SURGING",
       "rank_progression": "#4 \u2794 #1",
       "signal_id": "sig_f75a7a3cc45da08919e356e1",
       "snapshot_id": "scan_1f06c856ee5749f4bac3eea1f9ab4063",
       "wave_id": "wave_ad3652b571e4aa5a451f1700",
-      "first_qualified_at_ist": "2026-11-10T09:40:10.160+05:30"
+      "first_qualified_at_ist": "2026-11-10T09:40:10.160+05:30",
+      "supply_zone_time": "02:20 PM"
     },
     {
       "symbol": "MAXHEALTH",
@@ -4055,7 +4056,7 @@
       "move_from_open_percent": -1.82,
       "index_context": "NIFTY +0.23% | BANKNIFTY +1.51% | strong relative weakness",
       "quality_tags": [
-        "\ud83d\udd34 SUPPLY ZONE (\u20b9914.5-\u20b9915.5 (Tested))",
+        "\ud83d\udd34 BEAR OB \u00b7 FRESH (INR 921.65-923.4 (Fresh)) [01:40 PM]",
         "\u26a1 3-Bar Waterfall (02:30 PM, 48% body)",
         "\u26a1 BLOCK SURGE (SELL) (03:25 PM, \u20b911.9Cr, 9x vol)",
         "holding lower range (16%)",
@@ -4116,14 +4117,15 @@
       "is_demand_fresh": false,
       "demand_zone": "",
       "is_supply_zone": true,
-      "supply_zone": "\u20b9914.5-\u20b9915.5 (Tested)",
+      "supply_zone": "INR 921.65-923.4 (Fresh)",
       "prev_rank": 4,
       "rank_velocity": "SURGING",
       "rank_progression": "#4 \u2794 #2",
       "signal_id": "sig_dd037545eed023c59cad3c83",
       "snapshot_id": "scan_1f06c856ee5749f4bac3eea1f9ab4063",
       "wave_id": "wave_f37d3125affc1275dbe11a08",
-      "first_qualified_at_ist": "2026-11-10T09:41:07.546+05:30"
+      "first_qualified_at_ist": "2026-11-10T09:41:07.546+05:30",
+      "supply_zone_time": "01:40 PM"
     },
     {
       "symbol": "ADANIENT",
@@ -4147,7 +4149,7 @@
       "move_from_open_percent": -1.22,
       "index_context": "NIFTY +0.23% | BANKNIFTY +1.51% | strong relative weakness",
       "quality_tags": [
-        "\ud83d\udd34 SUPPLY ZONE (\u20b92707.9-\u20b92710.6 (Fresh))",
+        "\ud83d\udd34 BEAR OB \u00b7 FRESH (INR 2706.8-2710.7 (Tested)) [03:05 PM]",
         "\ud83d\udd04 Retest Hold",
         "5m Breakout (09:35 AM)",
         "above-average volume (1.0x)",
@@ -4207,14 +4209,15 @@
       "is_demand_fresh": false,
       "demand_zone": "",
       "is_supply_zone": true,
-      "supply_zone": "\u20b92707.9-\u20b92710.6 (Fresh)",
+      "supply_zone": "INR 2706.8-2710.7 (Tested)",
       "prev_rank": 5,
       "rank_velocity": "SURGING",
       "rank_progression": "#5 \u2794 #3",
       "signal_id": "sig_1703dec110a224288b7af4e8",
       "snapshot_id": "scan_1f06c856ee5749f4bac3eea1f9ab4063",
       "wave_id": "wave_046e353c04384ecda7739c63",
-      "first_qualified_at_ist": "2026-11-10T09:40:10.160+05:30"
+      "first_qualified_at_ist": "2026-11-10T09:40:10.160+05:30",
+      "supply_zone_time": "03:05 PM"
     },
     {
       "symbol": "HYUNDAI",
@@ -4238,7 +4241,7 @@
       "move_from_open_percent": -1.17,
       "index_context": "NIFTY +0.23% | BANKNIFTY +1.51% | strong relative weakness",
       "quality_tags": [
-        "\ud83d\udd34 SUPPLY ZONE (\u20b92114.4-\u20b92117.6 (Fresh))",
+        "\ud83d\udd34 BEAR OB \u00b7 FRESH (INR 2114.1-2117.6 (Fresh)) [03:10 PM]",
         "\ud83d\udd04 Retest Hold",
         "\u26a1 3-Bar Waterfall (01:00 PM, 17% body)",
         "\u26a1 BLOCK SURGE (SELL) (03:10 PM, \u20b911.9Cr, 12x vol)",
@@ -4298,14 +4301,15 @@
       "is_demand_fresh": false,
       "demand_zone": "",
       "is_supply_zone": true,
-      "supply_zone": "\u20b92114.4-\u20b92117.6 (Fresh)",
+      "supply_zone": "INR 2114.1-2117.6 (Fresh)",
       "prev_rank": 3,
       "rank_velocity": "DROPPING",
       "rank_progression": "#3 \u2794 #4",
       "signal_id": "sig_f8381f1b37d28bfb97041235",
       "snapshot_id": "scan_1f06c856ee5749f4bac3eea1f9ab4063",
       "wave_id": "wave_bda6342c63d4b6ba20a34836",
-      "first_qualified_at_ist": "2026-11-10T09:40:10.160+05:30"
+      "first_qualified_at_ist": "2026-11-10T09:40:10.160+05:30",
+      "supply_zone_time": "03:10 PM"
     },
     {
       "symbol": "SUNPHARMA",
@@ -4329,7 +4333,7 @@
       "move_from_open_percent": -0.56,
       "index_context": "NIFTY +0.23% | BANKNIFTY +1.51% | market not supportive",
       "quality_tags": [
-        "\ud83d\udd34 SUPPLY ZONE (\u20b91905.1-\u20b91912.7 (Tested))",
+        "\ud83d\udd34 BEAR OB \u00b7 FRESH (INR 1905.1-1912.7 (Tested)) [02:20 PM]",
         "\u23f3 Coiling Near Rail",
         "5m Breakout (01:40 PM)",
         "\u26a1 BLOCK SURGE (SELL) (03:25 PM, \u20b935.4Cr, 6x vol)",
@@ -4392,14 +4396,15 @@
       "is_demand_fresh": false,
       "demand_zone": "",
       "is_supply_zone": true,
-      "supply_zone": "\u20b91905.1-\u20b91912.7 (Tested)",
+      "supply_zone": "INR 1905.1-1912.7 (Tested)",
       "prev_rank": 1,
       "rank_velocity": "DROPPING",
       "rank_progression": "#1 \u2794 #5",
       "signal_id": "sig_0797c43c52ae7507db57abef",
       "snapshot_id": "scan_1f06c856ee5749f4bac3eea1f9ab4063",
       "wave_id": "wave_20a7df3f02837f3327155b6e",
-      "first_qualified_at_ist": "2026-11-10T09:41:07.546+05:30"
+      "first_qualified_at_ist": "2026-11-10T09:41:07.546+05:30",
+      "supply_zone_time": "02:20 PM"
     }
   ],
   "warnings": [],

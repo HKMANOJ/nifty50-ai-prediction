@@ -2595,13 +2595,13 @@ def build_suggestions(
         elif is_supply_zone and side == "bearish":
             rally_score = min(100, rally_score + 10)
             tag_time = f" [{supply_zone_time}]" if supply_zone_time else ""
-            quality_tags.insert(0, f"🔴 SUPPLY ZONE ({supply_zone_str}){tag_time}")
+            quality_tags.insert(0, f"🔴 BEAR OB · FRESH ({supply_zone_str}){tag_time}")
 
         # Audio bell trigger condition:
-        # Ring chime on DEMAND · FRESH defense, SUPPLY ZONE test, early Sweet Spot breakout (<2.5%),
+        # Ring chime on DEMAND · FRESH defense, BEAR OB · FRESH test, early Sweet Spot breakout (<2.5%),
         # or Institutional Block Surge. Extended stocks (>= 3.8%) are suppressed to reduce noise.
         pct_move_now = abs(float(row.get("percent_change") or 0.0))
-        is_too_ext = (pct_move_now >= 3.8) and not surge_info.get("is_block_surge") and not is_demand_fresh
+        is_too_ext = (pct_move_now >= 3.8) and not surge_info.get("is_block_surge") and not is_demand_fresh and not is_supply_zone
         is_sweet_spot_pct = (pct_move_now <= 2.8)
 
         bell_rang = bool(
