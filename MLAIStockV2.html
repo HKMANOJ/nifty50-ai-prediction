@@ -2354,12 +2354,16 @@
     const item = { ...live, ...x };
 
     // Guard against alerts firing when market is closed or past cutoff
-    // Block surges (institutional footprints >= 20Cr) are allowed up to 3:15 PM IST
+    // Block surges and fresh Demand/Supply base retests are allowed all session up to 3:15 PM IST
     if (!force) {
       if (typeof isMarketHours === "function" && !isMarketHours()) return;
       const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
+      const qTags = item.quality_tags || [];
+      const isDemand = Boolean(item.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH") || t.includes("Retest Hold")));
+      const isSupply = Boolean(item.is_supply_zone || qTags.some(t => t.includes("SUPPLY ZONE")));
       const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
-      const cutoff = isSurge ? BLOCK_SURGE_CUTOFF_MIN : TRADE_CUTOFF_MIN;
+      const isPermittedAfternoon = isSurge || isDemand || isSupply;
+      const cutoff = isPermittedAfternoon ? BLOCK_SURGE_CUTOFF_MIN : TRADE_CUTOFF_MIN;
       if (nowMin > cutoff) return;
     }
 
@@ -2430,6 +2434,23 @@
     });
 
     container.appendChild(toast);
+
+    // Send Desktop OS Notification if supported and permitted
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        const notifTitle = isDemand ? `🟢 DEMAND · FRESH: ${item.symbol}` : (isSupply ? `🔴 SUPPLY ZONE: ${item.symbol}` : `⚡ BREAKOUT: ${item.symbol}`);
+        const notifBody = `LTP: ₹${item.ltp || item.entry} | SL: ₹${item.stop_loss || '--'} | Tgt: ₹${item.target || '--'}\n${item.trade_plan || 'High Relative Strength institutional setup'}`;
+        const notif = new Notification(notifTitle, {
+          body: notifBody,
+          icon: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
+          tag: item.symbol
+        });
+        notif.onclick = () => {
+          window.focus();
+          if (typeof selectStock === "function") selectStock(item.symbol, item);
+        };
+      } catch(e) {}
+    }
   }
 
   function checkAndTriggerBellAlerts(payload) {
@@ -2467,22 +2488,22 @@
 
       if (!isEligibleTrigger) return;
 
-      // Regular breakouts stop alerting after 12:45 PM IST.
-      // BUT Institutional Block Surges (multi-crore footprints) continue alerting up to 3:15 PM IST!
-      if (nowMin > TRADE_CUTOFF_MIN && !isBlockSurge) return;
+      // Regular late breakouts stop alerting after 12:45 PM IST.
+      // BUT Institutional Block Surges and fresh Demand/Supply base retests alert all session up to 3:15 PM!
+      if (nowMin > TRADE_CUTOFF_MIN && !isBlockSurge && !isDemandFresh && !isSupplyZone) return;
 
       // Unique alert key per candidate identity, side, and wave (alert_count)
       const sideKey = row.side || (isBreakdown ? 'bearish' : 'bullish');
       const wave = row.alert_count || 1;
-      const alertKey = `${row.symbol}_${sideKey}_wave${wave}${isBlockSurge ? '_surge' : ''}`;
+      const alertKey = `${row.symbol}_${sideKey}_wave${wave}${isBlockSurge ? '_surge' : (isDemandFresh ? '_demand' : '')}`;
       if (_alertedBreakouts.has(alertKey)) return;   // already handled -> stay silent
       if (row.alert_event_id && _persistedSeenEventIds.has(row.alert_event_id)) return; // already chimed in this browser
 
-      // Only ring if the breakout or block surge is FRESH (within FRESH_WINDOW_MIN minutes)
+      // Only ring if the breakout, demand fresh, or block surge is FRESH (within FRESH_WINDOW_MIN minutes)
       const eventTime = row.block_surge_time || row.breakout_time;
       const boMin = breakoutMinutes(eventTime);
       const ageMin = (boMin == null) ? (row.surge_age_minutes ?? null) : (nowMin - boMin);
-      const isFresh = (ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN;
+      const isFresh = isDemandFresh || isSupplyZone || ((ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN);
 
       // When backend lifecycle engine is active, respect row.should_alert; fallback to isFresh
       const shouldTrigger = (row.should_alert !== undefined) ? Boolean(row.should_alert) : isFresh;
@@ -4535,6 +4556,9 @@
     if (soundToggleBtn) {
       soundToggleBtn.addEventListener("click", () => {
         unlockAudio();
+        if (typeof Notification !== "undefined" && Notification.permission === "default") {
+          try { Notification.requestPermission(); } catch(e) {}
+        }
         _bellSoundEnabled = !_bellSoundEnabled;
         localStorage.setItem("mlai_bell_sound", _bellSoundEnabled ? "true" : "false");
         updateSoundButtonUI();
@@ -4549,6 +4573,9 @@
     if (testBellBtn) {
       testBellBtn.addEventListener("click", () => {
         unlockAudio();
+        if (typeof Notification !== "undefined" && Notification.permission === "default") {
+          try { Notification.requestPermission(); } catch(e) {}
+        }
         playBellRangSound();
         _testTogglePE = !_testTogglePE;
         const testSym = _testTogglePE ? "DIXON" : "ATHERENERG";
