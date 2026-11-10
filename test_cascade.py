@@ -211,16 +211,15 @@ class Test3BarImpulseCascade(unittest.TestCase):
         self.assertEqual(bo["chart_structure"], "Bull Trap Reversal")
 
     def test_nam_india_cache_breakout_time(self):
-        import json
-        from pathlib import Path
-        cache_path = Path("inputs/candle_cache.json")
-        if not cache_path.exists():
-            return
-        cache = json.loads(cache_path.read_text(encoding="utf-8"))
-        entry = cache.get("NAM-INDIA")
-        if not entry:
-            return
-        candles = entry[1]
+        # 09:15: range 930-925, low=925
+        # 09:20: range 926-924, close=925
+        # 09:25: breakdown to 922.6
+        t0 = int(datetime(2026, 10, 24, 9, 15, tzinfo=INDIA_TZ).timestamp())
+        candles = [
+            {"timestamp": t0, "open": 929.0, "high": 930.0, "low": 925.0, "close": 926.0, "volume": 10000},
+            {"timestamp": t0 + 300, "open": 926.0, "high": 926.0, "low": 924.5, "close": 925.0, "volume": 8000},
+            {"timestamp": t0 + 600, "open": 924.5, "high": 924.5, "low": 921.0, "close": 922.6, "volume": 25000},
+        ]
         row = {"symbol": "NAM-INDIA", "ltp": 922.6, "percent_change": -5.47}
         bo = analyze_5m_breakout(candles, "bearish", row)
         self.assertTrue(bo["is_breakout"])

@@ -1619,14 +1619,14 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                 breakout_time = cascade_info["cascade_time"]
             if not first_breakout_epoch:
                 first_breakout_epoch = latest["timestamp"]
-        elif live_ltp >= morning_high * 1.001 and live_ltp >= ema9 and live_ltp >= live_open:
+        elif (live_ltp >= morning_high * 1.001 or live_high >= morning_high * 1.002) and live_ltp >= ema9 and live_ltp >= live_open:
             is_breakout = True
             breakout_status = "Impulse BO"
-            chart_structure = "Live Sustained Breakout"
+            chart_structure = "Live Wick Breakout"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
-        elif elapsed_min <= 45 and open_move >= 0.75 and velocity >= 0.05 and live_ltp >= morning_high and live_ltp >= ema9:
+        elif elapsed_min <= 45 and open_move >= 0.75 and velocity >= 0.05 and live_ltp >= ema9:
             is_breakout = True
             breakout_status = "Impulse BO"
             chart_structure = "Velocity Ignition"
@@ -1699,14 +1699,14 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
                 breakout_time = cascade_info["cascade_time"]
             if not first_breakout_epoch:
                 first_breakout_epoch = latest["timestamp"]
-        elif live_ltp <= morning_low * 0.999 and live_ltp <= ema9 and live_ltp <= live_open:
+        elif (live_ltp <= morning_low * 0.999 or live_low <= morning_low * 0.998) and live_ltp <= ema9 and live_ltp <= live_open:
             is_breakout = True
             breakout_status = "Waterfall BD"
-            chart_structure = "Live Sustained Breakdown"
+            chart_structure = "Live Wick Breakdown"
             if not breakout_time:
                 breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
                 first_breakout_epoch = latest["timestamp"]
-        elif elapsed_min <= 45 and open_move <= -0.75 and velocity <= -0.05 and live_ltp <= morning_low and live_ltp <= ema9:
+        elif elapsed_min <= 45 and open_move <= -0.75 and velocity <= -0.05 and live_ltp <= ema9:
             is_breakout = True
             breakout_status = "Waterfall BD"
             chart_structure = "Velocity Ignition Slide"
@@ -1762,7 +1762,8 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
         current_minutes = now_ist.hour * 60 + now_ist.minute
         is_live_market = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
 
-        ref_epoch = int(now_ist.timestamp()) if is_live_market else (latest["timestamp"] + 300)
+        is_truly_live_bar = is_live_market and abs(int(now_ist.timestamp()) - latest["timestamp"]) <= 600
+        ref_epoch = int(now_ist.timestamp()) if is_truly_live_bar else (latest["timestamp"] + 300)
         breakout_close_epoch = first_breakout_epoch + 300
         breakout_age_minutes = max(0, int((ref_epoch - breakout_close_epoch) / 60))
 

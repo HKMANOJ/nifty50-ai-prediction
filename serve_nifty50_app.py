@@ -604,8 +604,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             try:
                 body = self._read_json_body()
                 event_id = body.get("alert_event_id")
-                if not event_id:
+                if not event_id or not isinstance(event_id, str):
                     raise ValueError("missing alert_event_id")
+                import re
+                if not re.match(r"^evt_[A-Za-z0-9_-]+$", event_id):
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "unknown_or_invalid_event_id"})
+                    return
                 from stock_suggestion_index import acknowledge_alert
                 acked = acknowledge_alert(event_id, client_id=body.get("client_id"))
                 self._send_json(HTTPStatus.OK, {"ok": True, "alert_event_id": event_id, "acknowledged": bool(acked)})
@@ -1443,22 +1447,25 @@ def main() -> None:
     retention_stop = threading.Event()
     retention_thread = None
     try:
-        from scanner_log_retention import retention_enabled, start_retention_worker, run_daily_db_purge
+        from scanner_log_retention import retention_enabled, start_retention_worker
         if retention_enabled():
             retention_thread = start_retention_worker(stop_event=retention_stop)
             print("[scanner-retention] Autonomous 7-day data retention worker active", file=sys.stderr)
             # Immediate non-blocking startup purge check
             def _startup_retention_purge():
                 try:
-                    res = run_daily_db_purge(retention_days=7)
-                    print(f"[scanner-retention] Startup DB purge check completed: {res}", file=sys.stderr)
+                    import scanner_log_retention
+                    purge_fn = getattr(scanner_log_retention, "run_daily_db_purge", None)
+                    if purge_fn:
+                        res = purge_fn(retention_days=7)
+                        print(f"[scanner-retention] Startup DB purge check completed: {res}", file=sys.stderr)
                 except Exception as p_err:
                     print(f"[scanner-retention] Startup DB purge skipped: {p_err}", file=sys.stderr)
             threading.Thread(target=_startup_retention_purge, daemon=True, name="StartupRetentionPurge").start()
         else:
             print(f"[scanner-retention] Worker inactive (host={os.environ.get('RENDER_EXTERNAL_HOSTNAME')}, render={os.environ.get('RENDER')})", file=sys.stderr)
     except Exception as exc:
-        print(f"[scanner-retention] worker_start_failed: {exc}", file=sys.stderr)
+        print("[scanner-retention] worker_start_failed", file=sys.stderr)
     
     # Launch autonomous 5-minute background auto-scanner
     start_background_auto_scanner(interval_seconds=300)
