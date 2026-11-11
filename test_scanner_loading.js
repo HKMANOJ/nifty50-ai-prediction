@@ -4,9 +4,13 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync('MLAIStockV2.html', 'utf8');
 const statusSource = html.slice(html.indexOf('  let _lastGoodRenderAt'), html.indexOf('  function renderAll('));
-const loaderSource = html.slice(html.indexOf('  async function loadData('), html.indexOf('  /* ── Tab Switchers'));
-const nodes = {scannerDataStatus: {style: {}}, refreshBtn: {}};
+const loaderSource = html.slice(html.indexOf('  function loadData('), html.indexOf('  /* ── Tab Switchers'));
+const nodes = {
+  scannerDataStatus: {style: {}}, navbarRefreshStatus: {style: {}}, sessionDataBanner: {style: {}},
+  sensexVal: {style: {}, closest: () => null}, refreshBtn: {},
+};
 const timers = new Map(); let timerId = 0; let calls = 0; let options; let response;
+let marketOpen = false;
 const context = vm.createContext({
   window: {}, performance: {now: () => 1},
   console: {error() {}}, Date, AbortController,
@@ -14,7 +18,8 @@ const context = vm.createContext({
   setTimeout: (fn, delay) => { const id = ++timerId; timers.set(id, {fn, delay}); return id; },
   clearTimeout: id => timers.delete(id),
   fetch: async (url, opts) => { calls++; options = {url, ...opts}; return await response(); },
-  isMarketHours: () => false,
+  isMarketHours: () => marketOpen,
+  n: number => String(number), pct: number => `${number}%`,
 });
 vm.runInContext(`const API_BASE = ''; const refreshBtn = document.getElementById('refreshBtn');
   ${statusSource}
@@ -56,7 +61,36 @@ async function main() {
   await Promise.all([first, second]);
   response = async () => ({ok:true, json:async () => payload});
   await run('loadData({refresh:true})');
+  assert.equal(options.method, 'GET');
+  assert.match(nodes.navbarRefreshStatus.textContent, /Session snapshot loaded/);
+  marketOpen = true;
+  response = () => new Promise(r => { resolve = r; });
+  const background = run('loadData()');
+  assert.equal(nodes.refreshBtn.disabled, false);
+  const manual = run('loadData({refresh:true})');
+  assert.equal(run('loadData({refresh:true})'), manual);
+  assert.equal(nodes.refreshBtn.disabled, true);
+  assert.equal(options.method, 'GET');
+  response = async () => ({ok:true, json:async () => payload});
+  resolve({ok:true, json:async () => payload});
+  await Promise.all([background, manual]);
   assert.equal(options.method, 'POST');
+  assert.equal(nodes.refreshBtn.disabled, false);
+  assert.match(nodes.navbarRefreshStatus.textContent, /Scanner refreshed/);
+  response = async () => ({ok:false, status:409});
+  await run('loadData({refresh:true})');
+  assert.match(nodes.navbarRefreshStatus.textContent, /scan is already running/i);
+  response = async () => ({ok:true, json:async () => payload});
+  await run('loadData()');
+  assert.match(nodes.navbarRefreshStatus.textContent, /connection restored/i);
+  run('scannerSnapshotStatus({session_date:"2026-11-11", _previous_session:true, bullish:[], bearish:[]})');
+  assert.match(nodes.sessionDataBanner.textContent, /2026-11-11.*awaiting the current session/);
+  run('renderIndexQuotes({SENSEX:{ltp:81503.85, percent_change:0.49, as_of_epoch:200}})');
+  assert.match(nodes.sensexVal.textContent, /81503\.85.*0\.49%/);
+  run('renderIndexQuotes({SENSEX:{ltp:0}}); renderIndexQuotes({SENSEX:{ltp:80000, as_of_epoch:100}})');
+  assert.match(nodes.sensexVal.textContent, /81503\.85/);
+  run('renderIndexQuotes({SENSEX:{ltp:81600, as_of_epoch:300}}, {fallback:true})');
+  assert.equal(nodes.sensexVal.textContent, '81600');
   for (const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)) new vm.Script(match[1]);
   for (const event of ['online', 'pageshow', 'visibilitychange']) assert.ok(html.includes(`addEventListener("${event}"`));
   assert.ok(html.includes('Date.parse(payload.generated_at_ist) < Date.parse(_lastScannerPayload.generated_at_ist)'));
