@@ -59,6 +59,7 @@ REFRESH_LOCK = threading.Lock()
 # get the last result instead of queueing another subprocess.
 MIN_SCAN_INTERVAL_SECONDS = 45.0
 _SCAN_STATE: dict[str, Any] = {"ts": 0.0, "payload": None, "signature": None}
+_CLOSED_SESSION_RECOVERY_LOCK = threading.Lock()
 _INDEX_QUOTE_LOCK = threading.Lock()
 _INDEX_QUOTES: dict[str, Any] = {"ts": 0.0, "quotes": {}}
 
@@ -792,6 +793,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 self._kick_background_refresh()
         elif best.get("session_date") != today:
             best["_previous_session"] = True
+        after_close = now_ist.weekday() < 5 and now_ist.hour * 60 + now_ist.minute > 15 * 60 + 30
+        if after_close and (best.get("_previous_session") or best.get("_awaiting_scan")):
+            with _CLOSED_SESSION_RECOVERY_LOCK:
+                if not REFRESH_LOCK.locked() and _SCAN_STATE.get("closed_session_recovery") != today:
+                    _SCAN_STATE["closed_session_recovery"] = today
+                    self._kick_background_refresh()
         best["_auto_scan_info"] = dict(LAST_AUTO_SCAN_INFO)
         self._send_json(HTTPStatus.OK, best)
 
@@ -840,7 +847,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
         try:
             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
-            result = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=120)
+            command = [exec_py, str(STOCK_SUGGESTION)]
+            if not is_ist_market_hours():
+                command.append("--require-current-session")
+            result = run_command(command, timeout=120)
             import scanner_trace
             output = result.get("stdout") if isinstance(result.get("stdout"), dict) else {}
             scanner_trace.submit_health("requested_scan_finished", snapshot_id=output.get("snapshot_id"),
@@ -893,6 +903,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def _refresh_stock_suggestions(self) -> None:
         status, payload = self._refresh_stock_suggestions_payload()
+        session_date = payload.get("session_date")
+        if payload.get("ok") and session_date and session_date != get_ist_now().date().isoformat():
+            payload["_previous_session"] = True
+        payload["_auto_scan_info"] = dict(LAST_AUTO_SCAN_INFO)
         self._send_json(status, payload)
 
     def _serve_stock_candles(self, query: dict[str, list[str]]) -> None:

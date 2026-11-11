@@ -4510,7 +4510,8 @@
       }
       refreshFeedback("Refreshing scanner…");
       _scannerRefreshPromise = Promise.resolve(_scannerLoadPromise)
-        .then(() => fetchScannerData(isMarketHours() && _lastScannerPayload?._auto_scan_info?.status !== "market_closed", true))
+        .then(() => fetchScannerData(Boolean(!_lastScannerPayload?._is_replay
+          && (isMarketHours() || (_lastScannerPayload?._previous_session && !isPreMarket()))), true))
         .finally(() => {
           _scannerRefreshPromise = null;
           if (refreshBtn) {
@@ -4942,7 +4943,8 @@
 
   // Auto-refresh live market scanner — ONLY during market hours
   setInterval(() => {
-    if (document.visibilityState === "visible" && (isMarketHours() || !_lastScannerPayload)) {
+    if (document.visibilityState === "visible" && (isMarketHours() || !_lastScannerPayload
+        || _lastScannerPayload?._previous_session || _lastScannerPayload?._awaiting_scan)) {
       loadData();
     }
     if (_lastScannerPayload && !_scannerRetryTimer) scannerSnapshotStatus(_lastScannerPayload);

@@ -19,6 +19,7 @@ const context = vm.createContext({
   clearTimeout: id => timers.delete(id),
   fetch: async (url, opts) => { calls++; options = {url, ...opts}; return await response(); },
   isMarketHours: () => marketOpen,
+  isPreMarket: () => false,
   n: number => String(number), pct: number => `${number}%`,
 });
 vm.runInContext(`const API_BASE = ''; const refreshBtn = document.getElementById('refreshBtn');
@@ -63,6 +64,14 @@ async function main() {
   await run('loadData({refresh:true})');
   assert.equal(options.method, 'GET');
   assert.match(nodes.navbarRefreshStatus.textContent, /Session snapshot loaded/);
+  response = async () => ({ok:true, json:async () => ({...payload, _previous_session:true})});
+  await run('loadData()');
+  await run('loadData({refresh:true})');
+  assert.equal(options.method, 'POST'); // stale hosted snapshot can recover after close
+  response = async () => ({ok:true, json:async () => ({...payload, _is_replay:true})});
+  await run('loadData()');
+  await run('loadData({refresh:true})');
+  assert.equal(options.method, 'GET'); // the local replay remains read-only
   marketOpen = true;
   response = () => new Promise(r => { resolve = r; });
   const background = run('loadData()');

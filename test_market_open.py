@@ -80,6 +80,25 @@ class MarketOpenTests(unittest.TestCase):
         self.assertEqual(quotes["SENSEX"]["ltp"], 81810)
         self.assertEqual(quotes["SENSEX"]["percent_change"], 1.0)
 
+    def test_after_hours_deploy_recovers_stale_snapshot_once(self):
+        previous = {"ok": True, "session_date": "2026-11-10",
+                    "bullish": [{"symbol": "COCHINSHIP"}], "bearish": []}
+        handler = app.NiftyHandler.__new__(app.NiftyHandler)
+        handler._send_json = Mock()
+        handler._kick_background_refresh = Mock()
+        handler._cached_or_snapshot = Mock(side_effect=lambda: dict(previous))
+        with (
+            patch.object(app, "_SCAN_STATE", {}),
+            patch.object(app, "get_ist_now", return_value=datetime(2026, 11, 11, 22, 45, tzinfo=app.IST_TZ)),
+        ):
+            handler._serve_stock_suggestions()
+            handler._serve_stock_suggestions()
+        handler._kick_background_refresh.assert_called_once()
+        status, snapshot = handler._send_json.call_args.args
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertTrue(snapshot["_previous_session"])
+        self.assertEqual(snapshot["bullish"], previous["bullish"])
+
 
 if __name__ == "__main__":
     unittest.main()

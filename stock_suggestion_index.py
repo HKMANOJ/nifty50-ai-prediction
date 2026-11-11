@@ -433,6 +433,8 @@ class Suggestion:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build today's NSE F&O intraday stock suggestion index.")
     parser.add_argument("--output", default=str(OUTPUT_PATH), help="JSON output path")
+    parser.add_argument("--require-current-session", action="store_true",
+                        help="Keep the previous snapshot if no completed candle from today's session is available.")
     parser.add_argument("--top", type=int, default=DEFAULT_SUGGESTIONS_PER_SIDE, help="Number of matched rows to keep per side")
     return parser.parse_args()
 
@@ -4242,7 +4244,7 @@ def compute_pmh_pml_filter(
     return result
 
 
-def build_payload(top: int) -> dict[str, Any]:
+def build_payload(top: int, *, require_current_session: bool = False) -> dict[str, Any]:
     import scanner_telemetry
     import scanner_trace
     scan_id = scanner_telemetry.new_scan()
@@ -4293,6 +4295,12 @@ def build_payload(top: int) -> dict[str, Any]:
     }
     if union_symbols:
         bulk_fetch_candles(sorted(union_symbols), shared_candles)
+
+    if require_current_session and not any(
+        bars and datetime.fromtimestamp(bars[-1]["timestamp"], INDIA_TZ).date() == now_ist.date()
+        for bars in shared_candles.values()
+    ):
+        raise LiveDataError("Today's completed stock candles are unavailable. Keeping the last verified session.")
 
     market_universe_rows = list((*gainers, *losers))
     bullish, gainer_stock_overlap = build_suggestions(
@@ -4763,7 +4771,7 @@ def main() -> int:
     args = parse_args()
     output = Path(args.output)
     try:
-        payload = build_payload(args.top)
+        payload = build_payload(args.top, require_current_session=args.require_current_session)
         exit_code = 0
     except Exception as exc:  # noqa: BLE001 - the UI needs a clear live-data status
         import scanner_trace
