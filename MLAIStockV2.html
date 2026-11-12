@@ -1568,6 +1568,23 @@
 
       #viewSectorAnalysis { padding: 10px !important; }
       #sectorTilesGrid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+
+      /* Pin Stock column on mobile horizontal scroll */
+      table.vc-table th:nth-child(2),
+      table.vc-table td:nth-child(2) {
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        background: #ffffff;
+        box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+      }
+      table.vc-table thead th:nth-child(2) {
+        z-index: 6;
+        background: #f8fafc;
+      }
+      table.vc-table tr.selected td:nth-child(2) {
+        background: #f0fdf4;
+      }
     }
 
     /* Ultra-Small Phones (<= 380px) */
@@ -1575,7 +1592,6 @@
       .metrics-row { grid-template-columns: 1fr; }
       .metrics-row > .summary-card { grid-column: 1 / -1 !important; }
       .tab-pill { padding: 4px 8px; font-size: 10px; }
-    }
       .navbar-ticker .ticker-chip { flex: 1; }
     }
   </style>
@@ -1893,16 +1909,16 @@
           <table class="vc-table">
             <thead>
               <tr>
-                <th># Rank</th>
-                <th>Stock</th>
-                <th>Money Flow %</th>
-                <th>Change %</th>
-                <th>Volume</th>
-                <th>VC Ranking (RVOL)</th>
-                <th>M.P.</th>
-                <th>5 Min BO/BD</th>
-                <th>Rally Score</th>
-                <th>Action Status</th>
+                <th style="width:50px; text-align:center;"># Rank</th>
+                <th style="min-width:180px; text-align:left;">Stock</th>
+                <th style="text-align:right;">Money Flow %</th>
+                <th style="text-align:right;">Change %</th>
+                <th style="text-align:right;">Volume</th>
+                <th style="text-align:right;">VC Ranking (RVOL)</th>
+                <th style="text-align:right;">M.P.</th>
+                <th style="text-align:center;">5 Min BO/BD</th>
+                <th style="text-align:center;">Rally Score</th>
+                <th style="text-align:center;">Action Status</th>
               </tr>
             </thead>
             <tbody id="vcTableBody">
@@ -2811,9 +2827,11 @@
 
   /* Formatters */
   const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+  const fmt2 = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmt0 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
   function n(v) { return v === null || v === undefined ? "--" : fmt.format(Number(v)); }
+  function n2(v) { return v === null || v === undefined ? "--" : fmt2.format(Number(v)); }
   function n0(v) { return v === null || v === undefined ? "--" : fmt0.format(Number(v)); }
   function pct(v) {
     if (v === null || v === undefined) return "--";
@@ -3399,11 +3417,11 @@
         const dfT2 = document.getElementById("dfT2");
 
         if (dfZoneDesc) dfZoneDesc.textContent = isUp ? (liveRowForDF.demand_zone ? `Demand Zone ${liveRowForDF.demand_zone}` : "Institutional Base Defended") : (liveRowForDF.supply_zone ? `Bear OB ${liveRowForDF.supply_zone}` : "Supply Block Defended");
-        if (dfEntry) dfEntry.textContent = `Entry: ₹${entryVal.toFixed(1)}`;
-        if (dfSl) dfSl.textContent = `SL: ₹${slVal.toFixed(1)}`;
-        if (dfBeLock) dfBeLock.textContent = `🔒 BE Lock: ₹${beVal.toFixed(1)} (${isUp ? '+0.8%' : '-0.8%'})`;
-        if (dfT1) dfT1.textContent = `T1: ₹${t1Val.toFixed(1)} (${isUp ? '+1.5%' : '-1.5%'})`;
-        if (dfT2) dfT2.textContent = `T2: ₹${t2Val.toFixed(1)} (${isUp ? '+3.0%' : '-3.0%'})`;
+        if (dfEntry) dfEntry.textContent = `Entry: ₹${n2(entryVal)}`;
+        if (dfSl) dfSl.textContent = `SL: ₹${n2(slVal)}`;
+        if (dfBeLock) dfBeLock.textContent = `🔒 BE Lock: ₹${n2(beVal)} (${isUp ? '+0.8%' : '-0.8%'})`;
+        if (dfT1) dfT1.textContent = `T1: ₹${n2(t1Val)} (${isUp ? '+1.5%' : '-1.5%'})`;
+        if (dfT2) dfT2.textContent = `T2: ₹${n2(t2Val)} (${isUp ? '+3.0%' : '-3.0%'})`;
       } else {
         dfBanner.style.display = "none";
       }
@@ -3951,6 +3969,19 @@
     list.innerHTML = rows.map((row, idx) => {
       const isUp = (row.percent_change || 0) >= 0;
       const isSelected = row.symbol === _selectedSymbol;
+      const qTags = row.quality_tags || [];
+      const st = (row.five_min_status || "").toLowerCase();
+      const isBreakdown = Boolean(st.includes("breakdown") || ((row.percent_change || 0) < 0 && row.is_breakout) || row.side === "bearish" || row.side === "LOSER");
+      const isDemand = Boolean((row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isBreakdown);
+      const isSupply = Boolean((row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isBreakdown);
+      const tStr = row.trigger_time || row.five_min_time || "";
+      let zoneBadge = "";
+      if (isDemand) {
+        zoneBadge = `<span style="background:#ecfdf5; color:#166534; border:1px solid #a7f3d0; font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; margin-top:2px; display:inline-flex; align-items:center; gap:2px; width:fit-content;">Demand · Fresh${tStr ? ` ${tStr}` : ''}</span>`;
+      } else if (isSupply) {
+        zoneBadge = `<span style="background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; margin-top:2px; display:inline-flex; align-items:center; gap:2px; width:fit-content;">Bear OB · Fresh${tStr ? ` ${tStr}` : ''}</span>`;
+      }
+
       return `
         <div class="stock-card-item ${isSelected ? 'active' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${row.vc_ranking || 1}, setup:'${row.setup || ""}', chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <div class="item-left">
@@ -3958,6 +3989,7 @@
             <div class="item-names">
               <span class="item-symbol">${row.symbol}${row.lot_size ? ` <span style="font-size:9px; color:var(--text-muted); font-weight:700;">Lot ${row.lot_size}</span>` : ''}</span>
               <span class="item-setup-tag">${row.setup || "Long buildup"}</span>
+              ${zoneBadge}
             </div>
           </div>
           <div class="item-right">
@@ -4051,13 +4083,13 @@
 
     if (!Array.isArray(rows) || rows.length === 0) {
       if (_activeTab === "demand_fresh") {
-        body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:24px; color:var(--text-muted); font-weight:600;">No Top 10 Demand Fresh candidates qualified yet. Waiting for confirmed Demand Fresh bases with &ge; +1.20% open momentum.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:24px; color:var(--text-muted); font-weight:600;">No fresh demand zones in this scan. Waiting for confirmed Demand Fresh bases with &ge; +1.20% open momentum. <button onclick="loadData({refresh:true})" style="margin-left:8px; background:#0f172a; color:#fff; border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer;">Retry</button></td></tr>`;
         return;
       }
       const opposite = _activeTab === "bullish" ? _currentBearish : _currentBullish;
       const label = _activeTab === "bullish" ? "bullish" : "bearish";
       const hint = opposite.length ? ` Check Top ${_activeTab === "bullish" ? "Losers" : "Gainers"} (${opposite.length} candidates).` : "";
-      body.innerHTML = `<tr><td colspan="10" style="text-align:left; padding:16px; color:var(--text-muted);">No qualifying ${label} candidates in this snapshot.${hint}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:20px; color:var(--text-muted); font-weight:600;">No qualifying ${label} candidates in this snapshot.${hint} <button onclick="loadData({refresh:true})" style="margin-left:8px; background:#0f172a; color:#fff; border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer;">Retry</button></td></tr>`;
       return;
     }
 
@@ -4171,10 +4203,10 @@
           }
           tradeLevelsBadge = `
             <div class="trade-levels-strip">
-              <span class="trade-badge entry">🎯 Entry ₹${entryVal.toFixed(1)}</span>
-              <span class="trade-badge sl">🛑 SL ₹${slVal.toFixed(1)}</span>
-              <span class="trade-badge be" title="When MFE reaches 0.80%, move SL to Cost (Breakeven)">🔒 BE Lock ₹${beVal.toFixed(1)}</span>
-              <span class="trade-badge t1">🎯 T1 (1.5%) ₹${t1Val.toFixed(1)}</span>
+              <span class="trade-badge entry">🎯 Entry ₹${n2(entryVal)}</span>
+              <span class="trade-badge sl">🛑 SL ₹${n2(slVal)}</span>
+              <span class="trade-badge be" title="When MFE reaches 0.80%, move SL to Cost (Breakeven)">🔒 BE Lock ₹${n2(beVal)}</span>
+              <span class="trade-badge t1">🎯 T1 (1.5%) ₹${n2(t1Val)}</span>
             </div>
           `;
         }
@@ -4182,37 +4214,37 @@
 
       return `
         <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
-          <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">${idx + 1}</td>
-          <td>
+          <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono); text-align:center;">${idx + 1}</td>
+          <td style="text-align:left;">
             <div class="stock-col">
               <span class="sym">${row.symbol} ${row.lot_size ? `<span style="font-size:10px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 5px; border-radius:3px; border:1px solid #cbd5e1; margin-left:5px;">Lot ${row.lot_size}</span>` : ""}</span>
               <span class="sub">${row.setup || "F&O Active"}${streakBadge}</span>
               ${tradeLevelsBadge}
             </div>
           </td>
-          <td style="font-weight:700; font-family:var(--font-mono); color:${(row.money_flow_percentage ?? 0) >= 70 ? 'var(--green)' : (row.money_flow_percentage ?? 0) >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${(row.money_flow_percentage ?? 0).toFixed(1)}%</td>
-          <td style="font-weight:800; font-family:var(--font-mono); color:${isUp ? 'var(--green)' : 'var(--red)'};">${pct(row.percent_change)}</td>
-          <td style="font-family:var(--font-mono); color:var(--text-muted);">${n0(row.volume)}</td>
-          <td><span class="vc-pill ${vcCls}">${vc.toFixed(2)}x</span></td>
-          <td>
+          <td style="text-align:right; font-weight:700; font-family:var(--font-mono); color:${(row.money_flow_percentage ?? 0) >= 70 ? 'var(--green)' : (row.money_flow_percentage ?? 0) >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${(row.money_flow_percentage ?? 0).toFixed(1)}%</td>
+          <td style="text-align:right; font-weight:800; font-family:var(--font-mono); color:${isUp ? 'var(--green)' : 'var(--red)'};">${pct(row.percent_change)}</td>
+          <td style="text-align:right; font-family:var(--font-mono); color:var(--text-muted);">${n0(row.volume)}</td>
+          <td style="text-align:right;"><span class="vc-pill ${vcCls}">${vc.toFixed(2)}x</span></td>
+          <td style="text-align:right;">
             <span class="mp-badge ${isUp ? 'up' : 'down'}">
               <span>${isUp ? '↑' : '↓'}</span>
               <span>${mp.toFixed(2)}</span>
             </span>
           </td>
-          <td>
+          <td style="text-align:center;">
             <span class="bo-status-pill ${boCls}">${statusBadge}</span>${freshBadge}${blockBadge}${noBaseBadge}
           </td>
-          <td>
-            <div class="score-meter">
+          <td style="text-align:center;">
+            <div class="score-meter" style="justify-content:center;">
               <span class="val">${row.one_side_rally_score ?? row.score ?? 0}</span>
-              <div class="score-bar-bg">
+              <div class="score-bar-bg" aria-label="Rally score ${row.one_side_rally_score ?? row.score ?? 0} out of 100">
                 <div class="score-bar-fill" style="width:${Math.min(100, Math.max(0, row.one_side_rally_score ?? row.score ?? 0))}%"></div>
               </div>
             </div>
           </td>
-          <td>
-            <div style="display:flex; align-items:center; gap:6px;">
+          <td style="text-align:center;">
+            <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
               <span style="font-weight:700; font-size:11px; color:${row.status === 'Priority Rally' ? 'var(--green)' : 'var(--text-dark)'};">${row.status || "Review"}</span>
               <button onclick="event.stopPropagation(); openStockInOverview('${row.symbol}')" style="background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; border-radius:4px; font-size:10px; font-weight:800; padding:2px 6px; cursor:pointer;" title="Open in Stock Overview">🔬 Overview</button>
             </div>
@@ -4243,11 +4275,21 @@
 
   function scannerSnapshotStatus(payload, warning = "") {
     const stamp = payload?.generated_at_ist;
-    const when = stamp ? new Date(stamp).toLocaleString("en-IN", {timeZone:"Asia/Kolkata", hour12:false}) + " IST" : "time unavailable";
+    let when = "time unavailable";
+    if (stamp) {
+      const d = new Date(stamp);
+      const day = d.getDate();
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const mStr = monthNames[d.getMonth()];
+      const y = d.getFullYear();
+      const timeStr = d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+      when = `${day} ${mStr} ${y}, ${timeStr} IST`;
+    }
     const stale = Boolean(payload?._stale_kept || payload?._refresh?.kept_last_good);
     const old = stamp && Date.now() - Date.parse(stamp) > 10 * 60 * 1000;
-    const mode = isMarketHours() ? (old || stale ? "Delayed snapshot — NOT live" : "Scanner snapshot") : "Market-closed snapshot — NOT live";
-    scannerDataStatus(`${warning ? warning + " · " : ""}${mode} · Scan generated ${when} · ${payload?.bullish?.length || 0} bullish / ${payload?.bearish?.length || 0} bearish`, Boolean(warning || stale || (old && isMarketHours())));
+    const isLive = isMarketHours() && !old && !stale;
+    const mode = isLive ? "Live scan" : (isMarketHours() ? "Delayed snapshot" : "Session snapshot");
+    scannerDataStatus(`${warning ? warning + " · " : ""}${mode} · ${when} · ${payload?.bullish?.length || 0} bullish / ${payload?.bearish?.length || 0} bearish`, Boolean(warning || stale || (old && isMarketHours())));
   }
 
   function renderAll(payload, transport = "http") {
