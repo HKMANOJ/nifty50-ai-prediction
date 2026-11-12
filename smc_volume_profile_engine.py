@@ -128,7 +128,7 @@ def detect_order_blocks_and_structure(
     and Bullish/Bearish Order Blocks (+OB and -OB) with mitigation tracking.
     """
     n = len(candles)
-    if n < 3:
+    if n < 2:
         return {
             "trend": "Neutral",
             "swings": [],
@@ -216,15 +216,13 @@ def detect_order_blocks_and_structure(
     order_blocks = []
     ranges = [c["high"] - c["low"] for c in candles]
     session_start = 0
-    for i in range(n - 2):
+    for i in range(n - 1):
         c_prev = candles[i]
         c_curr = candles[i + 1]
-        c_next = candles[i + 2]
         origin = c_prev["timestamp"]
         if i and origin - candles[i - 1]["timestamp"] > 60 * 60:
             session_start = i
-        if (c_curr["timestamp"] != origin + FIVE_MINUTES
-                or c_next["timestamp"] != origin + 2 * FIVE_MINUTES):
+        if c_curr["timestamp"] != origin + FIVE_MINUTES:
             continue
 
         # Freeze the displacement baseline at formation. Later volatility must
@@ -233,19 +231,27 @@ def detect_order_blocks_and_structure(
         atr = sum(base_ranges) / len(base_ranges)
         if ranges[i] <= 0:
             continue
-        continuous_move = abs(c_next["open"] - c_curr["close"]) <= atr * 0.15
+        # A strong first impulse can confirm the base at its close. A weaker
+        # move needs a consecutive second candle with no significant price gap.
+        c_next = candles[i + 2] if i + 2 < n else None
+        if c_next is not None and (
+            c_next["timestamp"] != c_curr["timestamp"] + FIVE_MINUTES
+            or abs(c_next["open"] - c_curr["close"]) > atr * 0.15
+        ):
+            c_next = None
 
         # Check for Strong Bullish Displacement (Demand Setup)
         # Origin candle: bearish or tight base at a pivot low
         is_pivot_low = (c_prev["close"] <= c_prev["open"]
                         or (i > session_start and c_prev["low"] <= candles[i - 1]["low"]))
         curr_body_bull = c_curr["close"] - c_curr["open"]
+        strong_bull_move = curr_body_bull >= atr * 0.6 and c_curr["high"] - c_prev["low"] >= atr
         is_bull_displacement = (
             is_pivot_low and
             c_curr["close"] > c_curr["open"] and
             (
-                (curr_body_bull >= atr * 0.6 and c_curr["high"] - c_prev["low"] >= atr) or
-                (continuous_move and c_next["close"] > c_next["open"] and
+                strong_bull_move or
+                (c_next is not None and c_next["close"] > c_next["open"] and
                  c_next["close"] - c_prev["low"] >= atr * 1.5 and
                  c_next["close"] - c_curr["open"] >= atr * 0.9)
             )
@@ -277,6 +283,7 @@ def detect_order_blocks_and_structure(
                 "bottom": ob_bottom,
                 "time": c_prev["timestamp"],
                 "formation_time": origin + FIVE_MINUTES,
+                "confirmation_time": origin + (2 if strong_bull_move else 3) * FIVE_MINUTES,
                 "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
                 "mitigated": mitigated,
                 "tested": tested,
@@ -288,12 +295,13 @@ def detect_order_blocks_and_structure(
         is_pivot_high = (c_prev["close"] >= c_prev["open"]
                          or (i > session_start and c_prev["high"] >= candles[i - 1]["high"]))
         curr_body_bear = c_curr["open"] - c_curr["close"]
+        strong_bear_move = curr_body_bear >= atr * 0.6 and c_prev["high"] - c_curr["low"] >= atr
         is_bear_displacement = (
             is_pivot_high and
             c_curr["close"] < c_curr["open"] and
             (
-                (curr_body_bear >= atr * 0.6 and c_prev["high"] - c_curr["low"] >= atr) or
-                (continuous_move and c_next["close"] < c_next["open"] and
+                strong_bear_move or
+                (c_next is not None and c_next["close"] < c_next["open"] and
                  c_prev["high"] - c_next["close"] >= atr * 1.5 and
                  c_curr["open"] - c_next["close"] >= atr * 0.9)
             )
@@ -325,6 +333,7 @@ def detect_order_blocks_and_structure(
                 "bottom": ob_bottom,
                 "time": c_prev["timestamp"],
                 "formation_time": origin + FIVE_MINUTES,
+                "confirmation_time": origin + (2 if strong_bear_move else 3) * FIVE_MINUTES,
                 "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
                 "mitigated": mitigated,
                 "tested": tested,

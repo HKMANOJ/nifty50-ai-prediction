@@ -39,6 +39,49 @@ def mirror(candles):
 
 
 class FreshOrderBlockTests(unittest.TestCase):
+    def test_polycab_confirms_at_first_impulse_close(self):
+        bars = [
+            candle(0, 7952, 8011.5, 7916, 8004.5),
+            candle(1, 8002.5, 8048, 7998, 8046),
+            candle(2, 8046, 8049, 8016.5, 8030),
+            candle(3, 8030.5, 8132.5, 8030, 8111.5),
+        ]
+        base_time = bars[2]["timestamp"]
+        self.assertIsNone(latest_fresh_order_block(bars[:3], bullish=True))
+
+        block = latest_fresh_order_block(bars, bullish=True)
+        self.assertIsNotNone(block)
+        self.assertEqual(block["time"], base_time)
+        self.assertEqual(block["formation_time"], bars[3]["timestamp"])
+        self.assertEqual(block["confirmation_time"], START + 1200)
+        self.assertEqual((block["bottom"], block["top"]), (8016.5, 8049))
+
+    def test_strong_impulse_can_confirm_with_only_two_completed_candles(self):
+        bars = demand_candles()[1:3]
+        for bullish, sample in ((True, bars), (False, mirror(bars))):
+            with self.subTest(bullish=bullish):
+                block = latest_fresh_order_block(sample, bullish=bullish)
+                self.assertIsNotNone(block)
+                self.assertEqual(block["time"], bars[0]["timestamp"])
+                self.assertEqual(block["status"], "Fresh")
+
+    def test_weak_impulse_requires_a_consecutive_second_candle(self):
+        bars = [
+            candle(0, 102, 107, 98, 101),
+            candle(1, 101, 102, 99, 100),
+            candle(2, 101, 104, 101, 103),
+            candle(3, 103, 111, 103, 110),
+        ]
+        for bullish, sample in ((True, bars), (False, mirror(bars))):
+            with self.subTest(bullish=bullish):
+                self.assertIsNone(latest_fresh_order_block(sample[:3], bullish=bullish))
+                delayed = dict(sample[3], timestamp=START + 1200)
+                self.assertIsNone(latest_fresh_order_block(sample[:3] + [delayed], bullish=bullish))
+                block = latest_fresh_order_block(sample, bullish=bullish)
+                self.assertIsNotNone(block)
+                self.assertEqual(block["time"], bars[1]["timestamp"])
+                self.assertEqual(block["confirmation_time"], START + 1200)
+
     def test_zone_lifecycle_for_both_sides(self):
         for bullish in (True, False):
             with self.subTest(bullish=bullish):
@@ -74,22 +117,45 @@ class FreshOrderBlockTests(unittest.TestCase):
     def test_alert_uses_base_close_and_never_restores_a_tested_badge(self):
         store = {}
         original = replace(make_test_suggestion("TEST", "bullish"),
-                           is_demand_fresh=True, demand_fresh_time="09:25 AM")
-        first = _process_candidate_lifecycle(store, original, "bullish", 1, "10:05:00", START + 3000)
+                           is_demand_fresh=True, demand_fresh_time="09:25 AM",
+                           zone_confirmed_epoch=START + 900)
+        first = _process_candidate_lifecycle(store, original, "bullish", 1, "09:30:05", START + 905)
         self.assertEqual(first.alert_created_at, "09:25 AM")
+        self.assertEqual(first.alert_confirmed_epoch, START + 900)
         self.assertTrue(first.should_alert)
 
-        tested = replace(original, is_demand_fresh=False, demand_fresh_time=None, bell_rang=False)
+        tested = replace(original, is_demand_fresh=False, demand_fresh_time=None,
+                         zone_confirmed_epoch=None, bell_rang=False)
         result = _process_candidate_lifecycle(store, tested, "bullish", 1, "10:10:00", START + 3300)
         self.assertFalse(result.is_demand_fresh)
         self.assertIsNone(result.demand_fresh_time)
         self.assertFalse(result.should_alert)
 
-        newer = replace(original, demand_fresh_time="10:15 AM")
-        result = _process_candidate_lifecycle(store, newer, "bullish", 1, "10:25:00", START + 4200)
+        newer = replace(original, demand_fresh_time="10:15 AM", zone_confirmed_epoch=START + 3900)
+        result = _process_candidate_lifecycle(store, newer, "bullish", 1, "10:20:05", START + 3905)
         self.assertTrue(result.should_alert)
         self.assertEqual(result.alert_created_at, "10:15 AM")
         self.assertEqual(result.alert_count, 2)
+
+    def test_fresh_zone_alert_expires_one_minute_after_confirmation(self):
+        for side in ("bullish", "bearish"):
+            with self.subTest(side=side):
+                confirmed = START + 900
+                zone = ({"is_demand_fresh": True, "demand_fresh_time": "09:25 AM"}
+                        if side == "bullish" else
+                        {"is_supply_zone": True, "supply_zone_time": "09:25 AM"})
+                item = replace(make_test_suggestion("TEST", side), zone_confirmed_epoch=confirmed, **zone)
+                store = {}
+                first = _process_candidate_lifecycle(store, item, side, 1, "09:30:59", confirmed + 59)
+                self.assertTrue(first.should_alert)
+                expired = _process_candidate_lifecycle(store, item, side, 1, "09:31:00", confirmed + 60)
+                self.assertFalse(expired.should_alert)
+                self.assertEqual(expired.delivery_status, "EXPIRED")
+                self.assertTrue(expired.is_demand_fresh or expired.is_supply_zone)
+                for late_item in (item, replace(item, zone_confirmed_epoch=None)):
+                    late = _process_candidate_lifecycle({}, late_item, side, 1, "09:55:00", confirmed + 1500)
+                    self.assertIsNone(late.alert_event_id)
+                    self.assertFalse(late.should_alert)
 
 
 if __name__ == "__main__":

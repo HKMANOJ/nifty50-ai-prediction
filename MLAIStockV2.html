@@ -1512,7 +1512,7 @@
           <span id="upstoxBtnText">⚡ Upstox: Connect</span>
         </button>
         <button id="soundToggleBtn" style="background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #bfdbfe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Toggle breakout & breakdown bell audio chime">🔔 Bell Sound: ON</button>
-        <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Click to test the bell rang sound and alert">🧪 Test Bell</button>
+        <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Play a test chime">🧪 Test Bell</button>
         <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px;" title="WebSocket connection status only; scanner snapshot status is shown above the table">
           <span id="wsStatusDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#16a34a;"></span>
           <span id="wsStatusText">WS: Connecting...</span>
@@ -2240,7 +2240,6 @@
   let _globalAudioCtx = null;
   let _audioUnlocked = false;
   let _bellSoundEnabled = localStorage.getItem("mlai_bell_sound") !== "false";
-  let _hasEvaluatedInitialBell = false;
   const _alertedBreakouts = new Set();
 
   /* Persisted Alert Event IDs: prevents duplicate audible chimes across restarts & reconnects */
@@ -2366,8 +2365,8 @@
     document.addEventListener(evt, unlockAudio, { passive: true, once: true });
   });
 
-  function playBellRangSound() {
-    if (!_bellSoundEnabled) return;
+  function playBellRangSound(test = false) {
+    if (!_bellSoundEnabled && !test) return;
     unlockAudio();
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -2431,16 +2430,6 @@
     }
   }
 
-  function speakVoiceAlert(text) {
-    // Disabled per user preference - only crisp bell chime sound is played
-    try {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    } catch (e) {}
-    return;
-  }
-
   function freshZoneTime(row, isBearish) {
     const fresh = isBearish ? row.is_supply_zone : row.is_demand_fresh;
     const zone = isBearish ? row.supply_zone : row.demand_zone;
@@ -2448,109 +2437,99 @@
     return fresh && !/\((tested|mitigated)\)/i.test(zone || "") ? (time || "") : "";
   }
 
-  function showStickyToast(x, isPE, force = false) {
-    const container = document.getElementById("toastContainer");
-    if (!container || !x || !x.symbol) return;
+  const ZONE_ALERT_WINDOW_MS = 60_000;
+  const activeScannerAlerts = new Map();
 
-    // Attempt enrichment from current dashboard candidate rows if any fields are missing
-    const allRows = [...(_currentBullish || []), ...(_currentBearish || [])];
-    const live = allRows.find(r => r.symbol === x.symbol) || {};
-    const item = { ...live, ...x };
+  function isCurrentZoneAlert(row, now = Date.now()) {
+    const confirmed = row.alert_confirmed_epoch;
+    const age = now - confirmed * 1000;
+    return Number.isFinite(confirmed) && confirmed > 0 && age >= 0 && age < ZONE_ALERT_WINDOW_MS;
+  }
 
-    const zoneTime = freshZoneTime(item, isPE);
-    if (!force && (!isMarketHours() || !zoneTime)) return;
-
-    // Do NOT display empty/broken placeholder toasts if core price data is missing
-    const entryVal = item.entry || item.ltp || item.last_breakout_level;
-    const scoreVal = item.one_side_rally_score ?? item.score;
-    if (!force && !entryVal && scoreVal == null) {
-      console.warn("Suppressed empty alert popup for:", item.symbol);
-      return;
-    }
-
-    const existing = container.querySelector(`.toast[data-sym="${item.symbol}"]`);
-    if (existing) existing.remove();
-
-    const type = isPE ? "bearish" : "bullish";
-    const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
-    const freshTag = item.breakout_freshness === "FRESH" ? " · ⚡ FRESH" : (item.breakout_freshness === "RETEST" ? " · 🔄 RETEST" : "");
-
-    const isDemand = Boolean(zoneTime && !isPE);
-    const isSupply = Boolean(zoneTime && isPE);
-    const timeDisplay = zoneTime || item.block_surge_time || item.breakout_time || item.alert_created_at || "";
-
-    let statusText = isPE ? `🔴 BREAKDOWN ${timeDisplay}${freshTag}` : `🟢 BREAKOUT ${timeDisplay}${freshTag}`;
-    let bannerText = `<div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ ALL PRIORITY CRITERIA MET</div>`;
-
-    if (isDemand && !isPE) {
-      const dZone = item.demand_zone ? ` [${item.demand_zone}]` : "";
-      statusText = `🟢 DEMAND · FRESH ${timeDisplay}${dZone}`;
-      bannerText = `<div style="font-size:10px; font-weight:800; color:#047857; background:#d1fae5; border:1px solid #6ee7b7; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">🛡️ DEMAND FRESH BASE DEFENDED · LOW-RISK SWEET SPOT</div>`;
-    } else if (isSupply && isPE) {
-      const sZone = item.supply_zone ? ` [${item.supply_zone}]` : "";
-      statusText = `🔴 BEAR OB · FRESH ${timeDisplay}${sZone}`;
-      bannerText = `<div style="font-size:10px; font-weight:800; color:#b91c1c; background:#fee2e2; border:1px solid #fca5a5; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BEAR OB REJECTION · SHORT ENTRY</div>`;
-    } else if (isSurge) {
-      statusText = item.block_surge_type || (isPE ? `⚡ BLOCK SURGE (SELL) ${timeDisplay}` : `⚡ BLOCK SURGE (BUY) ${timeDisplay}`);
-      bannerText = `<div style="font-size:10px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:4px; padding:2px 4px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BLOCK SURGE · ₹${item.block_surge_turnover_cr || 0}Cr (${item.block_surge_rvol || 1}x)</div>`;
-    }
-
-    const toast = document.createElement("div");
-    toast.className = `toast ${type}`;
-    toast.setAttribute("data-sym", item.symbol);
-    toast.style.cursor = "pointer";
-
-    const rvolDisplay = (item.block_surge_rvol != null && item.block_surge_rvol > 1 ? `${Number(item.block_surge_rvol).toFixed(1)}x` : (item.rvol_5m != null && item.rvol_5m > 0 ? `${Number(item.rvol_5m).toFixed(1)}x` : (item.vc_ranking != null ? `${Number(item.vc_ranking).toFixed(1)}x` : "--")));
-    const entryStr = entryVal ? `₹${n(entryVal)}` : "--";
-    const slStr = item.stop_loss ? `₹${n(item.stop_loss)}` : "--";
-    const tgtStr = item.target ? `₹${n(item.target)}` : "--";
-    const scoreStr = scoreVal != null ? scoreVal : "--";
-    const rangeHoldStr = item.range_position_percent != null ? `${item.range_position_percent}%` : "--%";
-
-    toast.innerHTML = `
-      <div style="flex:1;">
-        <div class="toast-title ${type}">🔔 ${item.symbol} - ${statusText}</div>
-        ${bannerText}
-        <div class="toast-desc">Time: ${timeDisplay || '--'} · Score: ${scoreStr}${item.lot_size ? ` · Lot: ${Number(item.lot_size).toLocaleString()}` : ''}<br/><b>Entry: ${entryStr}</b> · SL: ${slStr} · Tgt: ${tgtStr}<br/>RVOL: ${rvolDisplay} · Range Hold: ${rangeHoldStr}</div>
-      </div>
-      <button class="toast-close" title="Dismiss">✖</button>
-    `;
-
-    toast.addEventListener("click", (evt) => {
-      if (evt.target && evt.target.classList.contains("toast-close")) {
-        toast.remove();
-      } else if (typeof selectStock === "function") {
-        selectStock(item.symbol, item);
+  function pruneScannerAlerts() {
+    const isBearish = _activeTab === "bearish";
+    for (const [symbol, alert] of activeScannerAlerts) {
+      const row = _displayedScannerRows.find(candidate => candidate.symbol === symbol);
+      if (!isMarketHours() || !row || alert.isBearish !== isBearish
+          || row.alert_event_id !== alert.eventId || !freshZoneTime(row, isBearish)
+          || row.is_stale_data || row.is_stale_fallback || !isCurrentZoneAlert(row)) {
+        alert.dismiss();
       }
-    });
-
-    container.appendChild(toast);
-
-    // Send Desktop OS Notification if supported and permitted
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      try {
-        const notifTitle = isDemand ? `🟢 DEMAND · FRESH ${timeDisplay}: ${item.symbol}` : (isSupply ? `🔴 BEAR OB · FRESH ${timeDisplay}: ${item.symbol}` : `⚡ BREAKOUT ${timeDisplay}: ${item.symbol}`);
-        const notifBody = `LTP: ₹${item.ltp || item.entry} | SL: ₹${item.stop_loss || '--'} | Tgt: ₹${item.target || '--'}\n${item.trade_plan || 'High Relative Strength institutional setup'}`;
-        const notif = new Notification(notifTitle, {
-          body: notifBody,
-          icon: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
-          tag: item.symbol
-        });
-        notif.onclick = () => {
-          window.focus();
-          if (typeof selectStock === "function") selectStock(item.symbol, item);
-        };
-      } catch(e) {}
     }
   }
 
-  function checkAndTriggerBellAlerts(payload) {
-    if (!payload || !payload.ok || payload._is_replay || payload._previous_session || payload._stale_kept) return;
-    const todayIst = getISTTime().toISOString().slice(0, 10);
-    if (!isMarketHours() || (payload.session_date && payload.session_date !== todayIst)) {
-      _hasEvaluatedInitialBell = true;
-      return;
+  function showStickyToast(item, isBearish) {
+    const container = document.getElementById("toastContainer");
+    const now = Date.now();
+    if (!container || !item.symbol || !isMarketHours() || !isCurrentZoneAlert(item, now)) return false;
+
+    const zoneTime = freshZoneTime(item, isBearish);
+    const entry = item.entry || item.ltp || item.last_breakout_level;
+    const score = item.one_side_rally_score ?? item.score;
+    if (!zoneTime || (!entry && score == null)) return false;
+
+    activeScannerAlerts.get(item.symbol)?.dismiss();
+    const type = isBearish ? "bearish" : "bullish";
+    const label = isBearish ? "Bear OB Fresh" : "Demand Fresh";
+    const zoneRange = isBearish ? item.supply_zone : item.demand_zone;
+    const timeFormat = { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true };
+    const confirmedTime = new Date(item.alert_confirmed_epoch * 1000).toLocaleTimeString("en-IN", timeFormat);
+    const receivedTime = new Date(now).toLocaleTimeString("en-IN", timeFormat);
+    const zoneDetails = `Zone ${zoneTime}${zoneRange ? ` · ${zoneRange}` : ""}`;
+    const levels = `Entry ${entry ? `₹${n(entry)}` : "—"} · SL ${item.stop_loss ? `₹${n(item.stop_loss)}` : "—"} · Tgt ${item.target ? `₹${n(item.target)}` : "—"}`;
+
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    toast.dataset.sym = item.symbol;
+    toast.style.cursor = "pointer";
+    toast.innerHTML = `
+      <div style="flex:1;">
+        <div class="toast-title ${type}">🔔 ${item.symbol} · ${label}</div>
+        <div class="toast-desc">${zoneDetails}<br/>Confirmed ${confirmedTime} · Alert ${receivedTime} IST<br/>${levels}</div>
+      </div>
+      <button class="toast-close" type="button" title="Dismiss" aria-label="Dismiss alert">✖</button>
+    `;
+
+    let desktopAlert;
+    let expiryTimer;
+    const dismiss = () => {
+      clearTimeout(expiryTimer);
+      toast.remove();
+      desktopAlert?.close();
+      if (activeScannerAlerts.get(item.symbol)?.dismiss === dismiss) activeScannerAlerts.delete(item.symbol);
+    };
+    toast.addEventListener("click", (event) => {
+      if (event.target?.classList.contains("toast-close")) dismiss();
+      else selectStock(item.symbol, item);
+    });
+    container.appendChild(toast);
+    activeScannerAlerts.set(item.symbol, { isBearish, eventId: item.alert_event_id, dismiss });
+    expiryTimer = setTimeout(dismiss, Math.max(0, item.alert_confirmed_epoch * 1000 + ZONE_ALERT_WINDOW_MS - Date.now()));
+
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        desktopAlert = new Notification(`${label} · ${item.symbol}`, {
+          body: `Confirmed ${confirmedTime} IST · ${levels}`,
+          tag: item.symbol,
+        });
+        desktopAlert.onclick = () => {
+          window.focus();
+          selectStock(item.symbol, item);
+          dismiss();
+        };
+      } catch (e) {}
     }
+    return true;
+  }
+
+  function isLiveScannerAlertSnapshot(payload) {
+    const todayIst = getISTTime().toISOString().slice(0, 10);
+    return payload?.ok && !payload._is_replay && !payload._previous_session && !payload._stale_kept
+      && (!payload.session_date || payload.session_date === todayIst) && isMarketHours();
+  }
+
+  function checkAndTriggerBellAlerts(payload) {
+    if (!isLiveScannerAlertSnapshot(payload)) return;
 
     const isBearish = _activeTab === "bearish";
     for (const row of _displayedScannerRows) {
@@ -2560,12 +2539,11 @@
 
       const alertKey = row.alert_event_id || `${payload.session_date}_${row.symbol}_${isBearish}_${eventTime}`;
       if (_alertedBreakouts.has(alertKey) || _persistedSeenEventIds.has(alertKey)) continue;
+      if (!showStickyToast(row, isBearish)) continue;
       _alertedBreakouts.add(alertKey);
       if (row.alert_event_id) _savePersistedAlertId(row.alert_event_id);
-      if (!_hasEvaluatedInitialBell) continue;
 
       playBellRangSound();
-      showStickyToast(row, isBearish);
       if (row.alert_event_id) {
         fetch('/api/alerts/ack', {
           method: 'POST',
@@ -2578,7 +2556,6 @@
         }).catch(err => console.warn('Alert ack error:', err));
       }
     }
-    _hasEvaluatedInitialBell = true;
   }
 
   /* Formatters */
@@ -3764,6 +3741,7 @@
     renderLeftList(displayRows, emptyMessage);
     renderTable(displayRows, emptyMessage);
     _displayedScannerRows = displayRows;
+    pruneScannerAlerts();
     return displayRows;
   }
 
@@ -4628,7 +4606,10 @@
   window.addEventListener("online", () => loadData());
   window.addEventListener("pageshow", event => { if (event.persisted) loadData(); });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") loadData();
+    if (document.visibilityState === "visible") {
+      pruneScannerAlerts();
+      loadData();
+    }
   });
 
   async function checkUpstoxStatus() {
@@ -4699,47 +4680,7 @@
       });
     }
 
-    const testBellBtn = document.getElementById("testBellBtn");
-    let _testTogglePE = false;
-    if (testBellBtn) {
-      testBellBtn.addEventListener("click", () => {
-        unlockAudio();
-        if (typeof Notification !== "undefined" && Notification.permission === "default") {
-          try { Notification.requestPermission(); } catch(e) {}
-        }
-        playBellRangSound();
-        _testTogglePE = !_testTogglePE;
-        const testSym = _testTogglePE ? "DIXON" : "ATHERENERG";
-        const testLtp = _testTogglePE ? 14100.0 : 1845.0;
-        showStickyToast({
-          symbol: testSym,
-          breakout_time: _testTogglePE ? "10:05 AM" : "10:20 AM",
-          demand_fresh_time: "02:05 PM",
-          supply_zone_time: "01:45 PM",
-          score: 100,
-          one_side_rally_score: 100,
-          status: "Priority Rally",
-          lot_size: _testTogglePE ? 50 : 375,
-          entry: testLtp,
-          ltp: testLtp,
-          stop_loss: _testTogglePE ? 14350.0 : 1828.0,
-          target: _testTogglePE ? 13650.0 : 1920.0,
-          vc_ranking: _testTogglePE ? 3.8 : 6.0,
-          range_position_percent: _testTogglePE ? 14.0 : 83.0,
-          is_breakout: true,
-          is_demand_fresh: !_testTogglePE,
-          demand_zone: "₹1840.0-₹1846.0",
-          is_supply_zone: _testTogglePE,
-          supply_zone: "₹14150.0-₹14200.0"
-        }, _testTogglePE, true);
-
-        if (!_testTogglePE) {
-          speakVoiceAlert(`Demand Fresh on ${testSym} at 02:05 PM at ${Math.round(testLtp)}`);
-        } else {
-          speakVoiceAlert(`Bear OB Fresh on ${testSym} at 01:45 PM at ${Math.round(testLtp)}`);
-        }
-      });
-    }
+    document.getElementById("testBellBtn")?.addEventListener("click", () => playBellRangSound(true));
 
     loadData();
 
@@ -5114,14 +5055,14 @@
             if (isPE !== (_activeTab === "bearish")) return;
             const live = _displayedScannerRows.find(row => row.symbol === item.symbol);
             const eventTime = freshZoneTime(item, isPE);
-            if (!_hasEvaluatedInitialBell || !isMarketHours() || !eventTime || !live
+            if (!isLiveScannerAlertSnapshot(_lastScannerPayload) || !eventTime || !live
                 || live.is_stale_data || live.is_stale_fallback
-                || live.alert_event_id !== evtId || freshZoneTime(live, isPE) !== eventTime) return;
+                || live.alert_event_id !== evtId || freshZoneTime(live, isPE) !== eventTime
+                || !isCurrentZoneAlert(item) || !showStickyToast(live, isPE)) return;
 
             _savePersistedAlertId(evtId);
             ackAlert();
             playBellRangSound();
-            showStickyToast(live, isPE);
           });
         } else if (msg.type === "index_update" && msg.index_context) {
           renderIndexQuotes(msg.index_context);

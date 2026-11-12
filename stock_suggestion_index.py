@@ -326,6 +326,7 @@ class Suggestion:
     alert_count: int = 0
     alert_event_id: str | None = None
     alert_created_at: str | None = None
+    alert_confirmed_epoch: float | None = None
     alert_delivered_at: str | None = None
     alert_acknowledged_at: str | None = None
     completed_candle_close: float | None = None
@@ -344,6 +345,7 @@ class Suggestion:
     is_supply_zone: bool = False
     supply_zone: str = ""
     supply_zone_time: str | None = None
+    zone_confirmed_epoch: float | None = None
     prev_rank: int | None = None
     rank_velocity: str = "STABLE"
     rank_progression: str = ""
@@ -406,6 +408,7 @@ class Suggestion:
             "alert_count": self.alert_count,
             "alert_event_id": self.alert_event_id,
             "alert_created_at": self.alert_created_at,
+            "alert_confirmed_epoch": self.alert_confirmed_epoch,
             "alert_delivered_at": self.alert_delivered_at,
             "alert_acknowledged_at": self.alert_acknowledged_at,
             "completed_candle_close": self.completed_candle_close,
@@ -424,6 +427,7 @@ class Suggestion:
             "is_supply_zone": self.is_supply_zone,
             "supply_zone": self.supply_zone,
             "supply_zone_time": self.supply_zone_time,
+            "zone_confirmed_epoch": self.zone_confirmed_epoch,
             "prev_rank": self.prev_rank,
             "rank_velocity": self.rank_velocity,
             "rank_progression": self.rank_progression,
@@ -2643,6 +2647,7 @@ def build_suggestions(
                 is_supply_zone=is_supply_zone,
                 supply_zone=supply_zone_str,
                 supply_zone_time=supply_zone_time,
+                zone_confirmed_epoch=fresh_block["confirmation_time"] if fresh_block is not None else None,
             )
         )
 
@@ -2831,6 +2836,11 @@ def evaluate_direction_evidence(item: Suggestion, opposite_item: Suggestion) -> 
     return score
 
 
+def is_zone_alert_current(confirmed_epoch: float | None, now_epoch: float) -> bool:
+    """A zone can notify during the first minute after confirmation."""
+    return type(confirmed_epoch) in (int, float) and 0 <= now_epoch - confirmed_epoch < 60
+
+
 def claim_alert_delivery(
     alert_event_id: str,
     worker_id: str,
@@ -2858,6 +2868,10 @@ def claim_alert_delivery(
             return False
 
         if target_entry.get("alert_acknowledged_at"):
+            return False
+        if target_entry.get("last_ob_alert_time") and not is_zone_alert_current(
+            target_entry.get("alert_confirmed_epoch"), now_epoch
+        ):
             return False
 
         status = target_entry.get("delivery_status", "PENDING")
@@ -3036,10 +3050,12 @@ def _process_candidate_lifecycle(
     ob_time = (item.demand_fresh_time if side == "bullish" and item.is_demand_fresh
                else item.supply_zone_time if side == "bearish" and item.is_supply_zone
                else None)
+    zone_confirmed_epoch = item.zone_confirmed_epoch if ob_time else None
+    can_alert = item.bell_rang and (ob_time is None or is_zone_alert_current(zone_confirmed_epoch, now_epoch))
 
     if entry is None:
         # First time seen this session
-        alert_fired = bool(item.bell_rang)
+        alert_fired = can_alert
         alert_count = 1 if alert_fired else 0
         event_id = f"evt_{item.symbol}_{side}_w1_{int(now_epoch)}" if alert_fired else None
         created_at = (ob_time or market_clock_ist) if alert_fired else None
@@ -3062,6 +3078,7 @@ def _process_candidate_lifecycle(
             "alert_created_at": created_at,
             "last_ob_alert_time": ob_time if alert_fired else None,
             "alert_created_epoch": now_epoch if alert_fired else None,
+            "alert_confirmed_epoch": zone_confirmed_epoch if alert_fired else None,
             "alert_delivered_at": None,
             "alert_acknowledged_at": None,
             "delivery_status": "PENDING" if alert_fired else "ACKNOWLEDGED",
@@ -3183,7 +3200,7 @@ def _process_candidate_lifecycle(
             else:
                 new_structure = (breakout_level < old_level * 0.998) and is_confirmed_breakout
 
-            if cooldown_passed and new_structure and (ob_time is None or item.bell_rang):
+            if cooldown_passed and new_structure and (ob_time is None or can_alert):
                 # Genuinely new structure formed after cooldown!
                 new_count = entry.get("alert_count", 1) + 1
                 entry["is_invalidated"] = False
@@ -3197,6 +3214,7 @@ def _process_candidate_lifecycle(
                 entry["alert_created_at"] = ob_time or market_clock_ist
                 entry["last_ob_alert_time"] = ob_time
                 entry["alert_created_epoch"] = now_epoch
+                entry["alert_confirmed_epoch"] = zone_confirmed_epoch
                 entry["alert_delivered_at"] = None
                 entry["alert_acknowledged_at"] = None
                 entry["delivery_status"] = "PENDING"
@@ -3206,7 +3224,7 @@ def _process_candidate_lifecycle(
         else:
             # Active, valid setup
             new_ob = _parse_time_minutes(ob_time) > _parse_time_minutes(entry.get("last_ob_alert_time"))
-            if item.bell_rang and (not entry.get("alert_fired") or new_ob):
+            if can_alert and (not entry.get("alert_fired") or new_ob):
                 entry["first_alerted_at"] = entry.get("first_alerted_at") or market_clock_ist
                 entry["alert_fired"] = True
                 entry["alert_count"] = entry.get("alert_count", 0) + 1
@@ -3216,6 +3234,7 @@ def _process_candidate_lifecycle(
                 entry["alert_created_at"] = ob_time or market_clock_ist
                 entry["last_ob_alert_time"] = ob_time
                 entry["alert_created_epoch"] = now_epoch
+                entry["alert_confirmed_epoch"] = zone_confirmed_epoch
                 entry["alert_delivered_at"] = None
                 entry["alert_acknowledged_at"] = None
                 entry["delivery_status"] = "PENDING"
@@ -3234,10 +3253,16 @@ def _process_candidate_lifecycle(
         entry["alert_acknowledged_at"] = market_clock_ist
         entry["delivery_status"] = "ACKNOWLEDGED"
 
+    zone_alert_expired = bool(last_ob_time) and not is_zone_alert_current(entry.get("alert_confirmed_epoch"), now_epoch)
+    if zone_alert_expired and not entry.get("alert_acknowledged_at"):
+        entry["delivery_status"] = "EXPIRED"
+
     should_alert = bool(
         entry.get("alert_event_id")
         and entry.get("alert_created_at")
         and not entry.get("alert_acknowledged_at")
+        and entry.get("delivery_status") != "EXPIRED"
+        and not zone_alert_expired
     )
 
     # Early Ignition & Rank Velocity Evaluation
@@ -3278,6 +3303,7 @@ def _process_candidate_lifecycle(
     d["top5_streak_minutes"] = entry.get("top5_streak_minutes", 0)
     d["alert_event_id"] = entry.get("alert_event_id")
     d["alert_created_at"] = entry.get("alert_created_at")
+    d["alert_confirmed_epoch"] = entry.get("alert_confirmed_epoch")
     d["alert_delivered_at"] = entry.get("alert_delivered_at")
     d["alert_acknowledged_at"] = entry.get("alert_acknowledged_at")
     d["delivery_status"] = entry.get("delivery_status", "PENDING")

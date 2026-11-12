@@ -49,14 +49,16 @@ async def register_client(ws: WebSocketServerProtocol) -> None:
             INDIA_TZ,
             INPUT_DIR,
             _load_lifecycle_state,
-            _save_lifecycle_state,
+            is_zone_alert_current,
         )
         state = _load_lifecycle_state()
         raw_cands = state.get("candidates", {})
 
         now_dt = datetime.now(INDIA_TZ)
-        is_live_market = now_dt.weekday() < 5 and (9 * 60 + 15) <= (now_dt.hour * 60 + now_dt.minute) <= (15 * 60 + 35)
-        now_epoch = time.time()
+        is_live_market = now_dt.weekday() < 5 and (9 * 60 + 15) <= (now_dt.hour * 60 + now_dt.minute) < (15 * 60 + 30)
+        if not is_live_market or state.get("session_date") != now_dt.date().isoformat():
+            return
+        now_epoch = now_dt.timestamp()
 
         # Load latest suggestions for metric enrichment
         latest_file = INPUT_DIR / "stock_suggestion_index.latest.json"
@@ -71,24 +73,14 @@ async def register_client(ws: WebSocketServerProtocol) -> None:
                 pass
 
         pending = []
-        needs_save = False
         for v in raw_cands.values():
             if not v.get("alert_event_id"):
                 continue
-            if v.get("alert_acknowledged_at"):
+            if v.get("alert_acknowledged_at") or v.get("delivery_status") == "EXPIRED":
                 continue
 
-            created_epoch = v.get("alert_created_epoch") or v.get("claimed_at")
-            is_stale = False
-            if not is_live_market:
-                is_stale = True
-            elif created_epoch and (now_epoch - created_epoch > 900):
-                is_stale = True
-
-            if is_stale:
-                v["alert_acknowledged_at"] = now_dt.strftime("%H:%M:%S")
-                v["delivery_status"] = "ACKNOWLEDGED"
-                needs_save = True
+            confirmed_epoch = v.get("alert_confirmed_epoch")
+            if not is_zone_alert_current(confirmed_epoch, now_epoch):
                 continue
 
             # Genuine fresh unacknowledged alert during live market
@@ -98,12 +90,6 @@ async def register_client(ws: WebSocketServerProtocol) -> None:
                     if k not in item_data or item_data[k] is None:
                         item_data[k] = val
             pending.append(item_data)
-
-        if needs_save:
-            try:
-                _save_lifecycle_state(state)
-            except Exception:
-                pass
 
         if pending:
             await ws.send(json.dumps({
