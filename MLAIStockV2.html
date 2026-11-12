@@ -273,32 +273,38 @@
     .top-navbar {
       background: var(--bg-card);
       border-bottom: 1px solid var(--border);
-      padding: 10px 24px;
+      padding: 8px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       position: sticky;
       top: 0;
       z-index: 40;
-      gap: 16px;
+      gap: 8px 12px;
+      flex-wrap: wrap;
+      min-height: 48px;
     }
 
     .navbar-ticker {
       display: flex;
       align-items: center;
-      gap: 20px;
+      gap: 8px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
     }
 
     .ticker-chip {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 13px;
+      gap: 6px;
+      font-size: 12px;
       font-weight: 700;
-      padding: 4px 10px;
+      padding: 3px 8px;
       border-radius: 6px;
       background: var(--bg-main);
       border: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
 
     .clickable-index-chip {
@@ -322,17 +328,23 @@
     .navbar-status {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      flex: 1 1 auto;
+      max-width: 100%;
     }
 
     .status-badge {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 20px;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .status-badge.live {
@@ -350,16 +362,19 @@
     .refresh-pill-btn {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       background: #0f172a;
       color: #ffffff;
       border: 0;
-      border-radius: 8px;
-      padding: 7px 14px;
-      font-size: 12px;
-      font-weight: 700;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 11px;
+      font-weight: 800;
       cursor: pointer;
       transition: background 0.15s ease;
+      flex-shrink: 0;
+      white-space: nowrap;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
     }
 
     .refresh-pill-btn:hover {
@@ -1656,22 +1671,22 @@
       </div>
 
       <div class="navbar-status">
-        <button id="upstoxAuthBtn" onclick="handleUpstoxAuthClick()" style="background:#f5f3ff; color:#6d28d9; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #ddd6fe; cursor:pointer; display:inline-flex; align-items:center; gap:5px; flex-shrink:0;" title="Connect Upstox for official high-speed candles and Level-2 depth">
+        <button id="upstoxAuthBtn" onclick="handleUpstoxAuthClick()" style="background:#f5f3ff; color:#6d28d9; font-weight:700; font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #ddd6fe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Connect Upstox for official high-speed candles and Level-2 depth">
           <span id="upstoxDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#8b5cf6;"></span>
-          <span id="upstoxBtnText">⚡ Upstox: Connect</span>
+          <span id="upstoxBtnText">⚡ Upstox</span>
         </button>
-        <button id="soundToggleBtn" style="background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #bfdbfe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Toggle breakout & breakdown bell audio chime">🔔 Bell Sound: ON</button>
-        <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Click to test the bell rang sound and alert">🧪 Test Bell</button>
-        <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px;" title="WebSocket connection status only; scanner snapshot status is shown above the table">
+        <button id="soundToggleBtn" style="background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #bfdbfe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Toggle breakout & breakdown bell audio chime">🔔 Bell: ON</button>
+        <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Click to test the bell rang sound and alert">🧪 Test</button>
+        <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:3px 7px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="WebSocket connection status only; scanner snapshot status is shown above the table">
           <span id="wsStatusDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#16a34a;"></span>
-          <span id="wsStatusText">WS: Connecting...</span>
+          <span id="wsStatusText">WS: Connected</span>
         </span>
-        <span id="autoScanBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:inline-flex; align-items:center; gap:6px;" title="Background Engine automatically rescans 200+ NSE F&O stocks every 5 minutes during market hours">
+        <span id="autoScanBadge" style="font-size:11px; font-weight:700; padding:3px 7px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Background Engine automatically rescans 200+ NSE F&O stocks every 5 minutes during market hours">
           <span id="autoScanDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#2563eb;"></span>
-          <span id="autoScanText">Auto-Scan: 1m Active</span>
+          <span id="autoScanText">Auto-Scan: Idle</span>
         </span>
-        <span class="status-badge live" id="liveStatusBadge">● Live Real-Time Data</span>
-        <span style="font-size:12px; color:var(--text-muted); font-family:var(--font-mono);" id="marketClock">Clock --</span>
+        <span class="status-badge live" id="liveStatusBadge" style="flex-shrink:0;">● Market Closed</span>
+        <span style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:700; flex-shrink:0;" id="marketClock">Clock --</span>
         <button class="refresh-pill-btn" id="refreshBtn" type="button">⚡ Refresh Live</button>
       </div>
     </header>
@@ -4306,21 +4321,18 @@
     const scanInfo = payload._auto_scan_info || {};
     if (scanText) {
       if (scanInfo.status === "scan_window_closed") {
-        // Past the 2:45 PM auto-scan cutoff - NSE may still be open till 15:30,
-        // but the background scanner has stopped for the day on purpose.
-        scanText.textContent = "Auto-Scan: Done for today (2:45 cutoff)";
+        scanText.textContent = "Auto-Scan: Cutoff (2:45 PM)";
         if (scanBadge) {
+          scanBadge.title = "Done for today (2:45 PM cutoff)";
           scanBadge.style.background = "#fff7ed";
           scanBadge.style.color = "#c2410c";
           scanBadge.style.borderColor = "#fed7aa";
         }
         if (scanDot) scanDot.style.background = "#f97316";
       } else if (scanInfo.status === "pre_market" || isPreMarket()) {
-        // 9:00-9:15 AM - picks already cleared for the new session, but NSE's
-        // real open (and first scan) hasn't happened yet. Don't say "Active"
-        // or show a leftover "Last: " time from yesterday's final scan.
-        scanText.textContent = "Auto-Scan: Pre-Market (opens 9:15 AM)";
+        scanText.textContent = "Auto-Scan: Pre-Market";
         if (scanBadge) {
+          scanBadge.title = "Pre-market settles before 9:15 AM";
           scanBadge.style.background = "#f1f5f9";
           scanBadge.style.color = "#64748b";
           scanBadge.style.borderColor = "#e2e8f0";
@@ -4330,8 +4342,9 @@
         const clockStr = payload.market_clock_ist || "";
         const isOpeningWindow = clockStr >= "09:15:00" && clockStr < "09:20:00";
         if (isOpeningWindow) {
-          scanText.textContent = "Auto-Scan: 🟡 Opening Range Forming (09:15-09:20 Settle)";
+          scanText.textContent = "Auto-Scan: Opening Settle";
           if (scanBadge) {
+            scanBadge.title = "Opening Range Forming (09:15-09:20 Settle)";
             scanBadge.style.background = "#fffbeb";
             scanBadge.style.color = "#b45309";
             scanBadge.style.borderColor = "#fde68a";
@@ -4339,8 +4352,9 @@
           if (scanDot) scanDot.style.background = "#f59e0b";
         } else {
           const lastT = scanInfo.last_run_ist ? scanInfo.last_run_ist.replace(" IST", "") : (payload.market_clock_ist || "");
-          scanText.textContent = lastT ? `Auto-Scan: 1m (Last: ${lastT})` : "Auto-Scan: 1m Active";
+          scanText.textContent = lastT ? `Auto-Scan: ${lastT}` : "Auto-Scan: Active";
           if (scanBadge) {
+            scanBadge.title = "Background engine automatically rescans 200+ NSE F&O stocks every minute";
             scanBadge.style.background = "#eff6ff";
             scanBadge.style.color = "#1d4ed8";
             scanBadge.style.borderColor = "#bfdbfe";
@@ -4348,8 +4362,9 @@
           if (scanDot) scanDot.style.background = "#2563eb";
         }
       } else {
-        scanText.textContent = "Auto-Scan: Idle (Market Closed)";
+        scanText.textContent = "Auto-Scan: Idle";
         if (scanBadge) {
+          scanBadge.title = "Market Closed — Engine idle";
           scanBadge.style.background = "#f1f5f9";
           scanBadge.style.color = "#64748b";
           scanBadge.style.borderColor = "#e2e8f0";
@@ -4681,12 +4696,12 @@
     const btn = document.getElementById("soundToggleBtn");
     if (!btn) return;
     if (_bellSoundEnabled) {
-      btn.innerHTML = "🔔 Bell Sound: ON";
+      btn.innerHTML = "🔔 Bell: ON";
       btn.style.background = "#dbeafe";
       btn.style.color = "#1d4ed8";
       btn.style.borderColor = "#bfdbfe";
     } else {
-      btn.innerHTML = "🔕 Bell Sound: OFF";
+      btn.innerHTML = "🔕 Bell: OFF";
       btn.style.background = "#f1f5f9";
       btn.style.color = "#64748b";
       btn.style.borderColor = "#e2e8f0";
@@ -5054,27 +5069,32 @@
     if (!badge) return;
 
     if (isMarketHours()) {
-      badge.textContent = "● Live Real-Time Data";
+      badge.textContent = "● Live Market";
+      badge.title = "Live Real-Time Market Data Active";
       badge.style.background = "#dcfce7";
       badge.style.color = "#166534";
       badge.style.borderColor = "#86efac";
     } else if (isPreMarket()) {
-      badge.textContent = "⏳ Pre-Market (9:00 AM Open)";
+      badge.textContent = "⏳ Pre-Market";
+      badge.title = "Pre-Market (9:00 AM Open)";
       badge.style.background = "#fefce8";
       badge.style.color = "#854d0e";
       badge.style.borderColor = "#fde68a";
     } else if (isWeekend) {
-      badge.textContent = "📅 Weekend — Market Closed";
+      badge.textContent = "📅 Weekend";
+      badge.title = "Weekend — Market Closed";
       badge.style.background = "#f1f5f9";
       badge.style.color = "#64748b";
       badge.style.borderColor = "#e2e8f0";
     } else if (mins > (15 * 60 + 30)) {
-      badge.textContent = "🔒 Market Closed (Session Snapshot)";
+      badge.textContent = "🔒 Market Closed";
+      badge.title = "Market Closed (Session Snapshot)";
       badge.style.background = "#fef3c7";
       badge.style.color = "#92400e";
       badge.style.borderColor = "#fde68a";
     } else {
-      badge.textContent = "● Market Closed";
+      badge.textContent = "● Closed";
+      badge.title = "Market Closed";
       badge.style.background = "#f1f5f9";
       badge.style.color = "#64748b";
       badge.style.borderColor = "#e2e8f0";
