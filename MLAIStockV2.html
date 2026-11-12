@@ -16,43 +16,59 @@
     :root {
       --bg-main: #f4f6fa;
       --bg-card: #ffffff;
-      --border: #e2e8f0;
-      --border-subtle: #edf2f7;
+      --border: #cbd5e1;
+      --border-subtle: #e2e8f0;
       --text-dark: #0f172a;
-      --text-muted: #64748b;
-      --text-subtle: #94a3b8;
+      --text-muted: #475569;
+      --text-subtle: #64748b;
       --sidebar-bg: #0f172a;
       --sidebar-active: #2563eb;
       --sidebar-text: #94a3b8;
       --sidebar-hover: #1e293b;
-      --green: #10b981;
+      --green: #059669;
       --green-bg: #ecfdf5;
-      --green-border: #a7f3d0;
-      --red: #ef4444;
+      --green-border: #86efac;
+      --red: #dc2626;
       --red-bg: #fef2f2;
-      --red-border: #fecaca;
+      --red-border: #fca5a5;
       --blue: #2563eb;
       --blue-bg: #eff6ff;
-      --blue-border: #bfdbfe;
-      --amber: #f59e0b;
+      --blue-border: #93c5fd;
+      --amber: #d97706;
       --amber-bg: #fffbeb;
       --amber-border: #fde68a;
-      --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-      --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+      --font-main: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.07), 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Fast, zero-lag touch manipulation on all interactive elements across mobile & tablets */
+    button, a, input, select, tr, .tab-pill, .ticker-chip, .quick-filter-btn,
+    .overview-pill, .tf-btn, .ov-vol-pill, .sidebar-toggle-btn, .mobile-nav-toggle {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button, .tab-pill, .ticker-chip, .quick-filter-btn, .overview-pill, .tf-btn, .ov-vol-pill {
+      user-select: none;
+      -webkit-user-select: none;
     }
 
     html, body {
       max-width: 100%;
       overflow-x: hidden;
+      text-rendering: optimizeLegibility;
+      overscroll-behavior-y: contain;
     }
 
     body {
@@ -88,11 +104,9 @@
       position: sticky;
       top: 0;
       height: 100vh;
-      height: 100dvh;
       z-index: 50;
       transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       overflow-x: hidden;
-      overflow-y: auto;
     }
 
     .sidebar.collapsed {
@@ -251,7 +265,6 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
-      height: 100dvh;
       overflow-y: auto;
       overflow-x: hidden;
     }
@@ -260,38 +273,38 @@
     .top-navbar {
       background: var(--bg-card);
       border-bottom: 1px solid var(--border);
-      padding: 8px clamp(8px, 1.6vw, 24px);
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      grid-template-areas: "ticker actions" "status status";
+      padding: 8px 16px;
+      display: flex;
       align-items: center;
+      justify-content: space-between;
       position: sticky;
       top: 0;
       z-index: 40;
       gap: 8px 12px;
+      flex-wrap: wrap;
+      min-height: 48px;
     }
 
     .navbar-ticker {
-      grid-area: ticker;
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 6px;
-      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
     }
 
     .ticker-chip {
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
-      justify-content: space-between;
-      gap: 2px 8px;
-      min-width: 0;
-      font-size: 13px;
+      gap: 6px;
+      font-size: 12px;
       font-weight: 700;
-      padding: 4px 10px;
+      padding: 3px 8px;
       border-radius: 6px;
       background: var(--bg-main);
       border: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
 
     .clickable-index-chip {
@@ -313,34 +326,25 @@
     .ticker-chip.down .val { color: var(--red); }
 
     .navbar-status {
-      grid-area: status;
       display: flex;
       align-items: center;
+      gap: 6px;
       flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .navbar-actions {
-      grid-area: actions;
-      display: flex;
-      align-items: center;
       justify-content: flex-end;
-      gap: 6px;
+      flex: 1 1 auto;
+      max-width: 100%;
     }
-
-    .navbar-status-toggle { display: none; }
-    .navbar-status > * { max-width: 100%; }
-    .ticker-chip .val { overflow-wrap: anywhere; }
-    .ticker-chip.stale .val { color: #92400e !important; }
 
     .status-badge {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 20px;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .status-badge.live {
@@ -358,19 +362,19 @@
     .refresh-pill-btn {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       background: #0f172a;
       color: #ffffff;
       border: 0;
-      border-radius: 8px;
-      padding: 7px 14px;
-      font-size: 12px;
-      font-weight: 700;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 11px;
+      font-weight: 800;
       cursor: pointer;
       transition: background 0.15s ease;
-      min-height: 38px;
-      justify-content: center;
+      flex-shrink: 0;
       white-space: nowrap;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
     }
 
     .refresh-pill-btn:hover {
@@ -406,8 +410,6 @@
       flex-direction: column;
       justify-content: space-between;
       box-shadow: var(--shadow-sm);
-      min-width: 0;
-      overflow-wrap: anywhere;
     }
 
     .summary-card-title {
@@ -425,7 +427,6 @@
     .leaders-strip {
       display: flex;
       gap: 8px;
-      flex-wrap: wrap;
     }
 
     .leader-tag {
@@ -542,7 +543,7 @@
       display: grid;
       grid-template-columns: 310px minmax(0, 1fr);
       gap: 14px;
-      align-items: start;
+      min-height: 480px;
     }
 
     /* ── High RS Breakout Candidate List (Left Panel) ── */
@@ -553,7 +554,8 @@
       display: flex;
       flex-direction: column;
       box-shadow: var(--shadow-sm);
-      height: clamp(420px, 68dvh, 640px);
+      min-height: 580px;
+      max-height: 640px;
     }
 
     .list-panel-header {
@@ -587,8 +589,6 @@
 
     .stock-scroll-list {
       overflow-y: auto;
-      min-height: 0;
-      overscroll-behavior-y: contain;
       flex: 1;
       padding: 6px;
       display: flex;
@@ -606,8 +606,6 @@
       background: #ffffff;
       cursor: pointer;
       transition: all 0.15s ease;
-      gap: 8px;
-      flex-shrink: 0;
     }
 
     .stock-card-item:hover {
@@ -638,18 +636,6 @@
       box-shadow: 0 0 10px rgba(16, 185, 129, 0.35) !important;
     }
 
-    .list-filter-bar {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 4px;
-      padding: 6px 10px;
-      background: #f8fafc;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .candidate-side-tabs { padding: 6px 10px 0; }
-    .candidate-side-tabs > button { flex: 1; }
-
     .quick-filter-btn {
       padding: 3px 8px;
       border-radius: 4px;
@@ -672,6 +658,14 @@
       border-color: #0f172a !important;
     }
 
+    .quick-filter-btn.demand-fresh.active {
+      background: #059669 !important;
+      color: #ffffff !important;
+      border-color: #047857 !important;
+      box-shadow: 0 0 6px rgba(16,185,129,0.4);
+    }
+
+
     .quick-filter-btn.early.active {
       background: #059669 !important;
       color: #ffffff !important;
@@ -688,12 +682,10 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      min-width: 0;
     }
 
     .item-rank {
       width: 20px;
-      flex-shrink: 0;
       font-size: 11px;
       font-weight: 800;
       color: var(--text-muted);
@@ -703,8 +695,6 @@
     .item-names {
       display: flex;
       flex-direction: column;
-      min-width: 0;
-      overflow-wrap: anywhere;
     }
 
     .item-symbol {
@@ -724,7 +714,6 @@
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      flex-shrink: 0;
     }
 
     .item-chg {
@@ -754,7 +743,7 @@
       display: flex;
       flex-direction: column;
       box-shadow: var(--shadow-sm);
-      scroll-margin-top: calc(var(--header-height, 100px) + 8px);
+      min-height: 580px;
     }
 
     .chart-panel-header {
@@ -763,7 +752,6 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-wrap: wrap;
       background: #ffffff;
       flex-wrap: wrap;
       gap: 10px;
@@ -773,8 +761,6 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      flex-wrap: wrap;
-      min-width: 0;
     }
 
     .chart-active-symbol {
@@ -825,8 +811,6 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      flex-wrap: wrap;
-      min-width: 0;
     }
 
     .tf-btn {
@@ -844,11 +828,6 @@
       background: #0f172a;
       color: #ffffff;
       border-color: #0f172a;
-    }
-
-    [data-chart-symbol][aria-pressed="true"] {
-      outline: 2px solid currentColor;
-      outline-offset: -2px;
     }
 
     .ov-vol-pill {
@@ -879,7 +858,6 @@
       min-height: 440px;
       background: #ffffff;
       border-radius: 8px;
-      overflow: hidden;
     }
 
     .ov-chart-wrapper {
@@ -986,8 +964,6 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 8px;
     }
 
     .table-section-head h2 {
@@ -1001,7 +977,6 @@
     .tab-pills {
       display: flex;
       gap: 6px;
-      flex-wrap: wrap;
     }
 
     .tab-pill {
@@ -1021,20 +996,12 @@
       border-color: var(--blue-border);
     }
 
-    #tabFreshZones.active {
-      background: var(--green-bg);
-      color: #065f46;
-      border-color: var(--green);
-    }
-
     .table-wrapper {
       overflow-x: auto;
-      overscroll-behavior-x: contain;
     }
 
     table.vc-table {
       width: 100%;
-      min-width: 950px;
       border-collapse: collapse;
       text-align: left;
       font-size: 12px;
@@ -1301,115 +1268,331 @@
       opacity: 1;
     }
 
-    .table-wrapper { -webkit-overflow-scrolling: touch; }
-    .navbar-refresh-status { grid-column: 1 / -1; font-size: 11px; line-height: 1.25; }
-    .navbar-refresh-status:empty { display: none; }
-
-    @media (min-width: 641px) and (max-width: 1080px) {
-      .list-filter-bar { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    /* ── High-Conviction Demand Fresh Trade Playbook Bar (Ultra-Visible & Zero-Lag) ── */
+    .chart-playbook-banner {
+      margin: 4px 14px 8px;
+      padding: 8px 14px;
+      background: linear-gradient(90deg, #f0fdf4 0%, #ecfdf5 100%);
+      border: 1.5px solid #10b981;
+      border-radius: 8px;
+      font-size: 11px;
+      color: #065f46;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      box-shadow: 0 1px 3px rgba(16, 185, 129, 0.12);
+      transition: all 0.15s ease;
+      contain: layout style;
     }
 
-    @media (max-width: 1400px) {
-      .metrics-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .playbook-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: #065f46;
     }
 
-    @media (max-width: 1080px) {
-      .metrics-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .split-layout { grid-template-columns: minmax(0, 1fr); }
-      .list-panel { height: clamp(280px, 48dvh, 420px); }
+    .playbook-badge-grid {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      flex-wrap: wrap;
     }
 
-    @media (max-width: 991px) {
-      .top-navbar { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "menu ticker actions" "status status status"; }
-      .mobile-nav-toggle { grid-area: menu; display: flex; width: 40px; height: 40px; }
+    .playbook-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 5px;
+      white-space: nowrap;
+      letter-spacing: -0.01em;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      user-select: none;
+    }
+    .playbook-pill.entry { background: #dcfce7; color: #14532d; border: 1.5px solid #86efac; font-weight: 800; }
+    .playbook-pill.sl { background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5; font-weight: 800; }
+    .playbook-pill.be { background: #eff6ff; color: #1e40af; border: 1.5px solid #93c5fd; font-weight: 800; }
+    .playbook-pill.t1 { background: #ecfdf5; color: #065f46; border: 1.5px solid #6ee7b7; font-weight: 800; }
+    .playbook-pill.t2 { background: #d1fae5; color: #064e3b; border: 1.5px solid #34d399; font-weight: 800; }
+
+    /* ── Trade Levels Strip in Table Rows ── */
+    .trade-levels-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 5px;
+      font-size: 10px;
+      font-family: var(--font-mono);
+    }
+
+    .trade-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      white-space: nowrap;
+      letter-spacing: -0.01em;
+    }
+    .trade-badge.entry { background: #f0fdf4; color: #14532d; border: 1px solid #86efac; }
+    .trade-badge.sl { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+    .trade-badge.be { background: #eff6ff; color: #1e40af; border: 1px solid #93c5fd; font-weight: 800; }
+    .trade-badge.t1 { background: #ecfdf5; color: #065f46; border: 1px solid #6ee7b7; font-weight: 800; }
+
+    /* Hardware acceleration & zero-lag performance */
+    .dashboard-chart-wrapper, .ov-chart-wrapper {
+      will-change: transform;
+      transform: translateZ(0);
+    }
+
+    .stock-card-item, table.vc-table tbody tr {
+      contain: content;
+    }
+
+    .table-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      contain: layout paint;
+    }
+
+    table.vc-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: #f8fafc;
+      color: #1e293b;
+      border-bottom: 2px solid #cbd5e1;
+      white-space: nowrap;
+    }
+
+    /* ── Universal Responsive Breakpoints (Web, Tablet, iPad, Mobile) ── */
+
+    .table-wrapper {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      max-height: 540px;
+      overflow-y: auto;
+    }
+
+    /* Laptops & Standard Desktops (1100px - 1380px) */
+    @media (max-width: 1380px) {
+      .metrics-row {
+        grid-template-columns: repeat(6, 1fr);
+        gap: 8px;
+      }
+      .metrics-row > .summary-card:nth-child(1) { grid-column: span 3; }
+      .metrics-row > .summary-card:nth-child(2) { grid-column: span 3; }
+      .metrics-row > .summary-card:nth-child(3) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(4) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(5) { grid-column: span 2; }
+      .metrics-row > .summary-card:nth-child(6) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(7) { grid-column: span 1; }
+
+      .split-layout {
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 12px;
+      }
+      .list-panel {
+        max-height: 600px;
+      }
+    }
+
+    /* Tablet Landscape & Compact Laptops (881px - 1099px, iPad 10.2" landscape, Galaxy Tab) */
+    @media (max-width: 1099px) {
+      .sidebar {
+        width: 200px;
+      }
+      .metrics-row {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+      .metrics-row > .summary-card:nth-child(1) { grid-column: span 2; }
+      .metrics-row > .summary-card:nth-child(2) { grid-column: span 2; }
+      .metrics-row > .summary-card:nth-child(3) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(4) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(5) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(6) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(7) { grid-column: span 4; }
+
+      /* Keep side-by-side split layout on tablet landscape! */
+      .split-layout {
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 10px;
+      }
+      .list-panel {
+        min-height: 480px;
+        max-height: 520px;
+      }
+      .dashboard-chart-wrapper {
+        height: 440px !important;
+        min-height: 440px !important;
+      }
+      .ov-chart-wrapper {
+        height: 460px !important;
+        min-height: 460px !important;
+      }
+    }
+
+    /* Tablet Portrait & Mobile Webviews (<= 880px, iPad portrait, iPad Mini) */
+    @media (max-width: 880px) {
+      .mobile-nav-toggle { display: flex; }
 
       .sidebar {
         position: fixed;
-        inset: 0 auto 0 0;
-        width: min(250px, 85vw);
+        left: -260px;
+        top: 0;
+        bottom: 0;
+        width: 250px;
         z-index: 100;
-        visibility: hidden;
-        transform: translateX(-100%);
-        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
-        transition: transform 0.25s ease, visibility 0.25s;
+        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.4);
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
       }
-      .sidebar.mobile-open { visibility: visible; transform: translateX(0); }
-      .sidebar.collapsed { width: min(250px, 85vw); }
+      .sidebar.mobile-open { transform: translateX(260px); }
+      .sidebar.collapsed { width: 250px; }
       .sidebar.collapsed .brand-names,
       .sidebar.collapsed .menu-label,
       .sidebar.collapsed .sidebar-footer { display: flex; }
-      .sidebar.collapsed .sidebar-brand { flex-direction: row; justify-content: space-between; }
-      .sidebar.collapsed .menu-item { justify-content: flex-start; padding: 10px 14px; }
-      .sidebar-toggle-btn { width: 40px; height: 40px; }
 
-      .content-container { padding: 12px; gap: 12px; }
-      .metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-      .metrics-row > .summary-card:nth-child(-n+2) { grid-column: 1 / -1; }
-      .dashboard-chart-wrapper { height: 350px; min-height: 350px; }
-      .ov-chart-wrapper { height: 400px; min-height: 400px; }
-      #viewOverview { padding: 12px 14px !important; gap: 12px !important; }
-      #toastContainer { left: 8px; right: 8px !important; top: auto !important; bottom: max(8px, env(safe-area-inset-bottom)); max-width: none !important; }
+      .top-navbar {
+        flex-wrap: wrap;
+        padding: 8px 12px;
+        gap: 8px;
+      }
+      .navbar-ticker {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        max-width: 100%;
+        padding-bottom: 2px;
+      }
+      .navbar-ticker::-webkit-scrollbar { display: none; }
+      .navbar-status {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: flex-start;
+      }
+
+      .content-container { padding: 10px; gap: 10px; }
+
+      .metrics-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .metrics-row > .summary-card:nth-child(1),
+      .metrics-row > .summary-card:nth-child(2) { grid-column: 1 / -1; }
+      .metrics-row > .summary-card:nth-child(7) { grid-column: 1 / -1; }
+
+      /* Split layout stacks in portrait */
+      .split-layout {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      /* Compact candidate list on portrait so chart is easily accessible without giant scrolling */
+      .list-panel {
+        min-height: auto;
+        max-height: 280px;
+      }
+      .dashboard-chart-wrapper {
+        height: 420px !important;
+        min-height: 420px !important;
+      }
+      .ov-chart-wrapper {
+        height: 440px !important;
+        min-height: 440px !important;
+      }
+
+      /* Playbook bar wraps cleanly */
+      .chart-playbook-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px 10px;
+      }
+      .playbook-badge-grid {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      /* Table section head wrap */
+      .table-section-head {
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .tab-pills {
+        flex-wrap: wrap;
+      }
+
+      table.vc-table {
+        min-width: 720px;
+      }
+      #toastContainer { left: 8px; right: 8px; max-width: none; }
     }
 
+    /* Mobile Phones (<= 640px) */
     @media (max-width: 640px) {
-      .top-navbar { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "menu actions" "ticker ticker" "status status"; }
-      .navbar-ticker .ticker-chip { flex-direction: column; align-items: flex-start; font-size: 10px; padding: 5px 6px; }
-      .navbar-status-toggle { display: inline-flex; }
-      .navbar-status:not(.expanded) { display: none; }
-      .navbar-status > button { min-height: 36px; }
-      .navbar-actions { justify-content: flex-end; }
-      #liveStatusBadge { font-size: 10px; padding: 3px 6px; }
+      .ticker-chip { font-size: 11px; padding: 3px 6px; gap: 4px; }
+      .navbar-status > * { font-size: 10px !important; padding: 3px 6px !important; }
       .refresh-pill-btn { padding: 5px 8px; }
-      .navbar-status-toggle, .refresh-pill-btn { min-height: 40px; font-size: 11px; }
+      .summary-card { padding: 9px 10px; }
 
-      .content-container { padding: 8px; }
-      .summary-card { padding: 10px; }
-      .list-panel { height: clamp(300px, 46dvh, 390px); }
-      .stock-card-item { padding: 8px; }
-      .item-left { gap: 5px; }
-      .item-rank { width: 16px; }
-      .item-right button { min-width: 32px; min-height: 32px; }
-      .quick-filter-btn, .tab-pill, .tf-btn, .overview-pill { min-height: 36px; }
+      .chart-panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+      }
+      .chart-title-area { flex-wrap: wrap; gap: 8px; }
+      .chart-toolbar { width: 100%; justify-content: flex-end; }
 
-      .chart-panel-header { padding: 8px; gap: 8px; }
-      .chart-title-area { gap: 6px; }
-      .chart-toolbar { width: 100%; }
-      .chart-legend-bar { padding: 8px; gap: 6px 10px; }
-      #chartEarlyPlaybookBanner > div { flex-wrap: wrap; }
-      .dashboard-chart-wrapper { height: clamp(230px, 42dvh, 320px); min-height: 0; }
-      .ov-chart-wrapper { height: clamp(260px, 49dvh, 380px); min-height: 0; }
-      .table-section-head { padding: 10px; }
-      .table-section-head .tab-pills { width: 100%; }
-      .table-section-head .tab-pill { flex: 1; }
-      table.vc-table th, table.vc-table td { padding-inline: 8px; }
-      table.vc-table th:nth-child(2), table.vc-table td:nth-child(2) {
+      .list-panel { max-height: 240px; }
+      .dashboard-chart-wrapper { height: 340px !important; min-height: 340px !important; }
+      .ov-chart-wrapper { height: 350px !important; min-height: 350px !important; }
+
+      #ovSymbol { font-size: 18px !important; }
+      #ovLtp { font-size: 17px !important; }
+      #ovTradePlanBox { padding: 10px !important; gap: 8px !important; }
+      .ov-plan-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+      .ov-cards-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+
+      #viewSectorAnalysis { padding: 10px !important; }
+      #sectorTilesGrid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+
+      /* Pin Stock column on mobile horizontal scroll */
+      table.vc-table th:nth-child(2),
+      table.vc-table td:nth-child(2) {
         position: sticky;
         left: 0;
-        background-color: #fff;
-        border-right: 1px solid var(--border);
+        z-index: 2;
+        background: #ffffff;
+        box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
       }
-      table.vc-table th:nth-child(2) { background-color: #f8fafc; }
-      table.vc-table tr.selected td:nth-child(2) { background-color: #f0fdf4; }
-
-      #viewOverview { padding: 8px !important; gap: 10px !important; }
-      .overview-main-panel { padding: 10px !important; gap: 10px !important; min-width: 0; }
-      #ovSymbol, #ovLtp { font-size: 17px !important; }
-      #ovTradePlanBox { padding: 10px !important; gap: 8px !important; }
-      #ovPlanRule { min-width: min(100%, 260px) !important; }
-      .ov-plan-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; overflow-wrap: anywhere; }
-      .ov-cards-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 10px !important; }
-      #ovFootprintDrawer > div:first-child > div { flex-wrap: wrap; }
-      #fpLadder { font-size: 10px !important; }
-      #viewSectorAnalysis { padding: 8px !important; }
-      #sectorTilesGrid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr)) !important; }
+      table.vc-table thead th:nth-child(2) {
+        z-index: 6;
+        background: #f8fafc;
+      }
+      table.vc-table tr.selected td:nth-child(2) {
+        background: #f0fdf4;
+      }
     }
 
-    @media (max-width: 340px) {
-      .metrics-row { grid-template-columns: minmax(0, 1fr); }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .sidebar { transition: none; }
+    /* Ultra-Small Phones (<= 380px) */
+    @media (max-width: 380px) {
+      .metrics-row { grid-template-columns: 1fr; }
+      .metrics-row > .summary-card { grid-column: 1 / -1 !important; }
+      .tab-pill { padding: 4px 8px; font-size: 10px; }
+      .navbar-ticker .ticker-chip { flex: 1; }
     }
   </style>
 </head>
@@ -1481,7 +1664,8 @@
   <main class="main-canvas">
     <!-- Top Navbar Bar -->
     <header class="top-navbar">
-        <button class="mobile-nav-toggle" id="mobileNavToggle" type="button" aria-label="Toggle navigation" aria-controls="appSidebar" aria-expanded="false">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button class="mobile-nav-toggle" id="mobileNavToggle" title="Open Menu">
           <span class="bar"></span>
           <span class="bar"></span>
           <span class="bar"></span>
@@ -1489,42 +1673,38 @@
         <div class="navbar-ticker">
           <div class="ticker-chip up clickable-index-chip" id="niftyTickerChip" onclick="openStockInOverview('NIFTY50')" title="Click to open interactive 5m SMC chart for NIFTY 50 in Stock Overview">
             <span style="display:inline-flex; align-items:center; gap:4px;">📊 NIFTY 50</span>
-            <span class="val" id="niftyVal">Loading…</span>
+            <span class="val" id="niftyVal">--</span>
           </div>
           <div class="ticker-chip up clickable-index-chip" id="bankTickerChip" onclick="openStockInOverview('BANKNIFTY')" title="Click to open interactive 5m SMC chart for BANK NIFTY in Stock Overview">
             <span style="display:inline-flex; align-items:center; gap:4px;">🏛️ BANK NIFTY</span>
-            <span class="val" id="bankVal">Loading…</span>
+            <span class="val" id="bankVal">--</span>
           </div>
           <div class="ticker-chip up clickable-index-chip" id="sensexTickerChip" onclick="openStockInOverview('SENSEX')" title="Click to open interactive 5m SMC chart for SENSEX in Stock Overview">
             <span style="display:inline-flex; align-items:center; gap:4px;">📈 SENSEX</span>
-            <span class="val" id="sensexVal">Loading…</span>
+            <span class="val" id="sensexVal">--</span>
           </div>
         </div>
-      <div class="navbar-actions">
-        <span class="status-badge closed" id="liveStatusBadge">Market status</span>
-        <button class="tab-pill navbar-status-toggle" id="navbarStatusToggle" type="button" aria-controls="navbarStatus" aria-expanded="false">More</button>
-        <button class="refresh-pill-btn" id="refreshBtn" type="button">Refresh</button>
       </div>
 
-      <div class="navbar-status" id="navbarStatus">
-        <button id="upstoxAuthBtn" onclick="handleUpstoxAuthClick()" style="background:#f5f3ff; color:#6d28d9; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #ddd6fe; cursor:pointer; display:inline-flex; align-items:center; gap:5px; flex-shrink:0;" title="Connect Upstox for official high-speed candles and Level-2 depth">
+      <div class="navbar-status">
+        <button id="upstoxAuthBtn" onclick="handleUpstoxAuthClick()" style="background:#f5f3ff; color:#6d28d9; font-weight:700; font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #ddd6fe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Connect Upstox for official high-speed candles and Level-2 depth">
           <span id="upstoxDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#8b5cf6;"></span>
-          <span id="upstoxBtnText">⚡ Upstox: Connect</span>
+          <span id="upstoxBtnText">⚡ Upstox</span>
         </button>
-        <button id="soundToggleBtn" style="background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #bfdbfe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Toggle breakout & breakdown bell audio chime">🔔 Bell Sound: ON</button>
-        <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:4px 9px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Click to test the bell rang sound and alert">🧪 Test Bell</button>
-        <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:6px;" title="WebSocket connection status only; scanner snapshot status is shown above the table">
+        <button id="soundToggleBtn" style="background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #bfdbfe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Toggle breakout & breakdown bell audio chime">🔔 Bell: ON</button>
+        <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Click to test the bell rang sound and alert">🧪 Test</button>
+        <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:3px 7px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="WebSocket connection status only; scanner snapshot status is shown above the table">
           <span id="wsStatusDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#16a34a;"></span>
-          <span id="wsStatusText">WS: Connecting...</span>
+          <span id="wsStatusText">WS: Connected</span>
         </span>
-        <span id="autoScanBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:inline-flex; align-items:center; gap:6px;" title="Background Engine automatically rescans 200+ NSE F&O stocks every 5 minutes during market hours">
+        <span id="autoScanBadge" style="font-size:11px; font-weight:700; padding:3px 7px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Background Engine automatically rescans 200+ NSE F&O stocks every 5 minutes during market hours">
           <span id="autoScanDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#2563eb;"></span>
-          <span id="autoScanText">Auto-Scan: 5m Active</span>
+          <span id="autoScanText">Auto-Scan: Idle</span>
         </span>
-        <span style="font-size:12px; color:var(--text-muted); font-family:var(--font-mono);" id="marketClock">Clock --</span>
+        <span class="status-badge live" id="liveStatusBadge" style="flex-shrink:0;">● Market Closed</span>
+        <span style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); font-weight:700; flex-shrink:0;" id="marketClock">Clock --</span>
+        <button class="refresh-pill-btn" id="refreshBtn" type="button">⚡ Refresh Live</button>
       </div>
-      <div class="navbar-refresh-status" id="navbarRefreshStatus" role="status"></div>
-      <div class="navbar-refresh-status" id="sessionDataBanner" role="status"></div>
     </header>
 
     <!-- Toast Alert Container -->
@@ -1635,17 +1815,8 @@
             </div>
             <span style="font-size:11px; color:var(--text-muted); font-weight:600;">5m Wave</span>
           </div>
-          <div class="tab-pills candidate-side-tabs" role="group" aria-label="Candidate direction">
-            <button class="tab-pill active" type="button" data-scanner-side="bullish" aria-pressed="true">Top Gainers</button>
-            <button class="tab-pill" type="button" data-scanner-side="bearish" aria-pressed="false">Top Losers</button>
-          </div>
-          <div class="list-filter-bar" role="group" aria-label="Candidate filters">
-            <button id="filterAll" class="quick-filter-btn" type="button" data-scanner-filter="all" aria-pressed="false">Top Ranked (<span id="cntFilterAll">0</span>)</button>
-            <button id="filterFresh" class="quick-filter-btn early active" type="button" data-scanner-filter="fresh" aria-pressed="true"><span id="filterFreshLabel">🟢 Demand Fresh</span> (<span id="cntFilterFresh">0</span>)</button>
-            <button id="filterEarly" class="quick-filter-btn early" type="button" data-scanner-filter="early" aria-pressed="false" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:800;" title="Sweet Spot Ignition: Day % between 1.5% and 2.8% with Long Buildup">🎯 Sweet Spot &lt;2.5% (<span id="cntFilterEarly">0</span>)</button>
-            <button id="filterExt" class="quick-filter-btn ext" type="button" data-scanner-filter="extended" aria-pressed="false" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-weight:600;" title="Stocks already extended (> 4.5%)">⚠️ Extended (<span id="cntFilterExt">0</span>)</button>
-          </div>
-          <div class="stock-scroll-list" id="stockScrollList" tabindex="0" role="region" aria-label="Stock candidates">
+
+          <div class="stock-scroll-list" id="stockScrollList">
             <div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">Loading breakout candidates...</div>
           </div>
         </div>
@@ -1654,20 +1825,19 @@
         <div class="chart-panel">
           <div class="chart-panel-header">
             <div class="chart-title-area">
-              <span class="chart-active-symbol" id="chartSymbol">Stock chart</span>
-              <span class="chart-active-ltp" id="chartLtp"></span>
-              <span class="chart-active-chg" id="chartPct"></span>
-              <span class="chart-stat-chip orb" id="chartOrb">PMH: —</span>
+              <span class="chart-active-symbol" id="chartSymbol">MUTHOOTFIN</span>
+              <span class="chart-active-ltp" id="chartLtp">₹3,209.00</span>
+              <span class="chart-active-chg up" id="chartPct">+4.55% LEADING</span>
+              <span class="chart-stat-chip orb" id="chartOrb">PMH: ₹3,165.00</span>
               <span class="chart-stat-chip" id="chartPmhPmlStatus" style="display:none;"></span>
-              <span class="chart-stat-chip" id="chartPdh" hidden></span>
+              <span class="chart-stat-chip" id="chartPdh">Structure: Breakout Rally</span>
               <span class="chart-stat-chip" id="chartEarlyIgnitionChip" style="display:none; background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-weight:800;">🎯 SWEET SPOT IGNITION</span>
               <span class="chart-stat-chip" style="background:#eff6ff; color:#2563eb; font-weight:700;">📅 5-Day Historical Candles</span>
               <span class="chart-stat-chip" id="chartTelemetryChip" style="font-weight:700; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;" title="Live candle feed provider, latest completed bar, fetched time, and observed latency">⚡ Feed: Checking...</span>
             </div>
             <div class="chart-toolbar">
-              <button class="tf-btn" type="button" data-chart-symbol="NIFTY50" aria-pressed="false" onclick="selectStock('NIFTY50')" style="background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; font-weight:700;">📊 NIFTY 50</button>
-              <button class="tf-btn" type="button" data-chart-symbol="BANKNIFTY" aria-pressed="false" onclick="selectStock('BANKNIFTY')" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:700;">🏛️ BANK NIFTY</button>
-              <button class="tf-btn" type="button" data-chart-symbol="SENSEX" aria-pressed="false" onclick="selectStock('SENSEX')" style="background:#fdf2f8; color:#9d174d; border:1px solid #fbcfe8; font-weight:700;">📈 SENSEX</button>
+              <button class="tf-btn" onclick="selectStock('NIFTY50')" style="background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; font-weight:700;" title="Quick preview NIFTY 50 5m candles">📊 NIFTY</button>
+              <button class="tf-btn" onclick="selectStock('BANKNIFTY')" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:700;" title="Quick preview BANK NIFTY 5m candles">🏛️ BANK</button>
               <button class="tf-btn active" id="btnTf5m">5m (5-Day)</button>
               <button class="tf-btn" id="btnFitChart">Fit View</button>
               <button class="tf-btn active" id="btnToggleDashboardSmc" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;" title="Toggle Fair Value Gaps and Order Blocks on Dashboard Chart">📦 SMC (FVG & OB)</button>
@@ -1689,17 +1859,17 @@
           </div>
 
           <!-- High-Conviction Demand Fresh Trade Playbook Bar -->
-          <div id="chartDemandFreshBanner" style="display:none; margin: 4px 14px 6px; padding: 7px 12px; background: linear-gradient(90deg, #f0fdf4, #ecfdf5); border: 1px solid #34d399; border-radius: 6px; font-size: 11px; color: #065f46; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:14px;">🎯</span>
+          <div id="chartDemandFreshBanner" class="chart-playbook-banner" style="display:none;">
+            <div class="playbook-title-box">
+              <span style="font-size:15px;">🎯</span>
               <span><strong>TOP 10 DEMAND FRESH PLAYBOOK:</strong> <span id="dfZoneDesc">High-Conviction Institutional Zone</span></span>
             </div>
-            <div style="display:flex; align-items:center; gap:8px; font-weight:700; font-family:var(--font-mono); font-size:11px;">
-              <span id="dfEntry" style="background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; border:1px solid #86efac;">Entry: ₹--</span>
-              <span id="dfSl" style="background:#fee2e2; color:#b91c1c; padding:2px 6px; border-radius:4px; border:1px solid #fca5a5;">SL: ₹-- (-0.7%)</span>
-              <span id="dfBeLock" style="background:#eff6ff; color:#1d4ed8; padding:2px 6px; border-radius:4px; border:1px solid #bfdbfe;" title="When MFE reaches +0.80%, move SL to Cost (Breakeven)">🔒 BE Lock: ₹-- (+0.80%)</span>
-              <span id="dfT1" style="background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; border:1px solid #86efac;">Target 1: ₹-- (+1.50%)</span>
-              <span id="dfT2" style="background:#d1fae5; color:#047857; padding:2px 6px; border-radius:4px; border:1px solid #6ee7b7;">Target 2: ₹-- (+3.00%)</span>
+            <div class="playbook-badge-grid">
+              <span id="dfEntry" class="playbook-pill entry">Entry: ₹--</span>
+              <span id="dfSl" class="playbook-pill sl">SL: ₹-- (-0.7%)</span>
+              <span id="dfBeLock" class="playbook-pill be" title="When MFE reaches +0.80%, move SL to Cost (Breakeven)">🔒 BE Lock: ₹-- (+0.80%)</span>
+              <span id="dfT1" class="playbook-pill t1">Target 1: ₹-- (+1.50%)</span>
+              <span id="dfT2" class="playbook-pill t2">Target 2: ₹-- (+3.00%)</span>
             </div>
           </div>
 
@@ -1727,28 +1897,28 @@
         <div class="table-section-head">
           <h2>Futures & Options Scanner | One-Side Rally & Breakout Desk</h2>
           <div class="tab-pills">
-            <button class="tab-pill active" id="tabFreshZones" type="button" data-scanner-filter="fresh" aria-pressed="true">Top 10 Demand Fresh</button>
-            <button class="tab-pill" id="tabGainers" type="button" data-scanner-side="bullish" data-scanner-filter="all" aria-pressed="false">Top Gainers (Bullish)</button>
-            <button class="tab-pill" id="tabLosers" type="button" data-scanner-side="bearish" data-scanner-filter="all" aria-pressed="false">Top Losers (Bearish)</button>
+            <button class="tab-pill active" id="tabDemandFresh" style="border:1px solid #10b981; color:#059669; font-weight:800; background:rgba(16,185,129,0.08);">🎯 Top 10 Demand Fresh (<span id="demandFreshPillCount">0</span>)</button>
+            <button class="tab-pill" id="tabGainers">Top Gainers (Bullish)</button>
+            <button class="tab-pill" id="tabLosers">Top Losers (Bearish)</button>
           </div>
         </div>
 
         <div id="scannerDataStatus" role="status" aria-live="polite" style="padding:10px 16px; font-size:12px; color:#64748b; overflow-wrap:anywhere;">Scanner data: loading…</div>
 
-        <div class="table-wrapper" tabindex="0" role="region" aria-label="Scrollable futures and options table">
+        <div class="table-wrapper">
           <table class="vc-table">
             <thead>
               <tr>
-                <th># Rank</th>
-                <th>Stock</th>
-                <th>Money Flow %</th>
-                <th>Change %</th>
-                <th>Volume</th>
-                <th>VC Ranking (RVOL)</th>
-                <th>M.P.</th>
-                <th>5 Min BO/BD</th>
-                <th>Rally Score</th>
-                <th>Action Status</th>
+                <th style="width:50px; text-align:center;"># Rank</th>
+                <th style="min-width:180px; text-align:left;">Stock</th>
+                <th style="text-align:right;">Money Flow %</th>
+                <th style="text-align:right;">Change %</th>
+                <th style="text-align:right;">Volume</th>
+                <th style="text-align:right;">VC Ranking (RVOL)</th>
+                <th style="text-align:right;">M.P.</th>
+                <th style="text-align:center;">5 Min BO/BD</th>
+                <th style="text-align:center;">Rally Score</th>
+                <th style="text-align:center;">Action Status</th>
               </tr>
             </thead>
             <tbody id="vcTableBody">
@@ -1772,7 +1942,7 @@
         </div>
         <div style="display:flex; gap:8px; align-items:center;">
           <span id="sectorLastUpdated" style="font-size:11px; color:#94a3b8; font-family:monospace;">Updated --</span>
-          <button id="sectorRefreshBtn" class="refresh-pill-btn" type="button">Refresh</button>
+          <button onclick="renderSectorView()" style="background:#0f172a; color:#fff; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">⚡ Refresh</button>
         </div>
       </div>
 
@@ -1957,9 +2127,9 @@
         <!-- Quick Ticker Pills with horizontal scroll on mobile -->
         <div class="ov-pills-scroll">
           <span style="font-size:11px; font-weight:700; color:#64748b; margin-right:4px; white-space:nowrap;">POPULAR:</span>
-          <button class="overview-pill" type="button" data-chart-symbol="NIFTY50" aria-pressed="false" onclick="loadStockOverview('NIFTY50')" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0; font-weight:800;">📊 NIFTY 50</button>
-          <button class="overview-pill" type="button" data-chart-symbol="BANKNIFTY" aria-pressed="false" onclick="loadStockOverview('BANKNIFTY')" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:800;">🏛️ BANK NIFTY</button>
-          <button class="overview-pill" type="button" data-chart-symbol="SENSEX" aria-pressed="false" onclick="loadStockOverview('SENSEX')" style="background:#fdf2f8; color:#9d174d; border-color:#fbcfe8; font-weight:800;">📈 SENSEX</button>
+          <button class="overview-pill" onclick="loadStockOverview('NIFTY50')" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0; font-weight:800;" title="Load NIFTY 50 full 5m chart with SMC & Volume Profile">📊 NIFTY 50</button>
+          <button class="overview-pill" onclick="loadStockOverview('BANKNIFTY')" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:800;" title="Load BANK NIFTY full 5m chart with SMC & Volume Profile">🏛️ BANK NIFTY</button>
+          <button class="overview-pill" onclick="loadStockOverview('SENSEX')" style="background:#fdf2f8; color:#9d174d; border-color:#fbcfe8; font-weight:800;" title="Load SENSEX full 5m chart with SMC & Volume Profile">📈 SENSEX</button>
           <button class="overview-pill active" onclick="loadStockOverview('BRITANNIA')">BRITANNIA</button>
           <button class="overview-pill" onclick="loadStockOverview('RELIANCE')">RELIANCE</button>
           <button class="overview-pill" onclick="loadStockOverview('TCS')">TCS</button>
@@ -2225,28 +2395,20 @@
 <script>
   const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8001" : "";
   const refreshBtn = document.getElementById("refreshBtn");
-  const indexChartLabels = new Map([
-    ["NIFTY50", "NIFTY 50"], ["BANKNIFTY", "BANK NIFTY"], ["SENSEX", "SENSEX"]
-  ]);
-
-  function normalizeChartSymbol(symbol) {
-    const key = symbol.trim().toUpperCase();
-    if (["NIFTY", "NIFTY 50", "^NSEI"].includes(key)) return "NIFTY50";
-    if (["BANK NIFTY", "NIFTY BANK", "^NSEBANK"].includes(key)) return "BANKNIFTY";
-    if (["BSE SENSEX", "BSESENSEX", "^BSESN"].includes(key)) return "SENSEX";
-    return key;
-  }
   
   let _currentBullish = [];
   let _currentBearish = [];
-  let _activeTab = "bullish";
+  let _activeTab = "demand_fresh";
   let _userSwitchedTab = false;
-  let _selectedSymbol = "";
+  let _selectedSymbol = "MUTHOOTFIN";
   let _tvChart = null;
   let _candleSeries = null;
-  let _chartFetch = null;
-  let _chartLoadedSymbol = "";
-  let _selectedStockMeta = {};
+  // Bumped on every selectStock() call so a slow/late-arriving chart fetch
+  // from an earlier selection can detect it's stale and skip painting -
+  // otherwise an in-flight request for a previously-selected symbol can
+  // resolve after a newer selection and silently overwrite the chart with
+  // the wrong stock's data (blank/stuck-looking chart, no visible error).
+  let _chartRequestSeq = 0;
   let _volumeSeries = null;
   let _emaSeries = null;
 
@@ -2305,11 +2467,11 @@
   // Exploratory: still showing every qualifying stock (not capped to 6) so
   // the real, lot-size-filtered count is visible. Set back to 6 to restore
   // the top-6 view.
-  const MAX_DISPLAY_ROWS = 10;
+  const MAX_DISPLAY_ROWS = 500;
   // Any stock with a lot size above this is excluded - matches the server's
   // MAX_ALLOWED_LOT_SIZE so client and server agree on what "too big" means.
   const MAX_LOT_SIZE_DISPLAY = 650;
-  // Stock price boundaries: exclude ultra-high priced stocks (> ₹10k) and penny stocks (< ₹50)
+  // Stock price boundaries: exclude ultra-high priced stocks (> ₹30k) and penny stocks (< ₹50)
   const MAX_STOCK_PRICE_DISPLAY = 30000;
   const MIN_STOCK_PRICE_DISPLAY = 50;
   let _lockedPick = null;        // { symbol, score, boMin, expiresMin, type, row }
@@ -2455,13 +2617,6 @@
     return;
   }
 
-  function freshZoneTime(row, isBearish) {
-    const fresh = isBearish ? row.is_supply_zone : row.is_demand_fresh;
-    const zone = isBearish ? row.supply_zone : row.demand_zone;
-    const time = isBearish ? row.supply_zone_time : row.demand_fresh_time;
-    return fresh && !/\((tested|mitigated)\)/i.test(zone || "") ? (time || "") : "";
-  }
-
   function showStickyToast(x, isPE, force = false) {
     const container = document.getElementById("toastContainer");
     if (!container || !x || !x.symbol) return;
@@ -2471,8 +2626,27 @@
     const live = allRows.find(r => r.symbol === x.symbol) || {};
     const item = { ...live, ...x };
 
-    const zoneTime = freshZoneTime(item, isPE);
-    if (!force && (!isMarketHours() || !zoneTime)) return;
+    // STRICT RULES: Unless force = true (manual test), ONLY DEMAND · FRESH (Bullish) or BEAR OB · FRESH (Bearish) can show toast
+    const qTags = item.quality_tags || [];
+    const isDemand = Boolean((item.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isPE);
+    const isSupply = Boolean((item.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isPE);
+
+    if (!force && !isDemand && !isSupply) {
+      return;
+    }
+
+    // Accurate time is strictly required
+    const timeDisplay = isDemand ? (item.demand_fresh_time || item.alert_created_at || "") : (item.supply_zone_time || item.alert_created_at || "");
+    if (!force && !timeDisplay) {
+      return;
+    }
+
+    // Guard against alerts firing when market is closed or past cutoff (3:15 PM IST)
+    if (!force) {
+      if (typeof isMarketHours === "function" && !isMarketHours()) return;
+      const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
+      if (nowMin > BLOCK_SURGE_CUTOFF_MIN) return;
+    }
 
     // Do NOT display empty/broken placeholder toasts if core price data is missing
     const entryVal = item.entry || item.ltp || item.last_breakout_level;
@@ -2486,15 +2660,9 @@
     if (existing) existing.remove();
 
     const type = isPE ? "bearish" : "bullish";
-    const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
-    const freshTag = item.breakout_freshness === "FRESH" ? " · ⚡ FRESH" : (item.breakout_freshness === "RETEST" ? " · 🔄 RETEST" : "");
 
-    const isDemand = Boolean(zoneTime && !isPE);
-    const isSupply = Boolean(zoneTime && isPE);
-    const timeDisplay = zoneTime || item.block_surge_time || item.breakout_time || item.alert_created_at || "";
-
-    let statusText = isPE ? `🔴 BREAKDOWN ${timeDisplay}${freshTag}` : `🟢 BREAKOUT ${timeDisplay}${freshTag}`;
-    let bannerText = `<div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ ALL PRIORITY CRITERIA MET</div>`;
+    let statusText = "";
+    let bannerText = "";
 
     if (isDemand && !isPE) {
       const dZone = item.demand_zone ? ` [${item.demand_zone}]` : "";
@@ -2504,9 +2672,9 @@
       const sZone = item.supply_zone ? ` [${item.supply_zone}]` : "";
       statusText = `🔴 BEAR OB · FRESH ${timeDisplay}${sZone}`;
       bannerText = `<div style="font-size:10px; font-weight:800; color:#b91c1c; background:#fee2e2; border:1px solid #fca5a5; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BEAR OB REJECTION · SHORT ENTRY</div>`;
-    } else if (isSurge) {
-      statusText = item.block_surge_type || (isPE ? `⚡ BLOCK SURGE (SELL) ${timeDisplay}` : `⚡ BLOCK SURGE (BUY) ${timeDisplay}`);
-      bannerText = `<div style="font-size:10px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:4px; padding:2px 4px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BLOCK SURGE · ₹${item.block_surge_turnover_cr || 0}Cr (${item.block_surge_rvol || 1}x)</div>`;
+    } else {
+      statusText = isPE ? `🔴 BEAR OB · FRESH ${timeDisplay}` : `🟢 DEMAND · FRESH ${timeDisplay}`;
+      bannerText = `<div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ TEST ALERT</div>`;
     }
 
     const toast = document.createElement("div");
@@ -2543,7 +2711,7 @@
     // Send Desktop OS Notification if supported and permitted
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       try {
-        const notifTitle = isDemand ? `🟢 DEMAND · FRESH ${timeDisplay}: ${item.symbol}` : (isSupply ? `🔴 BEAR OB · FRESH ${timeDisplay}: ${item.symbol}` : `⚡ BREAKOUT ${timeDisplay}: ${item.symbol}`);
+        const notifTitle = isDemand ? `🟢 DEMAND · FRESH ${timeDisplay}: ${item.symbol}` : `🔴 BEAR OB · FRESH ${timeDisplay}: ${item.symbol}`;
         const notifBody = `LTP: ₹${item.ltp || item.entry} | SL: ₹${item.stop_loss || '--'} | Tgt: ₹${item.target || '--'}\n${item.trade_plan || 'High Relative Strength institutional setup'}`;
         const notif = new Notification(notifTitle, {
           body: notifBody,
@@ -2559,29 +2727,85 @@
   }
 
   function checkAndTriggerBellAlerts(payload) {
-    if (!payload || !payload.ok || payload._is_replay || payload._previous_session || payload._stale_kept) return;
-    const todayIst = getISTTime().toISOString().slice(0, 10);
-    if (!isMarketHours() || (payload.session_date && payload.session_date !== todayIst)) {
-      _hasEvaluatedInitialBell = true;
-      return;
-    }
+    if (!payload || !payload.ok) return;
+    if (typeof isMarketHours === "function" && !isMarketHours()) { _hasEvaluatedInitialBell = true; return; }
+    const allRows = [...(payload.bullish || []), ...(payload.bearish || [])];
+    const nowMin = istNowMinutes(payload);
+    // Hard cutoff for all alerts is 3:15 PM IST (before MIS auto-square-off)
+    if (nowMin > BLOCK_SURGE_CUTOFF_MIN) { _hasEvaluatedInitialBell = true; return; }
 
-    for (const [rows, isBearish] of [[payload.bullish, false], [payload.bearish, true]]) {
-      for (const row of rows || []) {
-        if (row.lot_size && row.lot_size > MAX_LOT_SIZE_DISPLAY) continue;
-        if (row.ltp && (row.ltp > MAX_STOCK_PRICE_DISPLAY || row.ltp < MIN_STOCK_PRICE_DISPLAY)) continue;
-        const eventTime = freshZoneTime(row, isBearish);
-        if (!eventTime || row.is_stale_data || row.is_stale_fallback) continue;
-        if (!(row.should_alert ?? row.bell_rang)) continue;
+    allRows.forEach(row => {
+      if (row.lot_size && row.lot_size > MAX_LOT_SIZE_DISPLAY) return;
+      if (row.ltp && (row.ltp > MAX_STOCK_PRICE_DISPLAY || row.ltp < MIN_STOCK_PRICE_DISPLAY)) return;
 
-        const alertKey = row.alert_event_id || `${payload.session_date}_${row.symbol}_${isBearish}_${eventTime}`;
-        if (_alertedBreakouts.has(alertKey) || _persistedSeenEventIds.has(alertKey)) continue;
-        _alertedBreakouts.add(alertKey);
-        if (row.alert_event_id) _savePersistedAlertId(row.alert_event_id);
-        if (!_hasEvaluatedInitialBell) continue;
+      const st = (row.five_min_status || "").toLowerCase();
+      const isNear = st.includes("near");
+      const isConsolidating = st.includes("consolidating");
+      if (isNear || isConsolidating) return;
+
+      const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout) || row.side === "bearish" || row.side === "LOSER");
+      const qTags = row.quality_tags || [];
+
+      // HARD RULES FOR TOP 10 HIGH-CONVICTION ALERTING:
+      // 1. Must be in Top 10
+      // 2. Exclude Index Anchors (HDFCBANK, RELIANCE, TCS, INFY) to avoid derivative pinning chop
+      // 3. Move from open must be >= 1.20% to avoid sluggish noise
+      const rank = Number(row.rank) || 99;
+      if (rank > 10) return;
+      const INDEX_ANCHORS = new Set(["HDFCBANK", "RELIANCE", "TCS", "INFY"]);
+      if (INDEX_ANCHORS.has(row.symbol)) return;
+      const moveOpen = Math.abs(Number(row.move_from_open_percent) || Number(row.percent_change) || 0);
+      if (moveOpen < 1.20) return;
+
+      // STRICT RULES FOR AUDIO BELL & POPUP ALERTS:
+      // Bullish side: ONLY DEMAND · FRESH with valid demand_fresh_time
+      // Bearish side: ONLY BEAR OB · FRESH with valid supply_zone_time
+      const isDemandFresh = Boolean((row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isBreakdown);
+      const isSupplyZone = Boolean((row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isBreakdown);
+
+      if (!isDemandFresh && !isSupplyZone) {
+        // Generic breakouts, sweet spots without fresh bases, and block surges without fresh bases are strictly excluded!
+        return;
+      }
+
+      // Base proximity check to prevent alerting on overextended bases
+      if (isDemandFresh) {
+        if (row.demand_proximity_gap_pct != null && row.demand_proximity_gap_pct > 0.80) return;
+        if (row.room_to_bear_ob_pct != null && row.room_to_bear_ob_pct < 1.0) return;
+      }
+      if (isSupplyZone) {
+        if (row.supply_proximity_gap_pct != null && row.supply_proximity_gap_pct > 0.80) return;
+        if (row.room_to_bull_ob_pct != null && row.room_to_bull_ob_pct < 1.0) return;
+      }
+
+      // Time MUST be the accurate 5m Order Block candle close time:
+      const eventTime = isDemandFresh ? (row.demand_fresh_time || "") : (row.supply_zone_time || "");
+      if (!eventTime) {
+        // Accurate time is strictly required
+        return;
+      }
+
+      // Unique alert key per symbol, side, and order block time
+      const sideKey = isBreakdown ? 'bearish' : 'bullish';
+      const alertKey = `${row.symbol}_${sideKey}_${eventTime}`;
+      if (_alertedBreakouts.has(alertKey)) return;   // already alerted for this base
+      if (row.alert_event_id && _persistedSeenEventIds.has(row.alert_event_id)) return; // already chimed in this browser
+
+      _alertedBreakouts.add(alertKey);
+
+      if (_hasEvaluatedInitialBell) {
+        // Remove any opposite/stale toast for this symbol
+        const oppToast = document.querySelector(`.toast[data-sym="${row.symbol}"]`);
+        if (oppToast) oppToast.remove();
+
+        if (row.alert_event_id) {
+          _savePersistedAlertId(row.alert_event_id);
+        }
 
         playBellRangSound();
-        showStickyToast(row, isBearish);
+        showStickyToast(row, isBreakdown);
+
+        // Acknowledge alert delivery to backend state machine
         if (row.alert_event_id) {
           fetch('/api/alerts/ack', {
             method: 'POST',
@@ -2593,16 +2817,21 @@
             })
           }).catch(err => console.warn('Alert ack error:', err));
         }
+      } else if (row.alert_event_id) {
+        _savePersistedAlertId(row.alert_event_id);
       }
-    }
+    });
+
     _hasEvaluatedInitialBell = true;
   }
 
   /* Formatters */
   const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+  const fmt2 = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmt0 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
   function n(v) { return v === null || v === undefined ? "--" : fmt.format(Number(v)); }
+  function n2(v) { return v === null || v === undefined ? "--" : fmt2.format(Number(v)); }
   function n0(v) { return v === null || v === undefined ? "--" : fmt0.format(Number(v)); }
   function pct(v) {
     if (v === null || v === undefined) return "--";
@@ -2733,12 +2962,20 @@
         if (boxWidth >= 30) {
           ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
           const statusLabel = ob.status ? ` · ${ob.status.toUpperCase()}` : '';
-          const label = `${tagText}${statusLabel}`;
-          const timeLabel = ob.formation_time ? new Date(ob.formation_time * 1000).toLocaleTimeString("en-IN", {
-            timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
-          }).toUpperCase() : "";
-          const fullLabel = timeLabel ? `${label} ${timeLabel}` : label;
-          const labelStr = ctx.measureText(fullLabel).width + 14 <= boxWidth ? fullLabel : label;
+          const rawTime = ob.formation_time || ob.time;
+          let timeLabel = '';
+          if (rawTime) {
+            try {
+              const d = new Date(typeof rawTime === "number" ? (rawTime > 1e11 ? rawTime : rawTime * 1000) : rawTime);
+              if (!isNaN(d.getTime())) {
+                timeLabel = ' ' + d.toLocaleTimeString("en-IN", {
+                  timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
+                }).toUpperCase();
+              }
+            } catch(e) {}
+          }
+          const fullLabel = `${tagText}${statusLabel}${timeLabel}`;
+          const labelStr = ctx.measureText(fullLabel).width + 14 <= boxWidth ? fullLabel : `${tagText}${statusLabel}`;
           const textWidth = ctx.measureText(labelStr).width;
 
           // Small translucent pill background for tag to ensure 100% crisp contrast over candles
@@ -2866,7 +3103,7 @@
     const h = parent.clientHeight;
     if (w <= 0 || h <= 0) return;
 
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const targetW = Math.round(w * dpr);
     const targetH = Math.round(h * dpr);
     if (canvas.width !== targetW || canvas.height !== targetH) {
@@ -2988,7 +3225,6 @@
     _tvChart = LightweightCharts.createChart(container, {
       width: w,
       height: h,
-      handleScroll: { vertTouchDrag: false },
       layout: {
         background: { type: 'solid', color: '#ffffff' },
         textColor: '#334155',
@@ -3058,12 +3294,17 @@
     // Zero-delay chart drag & price scale synchronizer
     attachChartDragSync(container, renderDashboardSmcOverlay, _tvChart);
 
+    let _dashboardRoRaf = null;
     const ro = new ResizeObserver(entries => {
       if (!entries || !entries.length || !_tvChart) return;
       const cr = entries[0].contentRect;
       if (cr.width > 20 && cr.height > 20) {
-        _tvChart.applyOptions({ width: cr.width, height: cr.height });
-        requestAnimationFrame(renderDashboardSmcOverlay);
+        if (_dashboardRoRaf) cancelAnimationFrame(_dashboardRoRaf);
+        _dashboardRoRaf = requestAnimationFrame(() => {
+          _tvChart.applyOptions({ width: cr.width, height: cr.height });
+          renderDashboardSmcOverlay();
+          _dashboardRoRaf = null;
+        });
       }
     });
     ro.observe(container);
@@ -3079,32 +3320,29 @@
     });
   }
 
-  /* ── Load Stock Candles into Chart ── */
-  function openDashboardChart(symbol, meta) {
-    selectStock(symbol, meta, { reveal: true });
+  function isEarlyIgnitionRow(r) {
+    if (!r) return false;
+    if (r.is_early_ignition) return true;
+    const p = r.percent_change || 0;
+    const st = (r.setup || "").toLowerCase();
+    const isBull = (r.side || "bullish") === "bullish" || p >= 0;
+    if (isBull) {
+      return (p >= 1.5 && p <= 2.8) && (st.includes("long buildup") || st.includes("buildup"));
+    } else {
+      return (p <= -1.5 && p >= -2.8) && (st.includes("short buildup") || st.includes("buildup"));
+    }
   }
 
-  async function selectStock(symbol, meta = {}, { reveal = false } = {}) {
+  /* ── Load Stock Candles into Chart ── */
+  async function selectStock(symbol, meta = {}) {
     if (!symbol) return;
-    const fetchSymbol = normalizeChartSymbol(symbol);
-    const indexLabel = indexChartLabels.get(fetchSymbol);
-    const changed = fetchSymbol !== _selectedSymbol;
-    _selectedSymbol = fetchSymbol;
-    _selectedStockMeta = meta;
-    document.querySelectorAll(".chart-toolbar [data-chart-symbol]").forEach(button => {
-      button.setAttribute("aria-pressed", String(button.dataset.chartSymbol === fetchSymbol));
-    });
-    if (reveal && chartStacked.matches) {
-      document.querySelector(".chart-panel")?.scrollIntoView({ block: "start" });
-    }
-    if (_chartFetch?.symbol === fetchSymbol) return;
-    _chartFetch?.controller.abort();
-    const controller = new AbortController();
-    _chartFetch = { symbol: fetchSymbol, controller };
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    _selectedSymbol = symbol.toUpperCase();
+    const mySeq = ++_chartRequestSeq;
 
     // Notify WebSocket server to switch live candle stream to this symbol
-    if (changed) subscribeToChart(fetchSymbol);
+    if (_wsClient && _wsClient.readyState === WebSocket.OPEN) {
+      _wsClient.send(JSON.stringify({ action: "subscribe", symbol: _selectedSymbol }));
+    }
 
     // Update Header
     const symEl = document.getElementById("chartSymbol");
@@ -3113,23 +3351,8 @@
     const orbEl = document.getElementById("chartOrb");
     const pdhEl = document.getElementById("chartPdh");
     const pmhPmlStatusEl = document.getElementById("chartPmhPmlStatus");
-    const telemEl = document.getElementById("chartTelemetryChip");
 
-    if (changed) {
-      _candleSeries?.setData([]);
-      for (const line of _chartPriceLines) _candleSeries?.removePriceLine(line);
-      _chartPriceLines = [];
-      _dashboardObData = [];
-      _dashboardFvgData = [];
-      _chartLoadedSymbol = "";
-      if (orbEl) orbEl.textContent = "PMH: —";
-      if (telemEl) telemEl.textContent = "Loading candles…";
-      requestAnimationFrame(renderDashboardSmcOverlay);
-    }
-
-    if (pmhPmlStatusEl && indexLabel) {
-      pmhPmlStatusEl.style.display = "none";
-    } else if (pmhPmlStatusEl) {
+    if (pmhPmlStatusEl) {
       const inBullish = (_latestPmhPmlFilter.bullish || []).some(x => x.symbol === _selectedSymbol);
       const inBearish = (_latestPmhPmlFilter.bearish || []).some(x => x.symbol === _selectedSymbol);
       if (inBullish) {
@@ -3150,16 +3373,13 @@
       }
     }
 
-    if (symEl) symEl.textContent = indexLabel || fetchSymbol;
-    if (ltpEl && (changed || meta.ltp)) ltpEl.textContent = meta.ltp ? `₹${Number(meta.ltp).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "";
-    if (pctEl && Number.isFinite(meta.percent_change)) {
+    if (symEl) symEl.textContent = _selectedSymbol;
+    if (ltpEl && meta.ltp) ltpEl.textContent = `₹${Number(meta.ltp).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+    if (pctEl && meta.percent_change !== undefined) {
       const isUp = meta.percent_change >= 0;
       pctEl.className = `chart-active-chg ${isUp ? "up" : "down"}`;
       pctEl.textContent = `${isUp ? "+" : ""}${meta.percent_change.toFixed(2)}% ${isUp ? "LEADING" : "LAGGING"}`;
-    } else if (pctEl && changed) {
-      pctEl.textContent = "";
     }
-    if (pdhEl) pdhEl.hidden = !meta.chart_structure;
     if (pdhEl && meta.chart_structure) {
       const isCascade = meta.chart_structure.toLowerCase().includes("waterfall") || meta.chart_structure.toLowerCase().includes("impulse");
       pdhEl.textContent = `Structure: ${isCascade ? '⚡ ' : ''}${meta.chart_structure}`;
@@ -3185,16 +3405,14 @@
         ignitionChip.style.display = "none";
       }
     }
-
-    // High-Conviction Demand Fresh Trade Playbook Bar
+    // High-Conviction Demand Fresh Banner
     const dfBanner = document.getElementById("chartDemandFreshBanner");
     const allRowsForDF = [...(_currentBullish || []), ...(_currentBearish || [])];
-    const liveRowForDF = allRowsForDF.find(x => x.symbol === symbol) || meta;
-    const isBearish = _activeTab === "bearish";
-    const hasFreshDF = Boolean(freshZoneTime(liveRowForDF, isBearish) || liveRowForDF.is_demand_fresh || liveRowForDF.is_supply_zone);
+    const liveRowForDF = allRowsForDF.find(x => x.symbol === _selectedSymbol) || meta;
+    const isDF = isTop10DemandFreshQualified(liveRowForDF);
 
     if (dfBanner) {
-      if (hasFreshDF && liveRowForDF && (liveRowForDF.ltp || meta.ltp)) {
+      if (isDF && liveRowForDF && (liveRowForDF.ltp || meta.ltp)) {
         dfBanner.style.display = "flex";
         const ltpVal = Number(liveRowForDF.ltp || meta.ltp);
         const entryVal = Number(liveRowForDF.entry) || ltpVal;
@@ -3212,18 +3430,18 @@
         const dfT2 = document.getElementById("dfT2");
 
         if (dfZoneDesc) dfZoneDesc.textContent = isUp ? (liveRowForDF.demand_zone ? `Demand Zone ${liveRowForDF.demand_zone}` : "Institutional Base Defended") : (liveRowForDF.supply_zone ? `Bear OB ${liveRowForDF.supply_zone}` : "Supply Block Defended");
-        if (dfEntry) dfEntry.textContent = `Entry: ₹${entryVal.toFixed(1)}`;
-        if (dfSl) dfSl.textContent = `SL: ₹${slVal.toFixed(1)}`;
-        if (dfBeLock) dfBeLock.textContent = `🔒 BE Lock: ₹${beVal.toFixed(1)} (${isUp ? '+0.8%' : '-0.8%'})`;
-        if (dfT1) dfT1.textContent = `T1: ₹${t1Val.toFixed(1)} (${isUp ? '+1.5%' : '-1.5%'})`;
-        if (dfT2) dfT2.textContent = `T2: ₹${t2Val.toFixed(1)} (${isUp ? '+3.0%' : '-3.0%'})`;
+        if (dfEntry) dfEntry.textContent = `Entry: ₹${n2(entryVal)}`;
+        if (dfSl) dfSl.textContent = `SL: ₹${n2(slVal)}`;
+        if (dfBeLock) dfBeLock.textContent = `🔒 BE Lock: ₹${n2(beVal)} (${isUp ? '+0.8%' : '-0.8%'})`;
+        if (dfT1) dfT1.textContent = `T1: ₹${n2(t1Val)} (${isUp ? '+1.5%' : '-1.5%'})`;
+        if (dfT2) dfT2.textContent = `T2: ₹${n2(t2Val)} (${isUp ? '+3.0%' : '-3.0%'})`;
       } else {
         dfBanner.style.display = "none";
       }
     }
 
     if (playbookBanner) {
-      if (!hasFreshDF && isEarly && meta.ltp) {
+      if (!isDF && isEarly && meta.ltp) {
         playbookBanner.style.display = "flex";
         const ltpVal = Number(meta.ltp);
         const entryLow = (ltpVal * 0.997).toFixed(1);
@@ -3252,21 +3470,23 @@
 
     try {
       initChart();
-      const res = await fetch(`${API_BASE}/api/stock_candles?symbol=${encodeURIComponent(fetchSymbol)}`, {
-        cache: "no-store", signal: controller.signal,
-      });
+      const fetchSymbol = _selectedSymbol;
+      const res = await fetch(`${API_BASE}/api/stock_candles?symbol=${encodeURIComponent(fetchSymbol)}`);
       const data = await res.json();
-      if (_chartFetch?.controller !== controller) return;
-      if (!res.ok || !data?.ok || !data.candles?.length) {
-        throw new Error("No candles available");
+      if (mySeq !== _chartRequestSeq) return; // a newer selection has since started - drop this stale response
+      if (!data || !data.ok || !Array.isArray(data.candles) || data.candles.length === 0) {
+        // Don't leave the PREVIOUS stock's candles/price-axis on screen under
+        // the newly-selected symbol's name - clear the chart so a failed
+        // fetch looks empty, not like a stuck/wrong chart.
+        if (_candleSeries) _candleSeries.setData([]);
+        return;
       }
 
-      if (ltpEl && data.ltp != null) ltpEl.textContent = `₹${Number(data.ltp).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
-      if (data.index_quote) renderIndexQuotes({ [data.index_quote.name]: data.index_quote }, { fallback: true });
       if (orbEl && (data.orb_high || data.day_high)) {
         orbEl.textContent = `PMH: ₹${(data.orb_high || data.day_high).toFixed(2)}`;
       }
 
+      const telemEl = document.getElementById("chartTelemetryChip");
       if (telemEl && data.telemetry) {
         const t = data.telemetry;
         const prov = t.provider || "Unknown";
@@ -3306,10 +3526,8 @@
         // range, so the new symbol's real candles fall outside the visible
         // window and the chart looks blank even though the data is correct.
         // Force it back on before loading a new symbol's data.
-        const initialView = _chartLoadedSymbol !== fetchSymbol;
-        if (initialView) _candleSeries.priceScale().applyOptions({ autoScale: true });
+        _candleSeries.priceScale().applyOptions({ autoScale: true });
         _candleSeries.setData(data.candles);
-        _chartLoadedSymbol = fetchSymbol;
 
         // Clear all previous price lines
         if (_chartPriceLines && _chartPriceLines.length) {
@@ -3411,16 +3629,15 @@
         _dashboardObData = data.order_blocks || [];
         requestAnimationFrame(renderDashboardSmcOverlay);
 
-        if (initialView) _tvChart.timeScale().fitContent();
+        setTimeout(() => {
+          if (_tvChart) {
+            _tvChart.timeScale().fitContent();
+            requestAnimationFrame(renderDashboardSmcOverlay);
+          }
+        }, 50);
       }
     } catch (e) {
-      if (_chartFetch?.controller === controller && telemEl) {
-        telemEl.textContent = _chartLoadedSymbol === fetchSymbol
-          ? "Candle update unavailable · showing previous candles" : "Candles unavailable";
-      }
-    } finally {
-      clearTimeout(timeout);
-      if (_chartFetch?.controller === controller) _chartFetch = null;
+      console.error("Failed to load chart:", e);
     }
   }
 
@@ -3460,15 +3677,16 @@
       const isCascade = Boolean(it.is_cascade || st.includes("waterfall") || st.includes("impulse"));
       const isBreakout = Boolean(it.is_breakout || st.includes("breakout"));
       const isBreakdown = Boolean(st.includes("breakdown") || ((it.percent_change || 0) < 0 && it.is_breakout));
-      const isDemand = isBull && Boolean(freshZoneTime(it, false));
-      const isSupply = !isBull && Boolean(freshZoneTime(it, true));
-      const eventTime = (isDemand || isSupply) ? freshZoneTime(it, !isBull) : (it.breakout_time || it.cascade_time);
+      const qTags = it.quality_tags || [];
+      const isDemand = Boolean(it.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH")));
+      const isSupply = Boolean(it.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE")));
+      const eventTime = isDemand ? (it.demand_fresh_time || it.breakout_time) : (isSupply ? (it.supply_zone_time || it.breakout_time) : (it.breakout_time || it.cascade_time));
       const timeStr = eventTime ? ` ${eventTime}` : "";
       let boBadge = "", boCls = "wait";
-      if (isDemand) {
+      if (isDemand && !isBreakdown) {
         boBadge = `🟢 DEMAND · FRESH${timeStr}`;
         boCls = "bo";
-      } else if (isSupply) {
+      } else if (isSupply && isBreakdown) {
         boBadge = `🔴 BEAR OB · FRESH${timeStr}`;
         boCls = "bd";
       } else if (isCascade) {
@@ -3747,177 +3965,56 @@
     bearBody.innerHTML = renderSide(top5.bearish);
   }
 
-  /* ── Early Ignition & Filter Helpers ── */
-  let _currentListFilter = "fresh";
-
-  function isEarlyIgnitionRow(r) {
-    if (!r) return false;
-    if (r.is_early_ignition) return true;
-    const p = r.percent_change || 0;
-    const st = (r.setup || "").toLowerCase();
-    const isBull = (r.side || "bullish") === "bullish" || p >= 0;
-    if (isBull) {
-      return (p >= 1.5 && p <= 2.8) && (st.includes("long buildup") || st.includes("buildup"));
-    } else {
-      return (p <= -1.5 && p >= -2.8) && (st.includes("short buildup") || st.includes("buildup"));
-    }
-  }
-
-  function isExtendedRow(r) {
-    if (!r) return false;
-    if (r.is_extended) return true;
-    return Math.abs(r.percent_change || 0) >= 4.5;
-  }
-
-  /* ── Anti-Flicker Session Trade Lock ── */
-  const _sessionQualifiedDemandFreshMap = new Map();
-
-  function getSessionLockedFreshRows(baseRows, isBearish) {
-    const hasFreshZone = row => Boolean(freshZoneTime(row, isBearish) || (isBearish ? row.is_supply_zone : row.is_demand_fresh));
-    for (const r of baseRows) {
-      if (hasFreshZone(r) && r.symbol) {
-        if (!_sessionQualifiedDemandFreshMap.has(r.symbol)) {
-          _sessionQualifiedDemandFreshMap.set(r.symbol, { ...r, sessionLockedAt: Date.now() });
-        }
-      }
-    }
-    const persistent = [];
-    for (const [sym, saved] of _sessionQualifiedDemandFreshMap.entries()) {
-      const live = baseRows.find(x => x.symbol === sym);
-      if (live) {
-        if (live.is_failed_trend) {
-          _sessionQualifiedDemandFreshMap.delete(sym);
-          continue;
-        }
-        persistent.push({ ...saved, ...live });
-      } else {
-        const savedSideIsBear = (saved.percent_change || 0) < 0 || saved.is_supply_zone;
-        if (savedSideIsBear === isBearish) {
-          persistent.push(saved);
-        }
-      }
-    }
-    return persistent.length ? persistent : baseRows.filter(hasFreshZone);
-  }
-
-  function renderScannerRows(rows) {
-    const isBearish = _activeTab === "bearish";
-    const hasFreshZone = row => Boolean(freshZoneTime(row, isBearish));
-    const freshLabel = document.getElementById("filterFreshLabel");
-    if (freshLabel) freshLabel.textContent = isBearish ? "🔴 Bear OB Fresh" : "🟢 Demand Fresh";
-
-    const baseRows = (rows || []).filter(r => {
-      if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
-      if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
-      const st = (r.five_min_status || "").toLowerCase();
-      const score = r.score || r.rally_score || 0;
-      // Anti-Disappear: Keep breakouts, near BO/BD, and high-conviction runners (score >= 70).
-      // Only drop low-conviction consolidating filler.
-      if (st === "consolidating" && score < 70 && !r.is_breakout && !r.breakout_time && !hasFreshZone(r)) return false;
-      return true;
-    });
-
-    const groups = {
-      all: baseRows,
-      fresh: getSessionLockedFreshRows(baseRows, isBearish),
-      early: baseRows.filter(isEarlyIgnitionRow),
-      extended: baseRows.filter(isExtendedRow),
-    };
-    const counts = {
-      cntFilterAll: groups.all.length,
-      cntFilterFresh: groups.fresh.length,
-      cntFilterEarly: groups.early.length,
-      cntFilterExt: groups.extended.length,
-    };
-    for (const [id, count] of Object.entries(counts)) {
-      const label = document.getElementById(id);
-      if (label) label.textContent = String(Math.min(count, MAX_DISPLAY_ROWS));
-    }
-    const freshTab = document.getElementById("tabFreshZones");
-    if (freshTab) {
-      const zoneName = isBearish ? "Bear OB Fresh" : "Demand Fresh";
-      freshTab.textContent = `Top ${MAX_DISPLAY_ROWS} ${zoneName} (${Math.min(groups.fresh.length, MAX_DISPLAY_ROWS)})`;
-    }
-    const emptyMessages = {
-      all: "No qualifying candidates in this snapshot.",
-      fresh: isBearish ? "No fresh bearish order blocks in this scan." : "No fresh demand zones in this scan.",
-      early: "No candidates currently in the Early Ignition sweet spot.",
-      extended: "No extended candidates in this scan.",
-    };
-    const displayRows = groups[_currentListFilter].slice(0, MAX_DISPLAY_ROWS);
-    const emptyMessage = emptyMessages[_currentListFilter];
-    renderLeftList(displayRows, emptyMessage);
-    renderTable(displayRows, emptyMessage);
-    return displayRows;
-  }
-
   /* ── Render Left Scroll List ── */
-  function renderLeftList(displayRows, emptyMessage) {
+  function renderLeftList(rows) {
     const list = document.getElementById("stockScrollList");
-    if (!list) return;
     const badge = document.getElementById("listBadge");
-    if (badge) badge.textContent = String(displayRows.length);
-    if (displayRows.length === 0) {
-      list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">${emptyMessage}</div>`;
+    if (!list) return;
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">No breakout candidates right now.</div>`;
+      if (badge) badge.textContent = "0";
       return;
     }
-    const isBearish = _activeTab === "bearish";
 
-    list.innerHTML = displayRows.map((row, idx) => {
+    if (badge) badge.textContent = String(rows.length);
+
+    list.innerHTML = rows.map((row, idx) => {
       const isUp = (row.percent_change || 0) >= 0;
       const isSelected = row.symbol === _selectedSymbol;
-      const streakMin = row.top5_streak_minutes || 0;
-      const isEarly = isEarlyIgnitionRow(row);
-      const isExt = isExtendedRow(row);
-      const hasFreshZone = Boolean(freshZoneTime(row, isBearish));
-      const isDemand = !isBearish && hasFreshZone;
-      const isSupply = isBearish && hasFreshZone;
-
-      const streakBadge = (streakMin > 0 && idx < 5)
-        ? `<span class="top5-streak-pill ${isUp ? 'green' : 'red'}" style="font-size:9px; padding:0 4px;" title="Continuous time in Top 5 (resets if dropped below rank 5)">⏱️ ${streakMin}m</span>`
-        : "";
-
-      const demandPill = isDemand
-        ? `<span style="font-size:8.5px; font-weight:800; background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:1px 5px; border-radius:3px; letter-spacing:0.02em;" title="Institutional Demand Fresh Base at ${row.demand_fresh_time || ''}">🟢 DEMAND · FRESH ${row.demand_fresh_time || ''}</span>`
-        : "";
-
-      const supplyPill = isSupply
-        ? `<span style="font-size:8.5px; font-weight:800; background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; padding:1px 5px; border-radius:3px; letter-spacing:0.02em;" title="Institutional Bear Order Block Fresh at ${row.supply_zone_time || ''}">🔴 BEAR OB · FRESH ${row.supply_zone_time || ''}</span>`
-        : "";
-
-      const earlyPill = isEarly
-        ? `<span style="font-size:8.5px; font-weight:800; background:#10b981; color:#ffffff; padding:1px 5px; border-radius:3px; letter-spacing:0.02em;" title="In Sweet Spot Zone (1.8%–2.5%) before extension">🎯 SWEET SPOT 2+</span>`
-        : "";
-
-      const surgePill = (row.rank_velocity === "SURGING" || row.rank_velocity === "CLIMBING")
-        ? `<span style="font-size:8.5px; font-weight:800; background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:1px 4px; border-radius:3px;" title="Climbing leaderboard ranks">▲ ${row.rank_progression || 'CLIMBING'}</span>`
-        : "";
-
-      const extPill = (!isEarly && isExt)
-        ? `<span style="font-size:8px; font-weight:700; background:#fffbeb; color:#b45309; border:1px solid #fde68a; padding:1px 4px; border-radius:3px;" title="Extended gain (+${(row.percent_change||0).toFixed(1)}%). High risk of pullback, avoid chasing.">⚠️ EXTENDED</span>`
-        : "";
+      const qTags = row.quality_tags || [];
+      const st = (row.five_min_status || "").toLowerCase();
+      const isBreakdown = Boolean(st.includes("breakdown") || ((row.percent_change || 0) < 0 && row.is_breakout) || row.side === "bearish" || row.side === "LOSER");
+      const isDemand = Boolean((row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isBreakdown);
+      const isSupply = Boolean((row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isBreakdown);
+      let timeMatch = isDemand ? row.demand_fresh_time : (isSupply ? row.supply_zone_time : null);
+      if (!timeMatch && qTags.length) {
+        const tag = qTags.find(t => t.includes("FRESH"));
+        if (tag) {
+          const m = tag.match(/\[(\d{1,2}:\d{2}\s*(?:AM|PM)?)\]/i);
+          if (m) timeMatch = m[1];
+        }
+      }
+      const tStr = timeMatch || row.trigger_time || row.five_min_time || "";
+      let zoneBadge = "";
+      if (isDemand) {
+        zoneBadge = `<span style="background:#ecfdf5; color:#166534; border:1px solid #a7f3d0; font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; margin-top:2px; display:inline-flex; align-items:center; gap:2px; width:fit-content;">Demand · Fresh${tStr ? ` ${tStr}` : ''}</span>`;
+      } else if (isSupply) {
+        zoneBadge = `<span style="background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; margin-top:2px; display:inline-flex; align-items:center; gap:2px; width:fit-content;">Bear OB · Fresh${tStr ? ` ${tStr}` : ''}</span>`;
+      }
 
       return `
-        <div class="stock-card-item ${isSelected ? 'active' : ''} ${isEarly ? 'early-ignition-card' : ''}" data-sym="${row.symbol}" onclick="openDashboardChart('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${row.vc_ranking || 1}, setup:'${row.setup || ""}', is_early_ignition:${Boolean(isEarly)}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
+        <div class="stock-card-item ${isSelected ? 'active' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${row.vc_ranking || 1}, setup:'${row.setup || ""}', chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <div class="item-left">
-            <span class="item-rank" title="Overall scanner rank #${row.rank ?? idx + 1}">${idx + 1}</span>
+            <span class="item-rank">${idx + 1}</span>
             <div class="item-names">
-              <span class="item-symbol">${row.symbol} ${row.lot_size ? `<span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${row.lot_size}</span>` : ""} ${row.is_block_surge ? `<span style="font-size:8px; font-weight:800; background:#f5f3ff; color:#6d28d9; border:1px solid #c4b5fd; padding:1px 4px; border-radius:3px; margin-left:3px;">⚡ BLOCK ${row.block_surge_turnover_cr ? '₹' + row.block_surge_turnover_cr.toFixed(0) + 'Cr' : ''}</span>` : ""}</span>
-              <div style="display:flex; align-items:center; gap:4px; margin-top:2px; flex-wrap:wrap;">
-                <span class="item-setup-tag">${row.setup || "OI Confirmed"}${streakBadge}</span>
-                ${demandPill}
-                ${supplyPill}
-                ${earlyPill}
-                ${surgePill}
-                ${extPill}
-              </div>
+              <span class="item-symbol">${row.symbol}${row.lot_size ? ` <span style="font-size:9px; color:var(--text-muted); font-weight:700;">Lot ${row.lot_size}</span>` : ''}</span>
+              <span class="item-setup-tag">${row.setup || "Long buildup"}</span>
+              ${zoneBadge}
             </div>
           </div>
-          <div class="item-right" style="display:flex; flex-direction:column; align-items:flex-end; gap:3px;">
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span class="item-chg ${isUp ? 'up' : 'down'}">${pct(row.percent_change)}</span>
-              <button onclick="event.stopPropagation(); openStockInOverview('${row.symbol}')" style="background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; border-radius:4px; font-size:10px; font-weight:800; padding:1px 5px; cursor:pointer;" title="Open in Stock Overview">🔬</button>
-            </div>
+          <div class="item-right">
+            <span class="item-chg ${isUp ? 'up' : 'down'}">${pct(row.percent_change)}</span>
             <span class="item-status-pill ${isUp ? 'leading' : 'lagging'}">${isUp ? 'LEADING' : 'LAGGING'}</span>
           </div>
         </div>
@@ -3925,13 +4022,95 @@
     }).join("");
   }
 
+  /* ── Hard Rules for Top 10 High-Conviction Demand Fresh Filter ── */
+  const INDEX_ANCHORS_SET = new Set(["HDFCBANK", "RELIANCE", "TCS", "INFY"]);
+  const _sessionQualifiedDemandFreshMap = new Map(); // Anti-Flicker: Keeps entered trades persistent throughout the session
+
+  function isTop10DemandFreshQualified(row) {
+    if (!row) return false;
+    const rank = Number(row.rank) || 99;
+    if (rank > 10) return false;
+    if (INDEX_ANCHORS_SET.has(row.symbol)) return false;
+
+    const qTags = row.quality_tags || [];
+    const st = (row.five_min_status || "").toLowerCase();
+    const isBreakdown = Boolean(st.includes("breakdown") || ((row.percent_change || 0) < 0 && row.is_breakout) || row.side === "bearish" || row.side === "LOSER");
+    const isDemand = Boolean((row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isBreakdown);
+    const isSupply = Boolean((row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isBreakdown);
+
+    if (!isDemand && !isSupply) return false;
+
+    // Open momentum gate: must be at least 1.20% directional move to eliminate sluggish chop
+    const moveOpen = Math.abs(Number(row.move_from_open_percent) || Number(row.percent_change) || 0);
+    if (moveOpen < 1.20) return false;
+
+    if (st.includes("near") || st.includes("consolidating")) return false;
+
+    return true;
+  }
+
+  function getTop10DemandFreshQualifiedRows() {
+    const all = [...(_currentBullish || []), ...(_currentBearish || [])];
+
+    // 1. Check current scan candidates and lock any qualifying stocks into session memory
+    for (const r of all) {
+      if (isTop10DemandFreshQualified(r)) {
+        if (!_sessionQualifiedDemandFreshMap.has(r.symbol)) {
+          _sessionQualifiedDemandFreshMap.set(r.symbol, { ...r, sessionLockedAt: Date.now() });
+        }
+      }
+    }
+
+    // 2. Build live list from session memory, updating live LTP/P&L while maintaining persistence
+    const persistentRows = [];
+    for (const [sym, saved] of _sessionQualifiedDemandFreshMap.entries()) {
+      const live = all.find(x => x.symbol === sym);
+      if (live) {
+        // If live stock has invalidated / breached stop loss, cleanly retire it
+        if (live.is_failed_trend) {
+          _sessionQualifiedDemandFreshMap.delete(sym);
+          continue;
+        }
+        persistentRows.push({ ...saved, ...live });
+      } else {
+        persistentRows.push(saved);
+      }
+    }
+
+    // 3. Fallback: If session map empty yet, show current qualified
+    if (persistentRows.length === 0) {
+      return all.filter(isTop10DemandFreshQualified).sort((a, b) => (Number(a.rank) || 99) - (Number(b.rank) || 99)).slice(0, 10);
+    }
+
+    // 4. Sort: ranked by institutional strength / percentage (max 10 active)
+    return persistentRows.sort((a, b) => (Number(a.rank) || 99) - (Number(b.rank) || 99)).slice(0, 10);
+  }
+
   /* ── Render Bottom Detail Table ── */
-  function renderTable(rows, emptyMessage) {
+  function renderTable(rows) {
     const body = document.getElementById("vcTableBody");
     if (!body) return;
 
-    if (rows.length === 0) {
-      body.innerHTML = `<tr><td colspan="10" style="text-align:left; padding:16px; color:var(--text-muted);">${emptyMessage}</td></tr>`;
+    if (_activeTab !== "demand_fresh") {
+      rows = (rows || []).filter(r => {
+        if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
+        if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
+        const st = (r.five_min_status || "").toLowerCase();
+        const score = r.score || r.rally_score || 0;
+        if (st === "consolidating" && score < 70 && !r.is_breakout && !r.breakout_time) return false;
+        return true;
+      }).slice(0, MAX_DISPLAY_ROWS);
+    }
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      if (_activeTab === "demand_fresh") {
+        body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:24px; color:var(--text-muted); font-weight:600;">No fresh demand zones in this scan. Waiting for confirmed Demand Fresh bases with &ge; +1.20% open momentum. <button onclick="loadData({refresh:true})" style="margin-left:8px; background:#0f172a; color:#fff; border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer;">Retry</button></td></tr>`;
+        return;
+      }
+      const opposite = _activeTab === "bullish" ? _currentBearish : _currentBullish;
+      const label = _activeTab === "bullish" ? "bullish" : "bearish";
+      const hint = opposite.length ? ` Check Top ${_activeTab === "bullish" ? "Losers" : "Gainers"} (${opposite.length} candidates).` : "";
+      body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:20px; color:var(--text-muted); font-weight:600;">No qualifying ${label} candidates in this snapshot.${hint} <button onclick="loadData({refresh:true})" style="margin-left:8px; background:#0f172a; color:#fff; border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer;">Retry</button></td></tr>`;
       return;
     }
 
@@ -3951,20 +4130,27 @@
       const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
 
       // SMC Demand Fresh & Supply Zone triggers:
-      const isBearish = _activeTab === "bearish";
-      const zoneTime = freshZoneTime(row, isBearish);
-      const isDemand = !isBearish && Boolean(zoneTime);
-      const isSupply = isBearish && Boolean(zoneTime);
-      const eventTime = zoneTime || row.breakout_time || row.cascade_time;
+      const qTags = row.quality_tags || [];
+      const isDemand = Boolean(row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH")));
+      const isSupply = Boolean(row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE")));
+      let timeMatch = isDemand ? row.demand_fresh_time : (isSupply ? row.supply_zone_time : null);
+      if (!timeMatch && qTags.length) {
+        const tag = qTags.find(t => t.includes("FRESH"));
+        if (tag) {
+          const m = tag.match(/\[(\d{1,2}:\d{2}\s*(?:AM|PM)?)\]/i);
+          if (m) timeMatch = m[1];
+        }
+      }
+      const eventTime = timeMatch || row.breakout_time || row.cascade_time;
       const timeStr = eventTime ? ` ${eventTime}` : "";
 
       let statusBadge = "";
       let boCls = "wait";
 
-      if (isDemand) {
+      if (isDemand && !isBreakdown) {
         statusBadge = `🟢 DEMAND · FRESH${timeStr}`;
         boCls = "bo";
-      } else if (isSupply) {
+      } else if (isSupply && isBreakdown) {
         statusBadge = `🔴 BEAR OB · FRESH${timeStr}`;
         boCls = "bd";
       } else if (isCascade) {
@@ -4024,64 +4210,70 @@
         ? `<span class="top5-streak-pill ${isUp ? 'green' : 'red'}" title="Continuous time in Top 5 (resets if dropped below rank 5)">⏱️ ${streakMin}m</span>`
         : "";
 
-      // Instant Trade Levels Strip on Table: Displays Entry, SL, BE Lock (+0.80%), and T1 (+1.50%)
+      const noBaseBadge = (idx < 5 && !isDemand && !isSupply)
+        ? `<span style="background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px; margin-left:5px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle;" title="No Institutional Base. Higher risk of air-pocket pullback.">⚪ NO BASE</span>`
+        : "";
+
+      // Trade Levels & Breakeven Lock for High-Conviction Setups:
       let tradeLevelsBadge = "";
-      const ltpVal = Number(row.ltp) || 0;
-      const entryVal = Number(row.entry) || ltpVal;
-      if (entryVal > 0) {
-        let slVal, beVal, t1Val;
-        if (isUp) {
-          slVal = Number(row.stop_loss) || (entryVal * 0.993);
-          beVal = entryVal * 1.008; // +0.80% Breakeven Lock
-          t1Val = Number(row.target) || (entryVal * 1.015); // +1.50% Target 1
-        } else {
-          slVal = Number(row.stop_loss) || (entryVal * 1.007);
-          beVal = entryVal * 0.992; // -0.80% Breakeven Lock
-          t1Val = Number(row.target) || (entryVal * 0.985); // -1.50% Target 1
+      if (isDemand || isSupply || _activeTab === "demand_fresh") {
+        const ltpVal = Number(row.ltp) || 0;
+        const entryVal = Number(row.entry) || ltpVal;
+        if (entryVal > 0) {
+          let slVal, beVal, t1Val;
+          if (!isBreakdown) { // Bullish / Demand Fresh
+            slVal = Number(row.stop_loss) || (entryVal * 0.993);
+            beVal = entryVal * 1.008; // +0.80% Breakeven Lock
+            t1Val = Number(row.target) || (entryVal * 1.015); // +1.50% Target 1
+          } else { // Bearish / Bear OB Fresh
+            slVal = Number(row.stop_loss) || (entryVal * 1.007);
+            beVal = entryVal * 0.992; // -0.80% Breakeven Lock
+            t1Val = Number(row.target) || (entryVal * 0.985); // -1.50% Target 1
+          }
+          tradeLevelsBadge = `
+            <div class="trade-levels-strip">
+              <span class="trade-badge entry">🎯 Entry ₹${n2(entryVal)}</span>
+              <span class="trade-badge sl">🛑 SL ₹${n2(slVal)}</span>
+              <span class="trade-badge be" title="When MFE reaches 0.80%, move SL to Cost (Breakeven)">🔒 BE Lock ₹${n2(beVal)}</span>
+              <span class="trade-badge t1">🎯 T1 (1.5%) ₹${n2(t1Val)}</span>
+            </div>
+          `;
         }
-        tradeLevelsBadge = `
-          <div class="trade-levels-strip" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; font-size:10px; font-family:var(--font-mono);">
-            <span style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; padding:1px 5px; border-radius:3px; font-weight:700;">🎯 Entry ₹${entryVal.toFixed(1)}</span>
-            <span style="background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; padding:1px 5px; border-radius:3px; font-weight:700;">🛑 SL ₹${slVal.toFixed(1)}</span>
-            <span style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:1px 5px; border-radius:3px; font-weight:700;" title="When MFE reaches 0.80%, move SL to Cost (Breakeven)">🔒 BE Lock ₹${beVal.toFixed(1)}</span>
-            <span style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; padding:1px 5px; border-radius:3px; font-weight:800;">🎯 T1 (1.5%) ₹${t1Val.toFixed(1)}</span>
-          </div>
-        `;
       }
 
       return `
-        <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="openDashboardChart('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
-          <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">${idx + 1}</td>
-          <td>
+        <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
+          <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono); text-align:center;">${idx + 1}</td>
+          <td style="text-align:left;">
             <div class="stock-col">
               <span class="sym">${row.symbol} ${row.lot_size ? `<span style="font-size:10px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 5px; border-radius:3px; border:1px solid #cbd5e1; margin-left:5px;">Lot ${row.lot_size}</span>` : ""}</span>
               <span class="sub">${row.setup || "F&O Active"}${streakBadge}</span>
               ${tradeLevelsBadge}
             </div>
           </td>
-          <td style="font-weight:700; font-family:var(--font-mono); color:${(row.money_flow_percentage ?? 0) >= 70 ? 'var(--green)' : (row.money_flow_percentage ?? 0) >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${(row.money_flow_percentage ?? 0).toFixed(1)}%</td>
-          <td style="font-weight:800; font-family:var(--font-mono); color:${isUp ? 'var(--green)' : 'var(--red)'};">${pct(row.percent_change)}</td>
-          <td style="font-family:var(--font-mono); color:var(--text-muted);">${n0(row.volume)}</td>
-          <td><span class="vc-pill ${vcCls}">${vc.toFixed(2)}x</span></td>
-          <td>
+          <td style="text-align:right; font-weight:700; font-family:var(--font-mono); color:${(row.money_flow_percentage ?? 0) >= 70 ? 'var(--green)' : (row.money_flow_percentage ?? 0) >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${(row.money_flow_percentage ?? 0).toFixed(1)}%</td>
+          <td style="text-align:right; font-weight:800; font-family:var(--font-mono); color:${isUp ? 'var(--green)' : 'var(--red)'};">${pct(row.percent_change)}</td>
+          <td style="text-align:right; font-family:var(--font-mono); color:var(--text-muted);">${n0(row.volume)}</td>
+          <td style="text-align:right;"><span class="vc-pill ${vcCls}">${vc.toFixed(2)}x</span></td>
+          <td style="text-align:right;">
             <span class="mp-badge ${isUp ? 'up' : 'down'}">
               <span>${isUp ? '↑' : '↓'}</span>
               <span>${mp.toFixed(2)}</span>
             </span>
           </td>
-          <td>
-            <span class="bo-status-pill ${boCls}">${statusBadge}</span>${freshBadge}${blockBadge}
+          <td style="text-align:center;">
+            <span class="bo-status-pill ${boCls}">${statusBadge}</span>${freshBadge}${blockBadge}${noBaseBadge}
           </td>
-          <td>
-            <div class="score-meter">
+          <td style="text-align:center;">
+            <div class="score-meter" style="justify-content:center;">
               <span class="val">${row.one_side_rally_score ?? row.score ?? 0}</span>
-              <div class="score-bar-bg">
+              <div class="score-bar-bg" aria-label="Rally score ${row.one_side_rally_score ?? row.score ?? 0} out of 100">
                 <div class="score-bar-fill" style="width:${Math.min(100, Math.max(0, row.one_side_rally_score ?? row.score ?? 0))}%"></div>
               </div>
             </div>
           </td>
-          <td>
-            <div style="display:flex; align-items:center; gap:6px;">
+          <td style="text-align:center;">
+            <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
               <span style="font-weight:700; font-size:11px; color:${row.status === 'Priority Rally' ? 'var(--green)' : 'var(--text-dark)'};">${row.status || "Review"}</span>
               <button onclick="event.stopPropagation(); openStockInOverview('${row.symbol}')" style="background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; border-radius:4px; font-size:10px; font-weight:800; padding:2px 6px; cursor:pointer;" title="Open in Stock Overview">🔬 Overview</button>
             </div>
@@ -4096,8 +4288,6 @@
   let _lastGoodRenderAt = 0;
   let _lastScannerPayload = null;
   let _scannerLoadPromise = null;
-  let _scannerRefreshPromise = null;
-  let _scannerRefreshFailed = false;
   let _scannerRetryTimer = null;
   let _scannerRetryDelay = 5000;
 
@@ -4112,60 +4302,23 @@
     el.style.color = warning ? "#b45309" : "#475569";
   }
 
-  function refreshFeedback(message, warning = false) {
-    const el = document.getElementById("navbarRefreshStatus");
-    if (el) {
-      el.textContent = message;
-      el.style.color = warning ? "#92400e" : "#475569";
-    }
-  }
-
   function scannerSnapshotStatus(payload, warning = "") {
     const stamp = payload?.generated_at_ist;
-    const when = stamp ? new Date(stamp).toLocaleString("en-IN", {timeZone:"Asia/Kolkata", hour12:false}) + " IST" : "time unavailable";
+    let when = "time unavailable";
+    if (stamp) {
+      const d = new Date(stamp);
+      const day = d.getDate();
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const mStr = monthNames[d.getMonth()];
+      const y = d.getFullYear();
+      const timeStr = d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+      when = `${day} ${mStr} ${y}, ${timeStr} IST`;
+    }
     const stale = Boolean(payload?._stale_kept || payload?._refresh?.kept_last_good);
     const old = stamp && Date.now() - Date.parse(stamp) > 10 * 60 * 1000;
-    const today = new Date().toLocaleDateString("en-CA", {timeZone:"Asia/Kolkata"});
-    const previous = payload?._previous_session || (payload?.session_date && payload.session_date !== today);
-    const pending = payload?._awaiting_scan;
-    const replay = payload?._is_replay;
-    const mode = replay ? "Cached replay — NOT live"
-      : pending ? "Waiting for first scanner snapshot"
-      : previous ? "Previous session snapshot — NOT live"
-      : isMarketHours() ? (old || stale ? "Delayed snapshot — NOT live" : "Scanner snapshot") : "Market-closed snapshot — NOT live";
-    const banner = document.getElementById("sessionDataBanner");
-    if (banner) {
-      banner.textContent = replay ? `Replay · ${payload.session_date}`
-        : previous ? `Showing the ${payload.session_date} scan while awaiting the current session.`
-        : pending ? "Waiting for the first scanner update. Index quotes load separately." : "";
-      banner.style.color = "#92400e";
-    }
-    scannerDataStatus(`${warning ? warning + " · " : ""}${mode} · Scan generated ${when} · ${payload?.bullish?.length || 0} bullish / ${payload?.bearish?.length || 0} bearish`, Boolean(warning || stale || (old && isMarketHours())));
-  }
-
-  const indexTickerIds = {"NIFTY 50": "niftyVal", "NIFTY BANK": "bankVal", "SENSEX": "sensexVal"};
-  const displayedIndexQuotes = new Map();
-
-  function renderIndexQuotes(context, { fallback = false } = {}) {
-    for (const [name, id] of Object.entries(indexTickerIds)) {
-      const quote = context?.[name] || (name === "SENSEX" ? context?.["BSE SENSEX"] : null);
-      const el = document.getElementById(id);
-      if (!el || !Number.isFinite(quote?.ltp) || quote.ltp <= 0) continue;
-      const previous = displayedIndexQuotes.get(id);
-      const newer = Number.isFinite(quote.as_of_epoch) && Number.isFinite(previous?.as_of_epoch)
-        && quote.as_of_epoch > previous.as_of_epoch;
-      if (previous && fallback && !newer) continue;
-      if (Number.isFinite(quote.as_of_epoch) && Number.isFinite(previous?.as_of_epoch)
-          && quote.as_of_epoch < previous.as_of_epoch) continue;
-      const change = Number.isFinite(quote.percent_change) ? quote.percent_change : null;
-      el.textContent = n(quote.ltp) + (change == null ? "" : ` (${pct(change)})`);
-      el.style.color = change == null ? "" : change < 0 ? "#dc2626" : "#16a34a";
-      el.closest(".ticker-chip")?.classList.toggle("stale", Boolean(quote.is_stale));
-      el.title = [quote.source, quote.is_stale ? "Last available" : null,
-        quote.as_of_epoch ? new Date(quote.as_of_epoch * 1000).toLocaleString("en-IN", {timeZone:"Asia/Kolkata"}) + " IST" : null]
-        .filter(Boolean).join(" · ");
-      displayedIndexQuotes.set(id, quote);
-    }
+    const isLive = isMarketHours() && !old && !stale;
+    const mode = isLive ? "Live scan" : (isMarketHours() ? "Delayed snapshot" : "Session snapshot");
+    scannerDataStatus(`${warning ? warning + " · " : ""}${mode} · ${when} · ${payload?.bullish?.length || 0} bullish / ${payload?.bearish?.length || 0} bearish`, Boolean(warning || stale || (old && isMarketHours())));
   }
 
   function renderAll(payload, transport = "http") {
@@ -4189,12 +4342,12 @@
     if (hasRows) _lastGoodRenderAt = Date.now();
     window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
 
-    _currentBullish = (payload.bullish || []).slice()
-      .sort((a, b) => (b.percent_change ?? -Infinity) - (a.percent_change ?? -Infinity));
-    _currentBearish = (payload.bearish || []).slice()
-      .sort((a, b) => (a.percent_change ?? Infinity) - (b.percent_change ?? Infinity));
-    _currentBullish.forEach((row, index) => { row.rank = index + 1; });
-    _currentBearish.forEach((row, index) => { row.rank = index + 1; });
+    _currentBullish = (payload.bullish || []).slice().sort((a, b) => (b.percent_change ?? 0) - (a.percent_change ?? 0));
+    _currentBearish = (payload.bearish || []).slice().sort((a, b) => (a.percent_change ?? 0) - (b.percent_change ?? 0));
+
+    // Re-assign ranks 1..N based on sorted percentage
+    _currentBullish.forEach((r, idx) => { r.rank = idx + 1; });
+    _currentBearish.forEach((r, idx) => { r.rank = idx + 1; });
 
     renderTop5Eligible(payload.top5_eligible);
     renderPmhPmlFilter(payload.pmh_pml_filter);
@@ -4203,7 +4356,34 @@
     renderTrackedBreakouts(payload.tracked_breakouts);
     renderInvalidatedCandidates(payload.invalidated_candidates);
 
-    renderIndexQuotes(payload.index_context, { fallback: true });
+    // Update Indexes
+    const idxs = payload.index_context || {};
+    const n50 = idxs["NIFTY 50"] || {};
+    const bnk = idxs["NIFTY BANK"] || {};
+    const snx = idxs["SENSEX"] || idxs["BSE SENSEX"] || {};
+    const n50El = document.getElementById("niftyVal");
+    const bnkEl = document.getElementById("bankVal");
+    const snxEl = document.getElementById("sensexVal");
+    const snxChip = document.getElementById("sensexTickerChip");
+    if (n50El && n50.percent_change !== undefined) {
+      const p = n50.percent_change;
+      const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
+      n50El.textContent = `${ltpStr}(${pct(p)})`;
+      n50El.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+    }
+    if (bnkEl && bnk.percent_change !== undefined) {
+      const p = bnk.percent_change;
+      const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
+      bnkEl.textContent = `${ltpStr}(${pct(p)})`;
+      bnkEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+    }
+    if (snxEl && snx.percent_change !== undefined) {
+      if (snxChip) snxChip.style.display = "flex";
+      const p = snx.percent_change;
+      const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
+      snxEl.textContent = `${ltpStr}(${pct(p)})`;
+      snxEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+    }
 
     // Auto-Scan Badge Telemetry
     const scanBadge = document.getElementById("autoScanBadge");
@@ -4212,32 +4392,30 @@
     const scanInfo = payload._auto_scan_info || {};
     if (scanText) {
       if (scanInfo.status === "scan_window_closed") {
-        // Past the 2:45 PM auto-scan cutoff - NSE may still be open till 15:30,
-        // but the background scanner has stopped for the day on purpose.
-        scanText.textContent = "Auto-Scan: Done for today";
+        scanText.textContent = "Auto-Scan: Cutoff (2:45 PM)";
         if (scanBadge) {
+          scanBadge.title = "Done for today (2:45 PM cutoff)";
           scanBadge.style.background = "#fff7ed";
           scanBadge.style.color = "#c2410c";
           scanBadge.style.borderColor = "#fed7aa";
         }
         if (scanDot) scanDot.style.background = "#f97316";
       } else if (scanInfo.status === "pre_market" || isPreMarket()) {
-        // 9:00-9:15 AM - picks already cleared for the new session, but NSE's
-        // real open (and first scan) hasn't happened yet. Don't say "Active"
-        // or show a leftover "Last: " time from yesterday's final scan.
-        scanText.textContent = "Auto-Scan: Pre-Market (opens 9:15 AM)";
+        scanText.textContent = "Auto-Scan: Pre-Market";
         if (scanBadge) {
+          scanBadge.title = "Pre-market settles before 9:15 AM";
           scanBadge.style.background = "#f1f5f9";
           scanBadge.style.color = "#64748b";
           scanBadge.style.borderColor = "#e2e8f0";
         }
         if (scanDot) scanDot.style.background = "#94a3b8";
       } else if (isMarketHours()) {
-        const now = getISTTime();
-        const isOpeningWindow = now.getUTCHours() === 9 && now.getUTCMinutes() < 20;
+        const clockStr = payload.market_clock_ist || "";
+        const isOpeningWindow = clockStr >= "09:15:00" && clockStr < "09:20:00";
         if (isOpeningWindow) {
-          scanText.textContent = "Auto-Scan: 🟡 Opening Range Forming (09:15-09:20 Settle)";
+          scanText.textContent = "Auto-Scan: Opening Settle";
           if (scanBadge) {
+            scanBadge.title = "Opening Range Forming (09:15-09:20 Settle)";
             scanBadge.style.background = "#fffbeb";
             scanBadge.style.color = "#b45309";
             scanBadge.style.borderColor = "#fde68a";
@@ -4245,8 +4423,9 @@
           if (scanDot) scanDot.style.background = "#f59e0b";
         } else {
           const lastT = scanInfo.last_run_ist ? scanInfo.last_run_ist.replace(" IST", "") : (payload.market_clock_ist || "");
-          scanText.textContent = lastT ? `Auto-Scan: 5m (Last: ${lastT})` : "Auto-Scan: 5m Active";
+          scanText.textContent = lastT ? `Auto-Scan: ${lastT}` : "Auto-Scan: Active";
           if (scanBadge) {
+            scanBadge.title = "Background engine automatically rescans 200+ NSE F&O stocks every minute";
             scanBadge.style.background = "#eff6ff";
             scanBadge.style.color = "#1d4ed8";
             scanBadge.style.borderColor = "#bfdbfe";
@@ -4254,8 +4433,9 @@
           if (scanDot) scanDot.style.background = "#2563eb";
         }
       } else {
-        scanText.textContent = "Auto-Scan: Idle (Market Closed)";
+        scanText.textContent = "Auto-Scan: Idle";
         if (scanBadge) {
+          scanBadge.title = "Market Closed — Engine idle";
           scanBadge.style.background = "#f1f5f9";
           scanBadge.style.color = "#64748b";
           scanBadge.style.borderColor = "#e2e8f0";
@@ -4299,7 +4479,7 @@
     const pickCriteria = document.getElementById("topPickCriteria");
 
     // Gate 5: Smart Weighted Scoring Engine (Trend Alignment vs Outlier Override)
-    const _niftyPct = payload.index_context?.["NIFTY 50"]?.percent_change ?? 0;
+    const _niftyPct = (idxs["NIFTY 50"] || {}).percent_change ?? 0;
 
     // 1. Define base multipliers based on NIFTY trend (+30% bonus for trading with the trend)
     const ceTrendBonus = _niftyPct >= 0.2 ? 1.5 : 1.0;
@@ -4420,9 +4600,8 @@
         pickBadge.style.background = "#ffe4e6";
         pickBadge.style.color = "#be123c";
         
-        const zoneTime = freshZoneTime(finalTopPick, true);
-        const isSupply = Boolean(zoneTime);
-        const displayTime = zoneTime || finalTopPick.breakout_time;
+        const isSupply = Boolean(finalTopPick.is_supply_zone || (finalTopPick.quality_tags || []).some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE")));
+        const displayTime = isSupply ? (finalTopPick.supply_zone_time || finalTopPick.breakout_time) : finalTopPick.breakout_time;
         const freshPickTag = finalTopPick.breakout_freshness === "FRESH" ? " ⚡ FRESH" : (finalTopPick.breakout_freshness === "RETEST" ? " 🔄 RETEST" : (finalTopPick.breakout_freshness === "EXTENDED" ? " ⚠️ EXTENDED" : ""));
         document.getElementById("topPickSym").textContent = finalTopPick.symbol;
         document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
@@ -4449,9 +4628,8 @@
         pickBadge.style.background = "#dcfce7";
         pickBadge.style.color = "#15803d";
         
-        const zoneTime = freshZoneTime(finalTopPick, false);
-        const isDemand = Boolean(zoneTime);
-        const displayTime = zoneTime || finalTopPick.breakout_time;
+        const isDemand = Boolean(finalTopPick.is_demand_fresh || (finalTopPick.quality_tags || []).some(t => t.includes("DEMAND · FRESH")));
+        const displayTime = isDemand ? (finalTopPick.demand_fresh_time || finalTopPick.breakout_time) : finalTopPick.breakout_time;
         const freshPickTag = finalTopPick.breakout_freshness === "FRESH" ? " ⚡ FRESH" : (finalTopPick.breakout_freshness === "RETEST" ? " 🔄 RETEST" : (finalTopPick.breakout_freshness === "EXTENDED" ? " ⚠️ EXTENDED" : ""));
         document.getElementById("topPickSym").textContent = finalTopPick.symbol;
         document.getElementById("topPickChg").textContent = `${pct(finalTopPick.percent_change)} ${finalTopPick.setup}`;
@@ -4544,33 +4722,35 @@
     const pdhEl = document.getElementById("pdhCount");
     if (pdhEl) pdhEl.textContent = String(_currentBullish.filter(x => (x.range_position_percent || 0) >= 70).length || 14);
 
-    // Automatic Index Alignment (Market Direction):
-    // If NIFTY is negative (<= -0.20%) and user hasn't explicitly clicked a tab,
-    // automatically align view with Bearish (short) stocks to prevent fighting the market tide.
-    const previousSide = _activeTab;
+    // High-Conviction Top 10 Demand Fresh Default View:
+    // User defaults directly to the highest-conviction filtered view (never 30+ clutter).
     if (!_userSwitchedTab) {
-      const n50Chg = (payload.index_context?.["NIFTY 50"]?.percent_change) ?? 0;
-      if (n50Chg <= -0.20 && _currentBearish.length > 0) {
-        _activeTab = "bearish";
-      } else if (n50Chg >= 0.20 && _currentBullish.length > 0) {
-        _activeTab = "bullish";
-      }
+      _activeTab = "demand_fresh";
+      document.getElementById("tabDemandFresh")?.classList.add("active");
+      document.getElementById("tabGainers")?.classList.remove("active");
+      document.getElementById("tabLosers")?.classList.remove("active");
     }
-    syncScannerViewButtons();
 
-    const currentRows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
-    const visibleRows = renderScannerRows(currentRows);
+    const dfQualified = getTop10DemandFreshQualifiedRows();
+    const dfPillCountEl = document.getElementById("demandFreshPillCount");
+    if (dfPillCountEl) dfPillCountEl.textContent = String(dfQualified.length);
+
+    let currentRows;
+    if (_activeTab === "demand_fresh") {
+      currentRows = dfQualified;
+    } else {
+      currentRows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
+    }
+    renderLeftList(currentRows);
+    renderTable(currentRows);
 
     // Evaluate Bell Alert (Only enabled when actual breakout called and all priority meets)
     checkAndTriggerBellAlerts(payload);
 
     // Auto-select first leader
-    if (document.getElementById("viewDashboard")?.style.display !== "none") {
-      const active = currentRows.find(x => x.symbol === _selectedSymbol);
-      if (active) selectStock(active.symbol, active);
-      else if (_selectedSymbol && previousSide === _activeTab) selectStock(_selectedSymbol, _selectedStockMeta);
-      else if (visibleRows.length) selectStock(visibleRows[0].symbol, visibleRows[0]);
-      else if (!_selectedSymbol) selectStock("NIFTY50");
+    if (currentRows.length > 0) {
+      const active = currentRows.find(x => x.symbol === _selectedSymbol) || currentRows[0];
+      selectStock(active.symbol, active);
     }
     _lastScannerPayload = payload;
     _sectorPayload = payload;
@@ -4587,12 +4767,12 @@
     const btn = document.getElementById("soundToggleBtn");
     if (!btn) return;
     if (_bellSoundEnabled) {
-      btn.innerHTML = "🔔 Bell Sound: ON";
+      btn.innerHTML = "🔔 Bell: ON";
       btn.style.background = "#dbeafe";
       btn.style.color = "#1d4ed8";
       btn.style.borderColor = "#bfdbfe";
     } else {
-      btn.innerHTML = "🔕 Bell Sound: OFF";
+      btn.innerHTML = "🔕 Bell: OFF";
       btn.style.background = "#f1f5f9";
       btn.style.color = "#64748b";
       btn.style.borderColor = "#e2e8f0";
@@ -4600,50 +4780,32 @@
   }
 
   /* ── Data Fetcher ── */
-  function loadData({ refresh = false } = {}) {
-    if (_scannerRefreshPromise) return _scannerRefreshPromise;
-    if (refresh) {
-      if (refreshBtn) {
-        refreshBtn.disabled = true;
-        refreshBtn.textContent = "Refreshing…";
-      }
-      refreshFeedback("Refreshing scanner…");
-      _scannerRefreshPromise = Promise.resolve(_scannerLoadPromise)
-        .then(() => fetchScannerData(Boolean(!_lastScannerPayload?._is_replay
-          && (isMarketHours() || (_lastScannerPayload?._previous_session && !isPreMarket()))), true))
-        .finally(() => {
-          _scannerRefreshPromise = null;
-          if (refreshBtn) {
-            refreshBtn.disabled = false;
-            refreshBtn.textContent = "Refresh";
-          }
-        });
-      return _scannerRefreshPromise;
-    }
-    if (!_scannerLoadPromise) {
-      _scannerLoadPromise = fetchScannerData(false).finally(() => { _scannerLoadPromise = null; });
-    }
-    return _scannerLoadPromise;
+  async function loadData({ refresh = false } = {}) {
+    if (_scannerLoadPromise) return _scannerLoadPromise;
+    _scannerLoadPromise = fetchScannerData(refresh);
+    try { return await _scannerLoadPromise; }
+    finally { _scannerLoadPromise = null; }
   }
 
-  async function fetchScannerData(liveRefresh, manual = false) {
+  async function fetchScannerData(refresh) {
     clearTimeout(_scannerRetryTimer);
     _scannerRetryTimer = null;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 130000);
+    const timeout = setTimeout(() => controller.abort(), 95000);
     const fetchStarted = performance.now();
     let failureReason = "network_error";
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = refresh ? "Fetching NSE..." : "Loading...";
+    }
     try {
-      const ep = liveRefresh ? "/api/stock_suggestions/refresh" : "/api/stock_suggestions";
+      const ep = refresh ? "/api/stock_suggestions/refresh" : "/api/stock_suggestions";
       const res = await fetch(`${API_BASE}${ep}`, {
-        method: liveRefresh ? "POST" : "GET",
+        method: refresh ? "POST" : "GET",
         cache: "no-store",
         signal: controller.signal
       });
-      if (!res.ok) {
-        failureReason = res.status === 409 ? "scan_in_progress" : "http_error";
-        throw new Error(`Scanner HTTP ${res.status}`);
-      }
+      if (!res.ok) { failureReason = "http_error"; throw new Error(`Scanner HTTP ${res.status}`); }
       failureReason = "invalid_payload";
       const data = await res.json();
       if (data.snapshot_id) scannerTrace("snapshot_received", {snapshot_id:data.snapshot_id,
@@ -4651,89 +4813,68 @@
       failureReason = "render_exception";
       if (!renderAll(data)) { failureReason = "invalid_payload"; throw new Error("Scanner response unavailable or invalid"); }
       _scannerRetryDelay = 5000;
-      if (manual) {
-        const refresh = data._refresh || {};
-        _scannerRefreshFailed = false;
-        if (refresh.kept_last_good) refreshFeedback("Live scan unavailable. Showing the previous snapshot.", true);
-        else if (refresh.reason === "scan_in_progress") refreshFeedback("A scan is running. Showing the latest available snapshot.");
-        else if (refresh.debounced || data !== _lastScannerPayload) refreshFeedback("Showing the latest available snapshot.");
-        else refreshFeedback(liveRefresh ? "Scanner refreshed." : "Session snapshot loaded.");
-      } else if (_scannerRefreshFailed && data === _lastScannerPayload) {
-        _scannerRefreshFailed = false;
-        refreshFeedback("Scanner connection restored.");
-      }
-      return true;
     } catch (e) {
       console.error("Load failed:", e);
       scannerTrace(failureReason === "render_exception" ? "render_failed" : "load_failed", {transport:"http", reason:e.name === "AbortError" ? "timeout" : failureReason,
         elapsed_ms:Math.round(performance.now()-fetchStarted)});
       if (_lastScannerPayload) scannerSnapshotStatus(_lastScannerPayload, "Connection/load failed — retrying; previous data retained");
       else scannerDataStatus("Scanner data unavailable — retrying automatically. No verified snapshot loaded.", true);
-      if (manual) {
-        _scannerRefreshFailed = true;
-        const message = failureReason === "scan_in_progress" ? "A scan is already running. Retrying the snapshot…"
-          : (_lastScannerPayload ? "Refresh failed. Showing the previous snapshot." : "Refresh failed. Retrying the snapshot…");
-        refreshFeedback(message, true);
-      }
       // GET retries only: reconnecting a phone must not trigger repeated NSE scans.
       _scannerRetryTimer = setTimeout(() => {
         _scannerRetryTimer = null;
         if (document.visibilityState === "visible") loadData();
       }, _scannerRetryDelay);
       _scannerRetryDelay = Math.min(_scannerRetryDelay * 2, 30000);
-      return false;
     } finally {
       clearTimeout(timeout);
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "⚡ Refresh Live";
+      }
     }
   }
 
   /* ── Tab Switchers ── */
-  const scannerViewButtons = document.querySelectorAll("[data-scanner-side], [data-scanner-filter]");
-  function syncScannerViewButtons() {
-    scannerViewButtons.forEach(button => {
-      const { scannerSide, scannerFilter } = button.dataset;
-      const active = (!scannerSide || scannerSide === _activeTab)
-        && (!scannerFilter || scannerFilter === _currentListFilter);
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
-  }
-  scannerViewButtons.forEach(button => {
-    button.addEventListener("click", () => {
-      const { scannerSide, scannerFilter } = button.dataset;
-      const nextSide = scannerSide || _activeTab;
-      const nextFilter = scannerFilter || _currentListFilter;
-      if (scannerSide) _userSwitchedTab = true;
-      if (nextSide === _activeTab && nextFilter === _currentListFilter) return;
-      _activeTab = nextSide;
-      _currentListFilter = nextFilter;
-      syncScannerViewButtons();
-      const rows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
-      const visibleRows = renderScannerRows(rows);
-      const list = document.getElementById("stockScrollList");
-      if (list) list.scrollTop = 0;
-      if (visibleRows.length && !visibleRows.some(row => row.symbol === _selectedSymbol)) {
-        selectStock(visibleRows[0].symbol, visibleRows[0]);
-      }
-    });
+  document.getElementById("tabGainers")?.addEventListener("click", () => {
+    _userSwitchedTab = true;
+    _activeTab = "bullish";
+    document.getElementById("tabGainers").classList.add("active");
+    document.getElementById("tabLosers").classList.remove("active");
+    document.getElementById("tabDemandFresh")?.classList.remove("active");
+    renderLeftList(_currentBullish);
+    renderTable(_currentBullish);
+    if (_currentBullish.length > 0) selectStock(_currentBullish[0].symbol, _currentBullish[0]);
   });
 
-  async function refreshActiveView() {
-    const refreshed = loadData({ refresh: true });
-    pollIndexLive(true);
+  document.getElementById("tabLosers")?.addEventListener("click", () => {
+    _userSwitchedTab = true;
+    _activeTab = "bearish";
+    document.getElementById("tabLosers").classList.add("active");
+    document.getElementById("tabGainers").classList.remove("active");
+    document.getElementById("tabDemandFresh")?.classList.remove("active");
+    renderLeftList(_currentBearish);
+    renderTable(_currentBearish);
+    if (_currentBearish.length > 0) selectStock(_currentBearish[0].symbol, _currentBearish[0]);
+  });
+
+  document.getElementById("tabDemandFresh")?.addEventListener("click", () => {
+    _userSwitchedTab = true;
+    _activeTab = "demand_fresh";
+    document.getElementById("tabDemandFresh").classList.add("active");
+    document.getElementById("tabGainers")?.classList.remove("active");
+    document.getElementById("tabLosers")?.classList.remove("active");
+    const dfRows = getTop10DemandFreshQualifiedRows();
+    renderLeftList(dfRows);
+    renderTable(dfRows);
+    if (dfRows.length > 0) selectStock(dfRows[0].symbol, dfRows[0]);
+  });
+
+  refreshBtn?.addEventListener("click", () => {
+    loadData({ refresh: true });
     const viewOv = document.getElementById("viewOverview");
-    if (viewOv && viewOv.style.display !== "none" && _overviewSymbol) {
+    if (viewOv && viewOv.style.display !== "none" && typeof loadStockOverview === "function" && _overviewSymbol) {
       loadStockOverview(_overviewSymbol);
     }
-    await refreshed;
-    if (document.getElementById("viewSectorAnalysis")?.style.display === "flex") renderSectorView();
-  }
-  refreshBtn?.addEventListener("click", refreshActiveView);
-  document.getElementById("sectorRefreshBtn")?.addEventListener("click", async event => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    try { await refreshActiveView(); }
-    finally { button.disabled = false; }
   });
   window.addEventListener("online", () => loadData());
   window.addEventListener("pageshow", event => { if (event.persisted) loadData(); });
@@ -4887,24 +5028,6 @@
   const sidebarToggleBtn = document.getElementById("sidebarToggleBtn");
   const mobileNavToggle = document.getElementById("mobileNavToggle");
   const sidebarBackdrop = document.getElementById("sidebarBackdrop");
-  const mobileNavigation = window.matchMedia("(max-width: 991px)");
-  const chartStacked = window.matchMedia("(max-width: 1080px)");
-  const compactMetrics = window.matchMedia("(max-width: 640px)");
-  let metricsPreference = null;
-  const topNavbar = document.querySelector(".top-navbar");
-
-  if (topNavbar) {
-    new ResizeObserver(() => {
-      document.documentElement.style.setProperty("--header-height", `${topNavbar.offsetHeight}px`);
-    }).observe(topNavbar);
-  }
-
-  const navbarStatusToggle = document.getElementById("navbarStatusToggle");
-  navbarStatusToggle?.addEventListener("click", () => {
-    const expanded = document.getElementById("navbarStatus")?.classList.toggle("expanded");
-    navbarStatusToggle.setAttribute("aria-expanded", String(Boolean(expanded)));
-    navbarStatusToggle.textContent = expanded ? "Less" : "More";
-  });
 
   function triggerChartResize() {
     setTimeout(() => {
@@ -4927,59 +5050,55 @@
     }, 150);
   }
 
-  function syncMetricsRow() {
+  function toggleMetricsRow() {
     const row = document.getElementById("metricsRow");
     const btn = document.getElementById("btnToggleMetrics");
     if (!row || !btn) return;
-    const expanded = metricsPreference ?? !compactMetrics.matches;
-    row.style.display = expanded ? "" : "none";
-    btn.textContent = expanded ? "Hide Metrics" : "Show Metrics";
-    btn.setAttribute("aria-expanded", String(expanded));
-    btn.setAttribute("aria-controls", "metricsRow");
+    if (row.style.display === "none") {
+      row.style.display = "grid";
+      btn.textContent = "⯅ Compact View";
+    } else {
+      row.style.display = "none";
+      btn.textContent = "⯆ Show Metrics";
+    }
     triggerChartResize();
   }
 
-  function toggleMetricsRow() {
-    metricsPreference = !(metricsPreference ?? !compactMetrics.matches);
-    syncMetricsRow();
-  }
-
-  compactMetrics.addEventListener("change", syncMetricsRow);
-  syncMetricsRow();
-
-  function setNavigationOpen(open, restoreFocus = true) {
-    const wasOpen = sidebarEl?.classList.contains("mobile-open");
-    sidebarEl?.classList.toggle("mobile-open", open);
-    sidebarBackdrop?.classList.toggle("active", open);
-    mobileNavToggle?.setAttribute("aria-expanded", String(open));
-    if (open) sidebarToggleBtn?.focus();
-    else if (wasOpen && restoreFocus) mobileNavToggle?.focus();
-  }
-
+  // Desktop/Laptop toggle (Collapse / Expand)
   sidebarToggleBtn?.addEventListener("click", () => {
     if (!sidebarEl) return;
-    if (mobileNavigation.matches) {
-      setNavigationOpen(false);
-    } else {
-      sidebarEl.classList.toggle("collapsed");
-      triggerChartResize();
-    }
+    sidebarEl.classList.toggle("collapsed");
+    triggerChartResize();
   });
 
+  // Mobile / iPad Drawer Toggle
   mobileNavToggle?.addEventListener("click", () => {
-    setNavigationOpen(!sidebarEl?.classList.contains("mobile-open"));
+    if (!sidebarEl) return;
+    sidebarEl.classList.toggle("mobile-open");
+    sidebarBackdrop?.classList.toggle("active");
   });
-  sidebarBackdrop?.addEventListener("click", () => setNavigationOpen(false));
-  mobileNavigation.addEventListener("change", () => setNavigationOpen(false, false));
-  document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && sidebarEl?.classList.contains("mobile-open")) {
-      setNavigationOpen(false);
+
+  // Close drawer when clicking dark backdrop
+  sidebarBackdrop?.addEventListener("click", () => {
+    sidebarEl?.classList.remove("mobile-open");
+    sidebarBackdrop?.classList.remove("active");
+  });
+
+  // Universal Screen Resize handler (iPad rotation, browser resize)
+  window.addEventListener("resize", () => {
+    const tvContainer = document.getElementById("tvCandleContainer");
+    if (_tvChart && tvContainer) {
+      _tvChart.applyOptions({
+        width: tvContainer.clientWidth,
+        height: tvContainer.clientHeight || 440
+      });
+      requestAnimationFrame(renderDashboardSmcOverlay);
     }
   });
 
   // ═══════════════════════════════════════════════════════════════════
   // SMART REFRESH — Market Hours Gate
-  // Poll during the regular Mon–Fri 9:15 AM – 3:30 PM IST session.
+  // Only poll NSE during Mon–Fri 9:00 AM – 3:30 PM IST
   // Outside hours: show "Market Closed" badge, stop all polling
   // ═══════════════════════════════════════════════════════════════════
 
@@ -4996,7 +5115,7 @@
     const m    = ist.getUTCMinutes();
     const mins = h * 60 + m;
     if (day === 0 || day === 6) return false;   // Weekend
-    return mins >= (9 * 60 + 15) && mins < (15 * 60 + 30);
+    return mins >= (9 * 60) && mins <= (15 * 60 + 30); // 9:00 AM – 3:30 PM
   }
 
   function isPreMarket() {
@@ -5006,7 +5125,7 @@
     const m    = ist.getUTCMinutes();
     const mins = h * 60 + m;
     if (day === 0 || day === 6) return false;
-    return mins >= (9 * 60) && mins < (9 * 60 + 15);
+    return mins >= (8 * 60 + 45) && mins < (9 * 60); // 8:45–9:00 AM warmup
   }
 
   function updateMarketStatusBadge() {
@@ -5021,27 +5140,32 @@
     if (!badge) return;
 
     if (isMarketHours()) {
-      badge.textContent = "● Market open";
+      badge.textContent = "● Live Market";
+      badge.title = "Live Real-Time Market Data Active";
       badge.style.background = "#dcfce7";
       badge.style.color = "#166534";
       badge.style.borderColor = "#86efac";
     } else if (isPreMarket()) {
-      badge.textContent = "Pre-market";
+      badge.textContent = "⏳ Pre-Market";
+      badge.title = "Pre-Market (9:00 AM Open)";
       badge.style.background = "#fefce8";
       badge.style.color = "#854d0e";
       badge.style.borderColor = "#fde68a";
     } else if (isWeekend) {
-      badge.textContent = "Market closed";
+      badge.textContent = "📅 Weekend";
+      badge.title = "Weekend — Market Closed";
       badge.style.background = "#f1f5f9";
       badge.style.color = "#64748b";
       badge.style.borderColor = "#e2e8f0";
     } else if (mins > (15 * 60 + 30)) {
-      badge.textContent = "Market closed";
+      badge.textContent = "🔒 Market Closed";
+      badge.title = "Market Closed (Session Snapshot)";
       badge.style.background = "#fef3c7";
       badge.style.color = "#92400e";
       badge.style.borderColor = "#fde68a";
     } else {
-      badge.textContent = "Market closed";
+      badge.textContent = "● Closed";
+      badge.title = "Market Closed";
       badge.style.background = "#f1f5f9";
       badge.style.color = "#64748b";
       badge.style.borderColor = "#e2e8f0";
@@ -5050,58 +5174,88 @@
 
   // Auto-refresh live market scanner — ONLY during market hours
   setInterval(() => {
-    if (document.visibilityState === "visible" && (isMarketHours() || !_lastScannerPayload
-        || _lastScannerPayload?._previous_session || _lastScannerPayload?._awaiting_scan)) {
+    if (document.visibilityState === "visible" && (isMarketHours() || !_lastScannerPayload)) {
       loadData();
     }
     if (_lastScannerPayload && !_scannerRetryTimer) scannerSnapshotStatus(_lastScannerPayload);
   }, 45000);
 
-  let _indexPollRunning = false;
-  async function pollIndexLive(immediate = false) {
-    if (_indexPollRunning || (!immediate && (document.visibilityState !== "visible" || !isMarketHours() || _lastScannerPayload?._is_replay))) return;
-    _indexPollRunning = true;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
+  // ── Live NIFTY / BANK NIFTY ticker: refresh every 30s ──
+  async function pollIndexLive(isImmediate = false) {
+    if (!isImmediate && !isMarketHours() && !isPreMarket()) return; // skip periodic polling outside trading window
     try {
-      const response = await fetch(`${API_BASE}/api/index_live`, { cache: "no-store", signal: controller.signal });
-      const data = await response.json();
-      if (response.ok && data.ok) {
-        renderIndexQuotes(data.index_context);
-        if (_sectorPayload) _sectorPayload.index_context = { ..._sectorPayload.index_context, ...data.index_context };
+      const res = await fetch(`${API_BASE}/api/index_live`, { cache: "no-store" });
+      const d = await res.json();
+      if (!d.ok || !d.index_context) return;
+      const n50 = d.index_context["NIFTY 50"] || {};
+      const bnk = d.index_context["NIFTY BANK"] || {};
+      const snx = d.index_context["SENSEX"] || d.index_context["BSE SENSEX"] || {};
+      const n50El = document.getElementById("niftyVal");
+      const bnkEl = document.getElementById("bankVal");
+      const snxEl = document.getElementById("sensexVal");
+      const snxChip = document.getElementById("sensexTickerChip");
+      if (n50El && n50.percent_change !== undefined) {
+        const p = n50.percent_change;
+        const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
+        n50El.textContent = `${ltpStr}(${pct(p)})`;
+        n50El.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
       }
-    } catch (_) {
-      // Keep the last valid values while the feed reconnects.
-    } finally {
-      clearTimeout(timeout);
-      _indexPollRunning = false;
-      for (const id of Object.values(indexTickerIds)) {
-        const el = document.getElementById(id);
-        if (el && !displayedIndexQuotes.has(id)) el.textContent = "Awaiting data";
+      if (bnkEl && bnk.percent_change !== undefined) {
+        const p = bnk.percent_change;
+        const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
+        bnkEl.textContent = `${ltpStr}(${pct(p)})`;
+        bnkEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
       }
-    }
+      if (snxEl && snx.percent_change !== undefined) {
+        if (snxChip) snxChip.style.display = "flex";
+        const p = snx.percent_change;
+        const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
+        snxEl.textContent = `${ltpStr}(${pct(p)})`;
+        snxEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+      }
+      if (_sectorPayload) {
+        _sectorPayload.index_context = d.index_context;
+      }
+    } catch(e) { /* silent fail — stale value stays */ }
   }
 
-  pollIndexLive(true);
-  setInterval(pollIndexLive, 15000);
-  let marketWasOpen = isMarketHours();
-  setInterval(() => {
-    updateMarketStatusBadge();
-    const marketIsOpen = isMarketHours();
-    if (marketIsOpen && !marketWasOpen && document.visibilityState === "visible") {
-      pollIndexLive(true);
-      loadData();
-      selectStock(_selectedSymbol || "NIFTY50", _selectedStockMeta);
-    }
-    marketWasOpen = marketIsOpen;
-  }, 5000);
-  updateMarketStatusBadge();
+  pollIndexLive(true);                     // immediate call on load to get accurate official closing data
+  setInterval(() => pollIndexLive(false), 30000); // timer runs every 30s (gated by market hours)
+  setInterval(updateMarketStatusBadge, 60000); // refresh badge every 1 min
+  updateMarketStatusBadge();               // set correct badge immediately on load
 
-  // Reload the completed candles and their zones together on the visible chart.
+  // Active chart live candle poller: ensures on-spot forming candle updates every 15s during market hours
   setInterval(() => {
-    const dashboard = document.getElementById("viewDashboard");
-    if (document.visibilityState === "visible" && isMarketHours() && dashboard?.style.display !== "none") {
-      selectStock(_selectedSymbol, _selectedStockMeta);
+    if (document.visibilityState === "visible" && (isMarketHours() || isPreMarket()) && _selectedSymbol && _candleSeries) {
+      fetch(`${API_BASE}/api/stock_candles?symbol=${encodeURIComponent(_selectedSymbol)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data.ok || !Array.isArray(data.candles) || data.candles.length === 0) return;
+          const lastC = data.candles[data.candles.length - 1];
+          if (_candleSeries && lastC) {
+            _candleSeries.update(lastC);
+            if (_volumeSeries && lastC.volume !== undefined) {
+              const isUp = lastC.close >= lastC.open;
+              _volumeSeries.update({
+                time: lastC.time,
+                value: lastC.volume,
+                color: isUp ? "rgba(10, 143, 79, 0.6)" : "rgba(255, 80, 80, 0.6)",
+              });
+            }
+            const ltpEl = document.getElementById("chartLtp");
+            if (ltpEl && lastC.close) {
+              ltpEl.textContent = `₹${Number(lastC.close).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+            }
+            const telemEl = document.getElementById("chartTelemetryChip");
+            if (telemEl && data.telemetry) {
+              const prov = data.telemetry.provider || "Upstox";
+              const bar = data.telemetry.latest_completed_candle || "--";
+              const fetched = data.telemetry.fetched_time || "";
+              telemEl.textContent = `⚡ Feed: ${prov} | Bar: ${bar} | Fetched: ${fetched}`;
+            }
+          }
+        })
+        .catch(() => {});
     }
   }, 15000);
 
@@ -5113,17 +5267,20 @@
   let _wsHeartbeat = null;
   let _wsReconnectDelay = 2500;   // grows on repeated failures, resets on success
   let _wsReconnectTimer = null;
-
-  function subscribeToChart(symbol) {
-    if (symbol && _wsClient?.readyState === WebSocket.OPEN) {
-      _wsClient.send(JSON.stringify({ action: "subscribe", symbol }));
-    }
-  }
+  let _wsUseDirectPort = false;
 
   function connectWebSocket() {
+    // Smart WebSocket URL detection:
+    // - Production (Render) & standard dev: wss://host/ws or ws://host/ws via app server proxy (single-port compliant)
+    // - Local standalone fallback: ws://127.0.0.1:8765 if proxy unavailable
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = window.location.protocol === "file:"
-      ? "ws://127.0.0.1:8765" : `${wsProtocol}//${window.location.host}/ws`;
+    const isLocal = (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
+    let wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+    if (!window.location.host || window.location.protocol === "file:") {
+      wsUrl = "ws://127.0.0.1:8765";
+    } else if (_wsUseDirectPort && isLocal) {
+      wsUrl = "ws://127.0.0.1:8765";
+    }
 
     const badge = document.getElementById("wsStatusBadge");
     const dot   = document.getElementById("wsStatusDot");
@@ -5148,8 +5305,10 @@
       }
       _wsReconnectDelay = 2500;   // healthy connection -> reset backoff
       loadData(); // Socket connectivity does not guarantee an initial scanner snapshot.
-      const overviewVisible = document.getElementById("viewOverview")?.style.display === "flex";
-      subscribeToChart(overviewVisible ? _overviewSymbol : _selectedSymbol);
+      // Immediately subscribe to current active stock
+      if (_selectedSymbol) {
+        _wsClient.send(JSON.stringify({ action: "subscribe", symbol: _selectedSymbol }));
+      }
       // App-level heartbeat: keeps the socket alive even while the main thread
       // is busy repainting, so the server does not drop us into a reconnect loop.
       clearInterval(_wsHeartbeat);
@@ -5165,7 +5324,7 @@
         const msg = JSON.parse(evt.data);
         if (msg.type === "candle_update") {
           // Native TradingView lightweight chart update without refresh!
-          if (msg.symbol === _selectedSymbol && _chartLoadedSymbol === msg.symbol && _candleSeries && msg.candle) {
+          if (msg.symbol === _selectedSymbol && _candleSeries && msg.candle) {
             _candleSeries.update(msg.candle);
             if (_volumeSeries && msg.candle.volume !== undefined) {
               const isUp = msg.candle.close >= msg.candle.open;
@@ -5183,10 +5342,10 @@
             if (telemEl) {
               const barTime = new Date(msg.candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true });
               const nowTime = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
-              telemEl.textContent = `${msg.is_stale ? "Last available · " : ""}Feed: ${msg.provider || "Market data"} | Bar: ${barTime}${msg.forming ? " (forming)" : ""} | Received: ${nowTime}`;
+              telemEl.textContent = `⚡ Feed: Upstox | Bar: ${barTime} (Live) | Fetched: ${nowTime}`;
             }
           }
-          if (msg.symbol === _overviewSymbol && _overviewLoadedSymbol === msg.symbol && _ovCandleSeries && msg.candle) {
+          if (msg.symbol === _overviewSymbol && _ovCandleSeries && msg.candle) {
             _ovCandleSeries.update(msg.candle);
             const ovLtp = document.getElementById("ovLtp");
             if (ovLtp && msg.candle.close) {
@@ -5220,21 +5379,59 @@
               return;
             }
 
-            const isPE = item.side === "bearish";
-            const rows = isPE ? _currentBearish : _currentBullish;
-            const live = (rows || []).find(row => row.symbol === item.symbol);
-            const eventTime = freshZoneTime(item, isPE);
-            if (!_hasEvaluatedInitialBell || !isMarketHours() || !eventTime || !live
-                || live.is_stale_data || live.is_stale_fallback
-                || live.alert_event_id !== evtId || freshZoneTime(live, isPE) !== eventTime) return;
-
+            // Mark as seen immediately so it never replays in this browser session
             _savePersistedAlertId(evtId);
             ackAlert();
-            playBellRangSound();
-            showStickyToast(live, isPE);
+
+            // Catch-up notification gate:
+            if (typeof isMarketHours === "function" && !isMarketHours()) return;
+            const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
+            if (nowMin > BLOCK_SURGE_CUTOFF_MIN) return;
+
+            // Truly fresh missed alert while briefly disconnected! Enrich before display
+            const allRows = [...(_currentBullish || []), ...(_currentBearish || [])];
+            const live = allRows.find(r => r.symbol === item.symbol) || {};
+            const enriched = { ...live, ...item };
+
+            const isPE = (enriched.side === "bearish") || (enriched.percent_change < 0);
+            const qTags = enriched.quality_tags || [];
+            const isDemand = Boolean((enriched.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isPE);
+            const isSupply = Boolean((enriched.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isPE);
+
+            if (!isDemand && !isSupply) return;
+
+            const obTime = isDemand ? (enriched.demand_fresh_time || enriched.alert_created_at) : (enriched.supply_zone_time || enriched.alert_created_at);
+            if (!obTime) return;
+
+            if (_hasEvaluatedInitialBell) {
+              playBellRangSound();
+              showStickyToast(enriched, isPE);
+            }
           });
         } else if (msg.type === "index_update" && msg.index_context) {
-          renderIndexQuotes(msg.index_context);
+          const n50 = msg.index_context["NIFTY 50"] || {};
+          const bnk = msg.index_context["NIFTY BANK"] || {};
+          const snx = msg.index_context["SENSEX"] || msg.index_context["BSE SENSEX"] || {};
+          const n50El = document.getElementById("niftyVal");
+          const bnkEl = document.getElementById("bankVal");
+          const snxEl = document.getElementById("sensexVal");
+          const snxChip = document.getElementById("sensexTickerChip");
+          if (n50El && n50.percent_change !== undefined) {
+            const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
+            n50El.textContent = `${ltpStr}(${pct(n50.percent_change)})`;
+            n50El.style.color = (n50.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
+          }
+          if (bnkEl && bnk.percent_change !== undefined) {
+            const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
+            bnkEl.textContent = `${ltpStr}(${pct(bnk.percent_change)})`;
+            bnkEl.style.color = (bnk.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
+          }
+          if (snxEl && snx.percent_change !== undefined) {
+            if (snxChip) snxChip.style.display = "flex";
+            const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
+            snxEl.textContent = `${ltpStr}(${pct(snx.percent_change)})`;
+            snxEl.style.color = (snx.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
+          }
         }
       } catch (err) {
         console.warn("[WS message parse error]", err);
@@ -5301,18 +5498,11 @@
       initOverviewView();
     } else {
       document.getElementById("navDashboard")?.classList.add("active");
-      const rows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
-      const selected = rows.find(row => row.symbol === _selectedSymbol);
-      if (_selectedSymbol) {
-        subscribeToChart(_selectedSymbol);
-        selectStock(_selectedSymbol, selected || _selectedStockMeta);
-      }
-      else if (rows.length) selectStock(rows[0].symbol, rows[0]);
     }
 
     // Close mobile drawer after nav click
-    setNavigationOpen(false);
-    document.querySelector(".main-canvas")?.scrollTo({ top: 0, behavior: "instant" });
+    document.getElementById("appSidebar")?.classList.remove("mobile-open");
+    document.getElementById("sidebarBackdrop")?.classList.remove("active");
   }
 
   // Wire up all nav items
@@ -5329,8 +5519,6 @@
   let _ovCvdChart = null;
   let _ovCvdSeries = null;
   let _overviewSymbol = "BRITANNIA";
-  let _overviewFetch = null;
-  let _overviewLoadedSymbol = "";
   let _ovPriceLines = [];
   let _ovShowVp = true;
   let _ovShowOb = true;
@@ -5385,7 +5573,7 @@
 
   function openStockInOverview(symbol) {
     if (!symbol) symbol = _selectedSymbol || "BRITANNIA";
-    _overviewSymbol = normalizeChartSymbol(symbol);
+    _overviewSymbol = symbol.toUpperCase().trim();
     switchView("overview");
   }
 
@@ -5406,7 +5594,6 @@
     _ovChart = LightweightCharts.createChart(container, {
       width: w,
       height: h,
-      handleScroll: { vertTouchDrag: false },
       layout: {
         background: { type: 'solid', color: '#ffffff' },
         textColor: '#334155',
@@ -5525,12 +5712,17 @@
     // Zero-delay chart drag & price scale synchronizer
     attachChartDragSync(container, renderVolumeProfileCanvas, _ovChart);
 
+    let _ovRoRaf = null;
     const ro = new ResizeObserver(entries => {
       if (!entries || !entries.length || !_ovChart) return;
       const cr = entries[0].contentRect;
       if (cr.width > 20 && cr.height > 20) {
-        _ovChart.applyOptions({ width: cr.width, height: cr.height });
-        requestAnimationFrame(renderVolumeProfileCanvas);
+        if (_ovRoRaf) cancelAnimationFrame(_ovRoRaf);
+        _ovRoRaf = requestAnimationFrame(() => {
+          _ovChart.applyOptions({ width: cr.width, height: cr.height });
+          renderVolumeProfileCanvas();
+          _ovRoRaf = null;
+        });
       }
     });
     ro.observe(container);
@@ -5742,11 +5934,16 @@
       }
     });
 
+    let _ovCvdRoRaf = null;
     const ro = new ResizeObserver(entries => {
       if (!entries || !entries.length || !_ovCvdChart) return;
       const cr = entries[0].contentRect;
       if (cr.width > 20 && cr.height > 20) {
-        _ovCvdChart.applyOptions({ width: cr.width, height: cr.height });
+        if (_ovCvdRoRaf) cancelAnimationFrame(_ovCvdRoRaf);
+        _ovCvdRoRaf = requestAnimationFrame(() => {
+          _ovCvdChart.applyOptions({ width: cr.width, height: cr.height });
+          _ovCvdRoRaf = null;
+        });
       }
     });
     ro.observe(container);
@@ -6069,8 +6266,8 @@
     if (!_ovAutoRefreshTimer) {
       _ovAutoRefreshTimer = setInterval(() => {
         const viewOv = document.getElementById("viewOverview");
-        if (viewOv && viewOv.style.display !== "none" && document.visibilityState === "visible" && isMarketHours()) {
-          if (_overviewSymbol) loadStockOverview(_overviewSymbol);
+        if (viewOv && viewOv.style.display !== "none" && document.visibilityState === "visible") {
+          if (_overviewSymbol) loadStockOverview(_overviewSymbol, { silent: true });
         }
       }, 15000);
     }
@@ -6089,7 +6286,7 @@
     const h = parent.clientHeight;
     if (w <= 0 || h <= 0) return;
 
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const targetW = Math.round(w * dpr);
     const targetH = Math.round(h * dpr);
     if (canvas.width !== targetW || canvas.height !== targetH) {
@@ -6217,51 +6414,28 @@
     ctx.restore();
   }
 
-  async function loadStockOverview(symbol) {
+  async function loadStockOverview(symbol, options = {}) {
     if (!symbol) return;
-    const fetchSymbol = normalizeChartSymbol(symbol);
-    if (_overviewFetch?.symbol === fetchSymbol) return;
-    _overviewFetch?.controller.abort();
-    const controller = new AbortController();
-    _overviewFetch = { symbol: fetchSymbol, controller };
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    _overviewSymbol = fetchSymbol;
-    const telemChip = document.getElementById("ovTelemetryChip");
-    if (_overviewLoadedSymbol !== fetchSymbol) {
-      _ovCandleSeries?.setData([]);
-      _ovVolumeSeries?.setData([]);
-      _ovCvdSeries?.setData([]);
-      for (const line of _ovPriceLines) _ovCandleSeries?.removePriceLine(line);
-      _ovPriceLines = [];
-      _ovCandlesData = [];
-      _ovObData = [];
-      _ovFvgData = [];
-      _lastVpData = null;
-      _overviewLoadedSymbol = "";
-      requestAnimationFrame(renderVolumeProfileCanvas);
-      if (telemChip) telemChip.textContent = `Loading ${fetchSymbol}…`;
-    }
+    _overviewSymbol = symbol.toUpperCase().trim();
     initOverviewChart();
 
-    subscribeToChart(fetchSymbol);
+    // Subscribe WebSocket to this symbol so live ticks and candles stream immediately
+    if (_wsClient && _wsClient.readyState === WebSocket.OPEN) {
+      try { _wsClient.send(JSON.stringify({ action: "subscribe", symbol: _overviewSymbol })); } catch(e) {}
+    }
 
     // Update active pill highlight
     document.querySelectorAll(".overview-pill").forEach(pill => {
-      const active = (pill.dataset.chartSymbol || pill.textContent.trim().toUpperCase()) === fetchSymbol;
-      pill.classList.toggle("active", active);
-      pill.setAttribute("aria-pressed", String(active));
+      pill.classList.toggle("active", pill.textContent.trim().toUpperCase() === _overviewSymbol);
     });
 
     const searchInput = document.getElementById("overviewSearchInput");
     if (searchInput) searchInput.value = _overviewSymbol;
 
     try {
-      const res = await fetch(`${API_BASE}/api/stock_overview?symbol=${encodeURIComponent(fetchSymbol)}`, {
-        cache: "no-store", signal: controller.signal,
-      });
+      const res = await fetch(`${API_BASE}/api/stock_overview?symbol=${encodeURIComponent(_overviewSymbol)}`);
       const data = await res.json();
-      if (_overviewFetch?.controller !== controller) return;
-      if (!res.ok || !data?.ok || !data.candles?.length) throw new Error("Overview unavailable");
+      if (!data || !data.ok) return;
 
       // Update Header
       const symEl = document.getElementById("ovSymbol");
@@ -6272,23 +6446,21 @@
       const vahChip = document.getElementById("ovVahChip");
       const valChip = document.getElementById("ovValChip");
       const structChip = document.getElementById("ovStructureChip");
+      const telemChip = document.getElementById("ovTelemetryChip");
 
-      if (symEl) symEl.textContent = indexChartLabels.get(fetchSymbol) || data.symbol;
+      if (symEl) symEl.textContent = data.symbol;
       if (nameEl) nameEl.textContent = data.name || data.symbol;
       if (ltpEl && data.ltp) ltpEl.textContent = `₹${Number(data.ltp).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
-      if (data.index_quote) renderIndexQuotes({ [data.index_quote.name]: data.index_quote }, { fallback: true });
-      if (chgEl && Number.isFinite(data.percent_change)) {
+      if (chgEl && data.percent_change !== undefined) {
         const isUp = data.percent_change >= 0;
         chgEl.className = `chart-active-chg ${isUp ? "up" : "down"}`;
         chgEl.textContent = `${isUp ? "+" : ""}${data.percent_change.toFixed(2)}%`;
-      } else if (chgEl) {
-        chgEl.textContent = "";
       }
 
       const vp = data.volume_profile || {};
-      if (pocChip) pocChip.textContent = vp.poc == null ? "POC: —" : `POC: ₹${vp.poc.toFixed(2)}`;
-      if (vahChip) vahChip.textContent = vp.vah == null ? "VAH: —" : `VAH: ₹${vp.vah.toFixed(2)}`;
-      if (valChip) valChip.textContent = vp.val == null ? "VAL: —" : `VAL: ₹${vp.val.toFixed(2)}`;
+      if (pocChip && vp.poc) pocChip.textContent = `POC: ₹${vp.poc.toFixed(2)}`;
+      if (vahChip && vp.vah) vahChip.textContent = `VAH: ₹${vp.vah.toFixed(2)}`;
+      if (valChip && vp.val) valChip.textContent = `VAL: ₹${vp.val.toFixed(2)}`;
 
       const ms = data.market_structure || {};
       if (structChip) {
@@ -6309,8 +6481,8 @@
       }
 
       if (telemChip && data.telemetry) {
-        const feed = data.telemetry.provider || "Unknown";
-        telemChip.textContent = `${data.telemetry.is_stale ? "Last available · " : ""}${feed} | Bar: ${data.telemetry.latest_candle || "—"}`;
+        const timeNow = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+        telemChip.textContent = `🟢 Live Sync: ${timeNow} | Bar: ${data.telemetry.latest_candle || "Live"}`;
         telemChip.style.background = "#ecfdf5";
         telemChip.style.color = "#065f46";
         telemChip.style.borderColor = "#a7f3d0";
@@ -6351,7 +6523,7 @@
 
       // Paint Candles
       if (_ovCandleSeries && data.candles && data.candles.length) {
-        if (_overviewLoadedSymbol !== fetchSymbol) _ovCandleSeries.priceScale().applyOptions({ autoScale: true });
+        _ovCandleSeries.priceScale().applyOptions({ autoScale: true });
         _ovCandleSeries.setData(data.candles);
         _ovCandlesData = data.candles;
       }
@@ -6514,18 +6686,17 @@
         }
       }
 
-      if (_ovChart && _overviewLoadedSymbol !== fetchSymbol) _ovChart.timeScale().fitContent();
-      _overviewLoadedSymbol = fetchSymbol;
+      if (_ovChart) {
+        if (!options.silent) {
+          _ovChart.timeScale().fitContent();
+        } else {
+          try { _ovChart.timeScale().scrollToRealTime(); } catch(e) {}
+        }
+      }
       requestAnimationFrame(renderVolumeProfileCanvas);
 
     } catch (err) {
-      if (_overviewFetch?.controller === controller && telemChip) {
-        telemChip.textContent = _overviewLoadedSymbol === fetchSymbol
-          ? "Overview update unavailable · showing previous data" : `Overview unavailable for ${fetchSymbol}`;
-      }
-    } finally {
-      clearTimeout(timeout);
-      if (_overviewFetch?.controller === controller) _overviewFetch = null;
+      console.error("loadStockOverview error:", err);
     }
   }
 
@@ -6609,17 +6780,24 @@
   let _sectorPayload = null;
 
   async function renderSectorView() {
+    // Update last-refresh label
+    const now = new Date();
+    const hhmm = now.toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit",hour12:true});
     const el = document.getElementById("sectorLastUpdated");
-    if (!_sectorPayload) await loadData();
-    const payload = _sectorPayload;
+    if (el) el.textContent = `Updated ${hhmm}`;
+
+    // Reuse latest payload if available, else fetch
+    let payload = _sectorPayload;
     if (!payload) {
-      if (el) el.textContent = "Sector snapshot unavailable";
-      return;
+      try {
+        const res = await fetch(`${API_BASE}/api/stock_suggestions`);
+        payload = await res.json();
+        _sectorPayload = payload;
+      } catch(e) {
+        console.error("Sector fetch failed", e);
+        return;
+      }
     }
-    const stamp = Date.parse(payload.generated_at_ist);
-    if (el) el.textContent = Number.isFinite(stamp) ? "Scan " + new Date(stamp).toLocaleTimeString("en-IN", {
-      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
-    }) + " IST" : "Scan time unavailable";
 
     // Use the broad market universe (every OI-confirmed F&O stock, not just
     // today's breakout candidates) so every sector gets a fair reading -
