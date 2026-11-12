@@ -24,10 +24,12 @@ import time as _time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
+
+from smc_volume_profile_engine import latest_fresh_order_block
 
 
 ROOT = Path(__file__).resolve().parent
@@ -164,8 +166,8 @@ def get_sector(symbol: str) -> str:
 # Any stock with a lot size above this is excluded entirely - too much
 # capital per contract to be a practical suggestion.
 MAX_ALLOWED_LOT_SIZE = 650
-# Stock price boundaries for practical trading:
-# Excludes ultra-high priced stocks (> ₹30,000 like BOSCH, PAGEIND)
+# Stock price boundaries for practical retail trading:
+# Excludes ultra-high priced stocks (> ₹10,000 like BOSCH, PAGEIND, FORCEMOT)
 # where contract value/capital is excessive, and penny stocks (< ₹50).
 MIN_ALLOWED_STOCK_PRICE = 50.0
 MAX_ALLOWED_STOCK_PRICE = 30000.0
@@ -180,16 +182,16 @@ _FO_LOT_SIZES_CACHE: dict[str, int] | None = None
 # refreshes (manual "Refresh Live" spam, or bullish+bearish in the same scan)
 # reuse the same download instead of re-hitting the slow upstream chart API.
 def get_candle_cache_ttl() -> float:
-    """Dynamic cache TTL: strict 45 seconds during live NSE market hours to capture newly completed 5m bars immediately;
+    """Dynamic cache TTL: strict 90 seconds during live NSE market hours to prevent stale data;
     24 hours outside market hours to preserve closed session snapshots between restarts.
     """
     now_ist = datetime.now(INDIA_TZ)
     current_minutes = now_ist.hour * 60 + now_ist.minute
     is_live_market = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
-    return 45.0 if is_live_market else 86400.0
+    return 90.0 if is_live_market else 86400.0
 
 
-CANDLE_CACHE_TTL_SECONDS = 45.0     # Default market-hours fallback
+CANDLE_CACHE_TTL_SECONDS = 90.0     # Default market-hours fallback
 CANDLE_FETCH_TIMEOUT = 3.5          # per-request socket timeout
 CANDLE_POOL_WAIT_SECONDS = 9.0     # hard cap on the whole batch; stragglers are abandoned
 CANDLE_POOL_MAX_WORKERS = 24
@@ -339,17 +341,9 @@ class Suggestion:
     is_demand_fresh: bool = False
     demand_zone: str = ""
     demand_fresh_time: str | None = None
-    demand_base_age_minutes: int | None = None
-    demand_proximity_gap_pct: float | None = None
-    room_to_bear_ob_pct: float | None = None
-    is_institutional_launchpad: bool = False
     is_supply_zone: bool = False
     supply_zone: str = ""
     supply_zone_time: str | None = None
-    supply_base_age_minutes: int | None = None
-    supply_proximity_gap_pct: float | None = None
-    room_to_bull_ob_pct: float | None = None
-    is_institutional_exhaustion: bool = False
     prev_rank: int | None = None
     rank_velocity: str = "STABLE"
     rank_progression: str = ""
@@ -427,17 +421,9 @@ class Suggestion:
             "is_demand_fresh": self.is_demand_fresh,
             "demand_zone": self.demand_zone,
             "demand_fresh_time": self.demand_fresh_time,
-            "demand_base_age_minutes": self.demand_base_age_minutes,
-            "demand_proximity_gap_pct": self.demand_proximity_gap_pct,
-            "room_to_bear_ob_pct": self.room_to_bear_ob_pct,
-            "is_institutional_launchpad": self.is_institutional_launchpad,
             "is_supply_zone": self.is_supply_zone,
             "supply_zone": self.supply_zone,
             "supply_zone_time": self.supply_zone_time,
-            "supply_base_age_minutes": self.supply_base_age_minutes,
-            "supply_proximity_gap_pct": self.supply_proximity_gap_pct,
-            "room_to_bull_ob_pct": self.room_to_bull_ob_pct,
-            "is_institutional_exhaustion": self.is_institutional_exhaustion,
             "prev_rank": self.prev_rank,
             "rank_velocity": self.rank_velocity,
             "rank_progression": self.rank_progression,
@@ -447,6 +433,8 @@ class Suggestion:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build today's NSE F&O intraday stock suggestion index.")
     parser.add_argument("--output", default=str(OUTPUT_PATH), help="JSON output path")
+    parser.add_argument("--require-current-session", action="store_true",
+                        help="Keep the previous snapshot if no completed candle from today's session is available.")
     parser.add_argument("--top", type=int, default=DEFAULT_SUGGESTIONS_PER_SIDE, help="Number of matched rows to keep per side")
     return parser.parse_args()
 
@@ -748,74 +736,94 @@ def normalize_index_row(index_name: str, payload: Any) -> dict[str, Any]:
     }
 
 
+INDEX_CHART_NAMES = {"NIFTY50": "NIFTY 50", "BANKNIFTY": "NIFTY BANK", "SENSEX": "SENSEX"}
+
+
+def index_quote_from_candles(symbol: str, result: dict[str, Any]) -> dict[str, Any] | None:
+    """Use the last index bar and the previous session's close as a quote fallback."""
+    name = INDEX_CHART_NAMES.get(symbol)
+    if name is None:
+        return None
+    candles = result.get("completed_candles") or []
+    forming = result.get("forming_candle")
+    latest = forming or (candles[-1] if candles else None)
+    if latest is None or latest["close"] <= 0:
+        return None
+    session = datetime.fromtimestamp(latest["timestamp"], INDIA_TZ).date()
+    previous = next((
+        c["close"] for c in reversed(candles)
+        if datetime.fromtimestamp(c["timestamp"], INDIA_TZ).date() < session
+    ), None)
+    change = latest["close"] - previous if previous else None
+    percent = change / previous * 100 if previous and change is not None else None
+    now = datetime.now(INDIA_TZ)
+    stamp = latest["timestamp"] + (0 if forming else 300)
+    in_session = now.weekday() < 5 and MARKET_OPEN <= now.time() < MARKET_CLOSE
+    return {
+        "name": name,
+        "ltp": round(latest["close"], 2),
+        "percent_change": round(percent, 2) if percent is not None else None,
+        "change": round(change, 2) if change is not None else None,
+        "direction": "bullish" if (change or 0) > 0 else "bearish" if (change or 0) < 0 else "flat",
+        "source": result.get("provider", "Index candles"),
+        "as_of_epoch": stamp,
+        "is_stale": bool(result.get("is_stale") or (in_session and now.timestamp() - stamp > 15 * 60)),
+    }
+
+
 def fetch_index_context() -> tuple[dict[str, dict[str, Any]], list[str]]:
-    import scanner_trace
-    referer = f"{NSE_BASE}/market-data/live-equity-market"
     errors: list[str] = []
     indexes: dict[str, dict[str, Any]] = {}
-    
-    # 1. Primary: Official NSE allIndices API (matches Groww/Zerodha perfectly)
     try:
-        data = nse_get_json(f"{NSE_BASE}/api/allIndices", referer=referer)
+        data = nse_get_json(f"{NSE_BASE}/api/allIndices", referer=f"{NSE_BASE}/market-data/live-equity-market")
         for item in data.get("data", []):
-            idx = item.get("index")
-            if idx in ("NIFTY 50", "NIFTY BANK"):
-                pct = float(item.get("percentChange", 0))
-                ltp = float(item.get("last", 0))
-                chg = float(item.get("variation", 0))
-                indexes[idx] = {
-                    "name": idx,
-                    "ltp": round(ltp, 2),
-                    "percent_change": round(pct, 2),
-                    "change": round(chg, 2),
-                    "direction": "bullish" if pct > 0 else "bearish" if pct < 0 else "flat",
-                }
+            name = item.get("index")
+            if name not in ("NIFTY 50", "NIFTY BANK"):
+                continue
+            ltp = parse_float(item.get("last"))
+            if ltp is None or not math.isfinite(ltp) or ltp <= 0:
+                continue
+            percent = parse_float(item.get("percentChange"))
+            stamp = None
+            try:
+                stamp = datetime.strptime(
+                    item.get("timestamp") or data.get("timestamp") or "", "%d-%b-%Y %H:%M:%S"
+                ).replace(tzinfo=INDIA_TZ).timestamp()
+            except ValueError:
+                pass
+            indexes[name] = {
+                "name": name,
+                "ltp": round(ltp, 2),
+                "percent_change": percent,
+                "change": parse_float(item.get("variation")),
+                "direction": "bullish" if (percent or 0) > 0 else "bearish" if (percent or 0) < 0 else "flat",
+                "source": "NSE",
+                "as_of_epoch": stamp,
+            }
     except Exception as exc:
         errors.append(f"nse allIndices: {exc}")
 
-    # 2. Fallback: Yahoo Finance (if NSE blocked)
-    if "NIFTY 50" not in indexes or "NIFTY BANK" not in indexes:
-        mapping = {
-            "NIFTY 50": "^NSEI",
-            "NIFTY BANK": "^NSEBANK",
-        }
-        for index_name, ticker in mapping.items():
-            if index_name in indexes:
-                continue
-            trace_start = _time.monotonic()
-            try:
-                url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(ticker)}?interval=5m&range=1d"
-                req = urllib.request.Request(
-                    url,
-                    headers={
-                        "User-Agent": USER_AGENT,
-                        "Accept": "application/json, text/plain, */*",
-                    },
-                )
-                with urllib.request.urlopen(req, timeout=3.5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    result = (data.get("chart") or {}).get("result")
-                    if result:
-                        meta = result[0].get("meta") or {}
-                        scanner_trace.safe_source("Yahoo_index_fallback", symbol=index_name, started=trace_start,
-                            fallback_used=True, quote_market_epoch=meta.get("regularMarketTime"),
-                            upstream_timestamp_verified=False)
-                        ltp = meta.get("regularMarketPrice")
-                        prev = meta.get("chartPreviousClose") or ltp
-                        pct_change = ((ltp - prev) / prev) * 100 if prev else 0.0
-                        change = ltp - prev if prev else 0.0
-                        indexes[index_name] = {
-                            "name": index_name,
-                            "ltp": round(float(ltp), 2),
-                            "percent_change": round(float(pct_change), 2),
-                            "change": round(float(change), 2),
-                            "direction": "bullish" if pct_change > 0 else "bearish" if pct_change < 0 else "flat",
-                        }
-            except Exception as exc:
-                scanner_trace.safe_source("Yahoo_index_fallback", symbol=index_name, started=trace_start,
-                                         fallback_used=True, status="fetch_failed", error_type=type(exc).__name__)
-                errors.append(f"index {index_name}: {exc}")
-            
+    # SENSEX is a BSE index. Use the same provider fallback as its chart, in
+    # parallel with any NSE indices that the primary endpoint did not return.
+    missing = {symbol: name for symbol, name in INDEX_CHART_NAMES.items() if name not in indexes}
+    if missing:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(missing)) as pool:
+            futures = {
+                pool.submit(fetch_5m_candles_pipeline, symbol, full_range=True): symbol
+                for symbol in missing
+            }
+            for future in concurrent.futures.as_completed(futures):
+                symbol = futures[future]
+                name = missing[symbol]
+                try:
+                    result = future.result()
+                    quote = index_quote_from_candles(symbol, result)
+                    if quote is not None:
+                        indexes[name] = quote
+                    else:
+                        errors.append(f"index {name}: {result.get('error') or 'candles unavailable'}")
+                except Exception as exc:
+                    errors.append(f"index {name}: {exc}")
     return indexes, errors
 
 
@@ -1106,7 +1114,10 @@ def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], lis
             "volume": sum(c["volume"] for c in candles),
             "value_lakhs": None,
         }
-        return row, candles
+        from upstox_provider import separate_completed_and_forming
+
+        completed, _ = separate_completed_and_forming(candles, datetime.now(INDIA_TZ))
+        return row, completed
     except Exception as e:
         scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start,
                                  status="fetch_failed", error_type=type(e).__name__)
@@ -2297,6 +2308,7 @@ def build_suggestions(
     candles_by_symbol: dict[str, list[dict[str, Any]]] | None = None,
     audit: list[dict[str, Any]] | None = None,
     market_universe: list[dict[str, Any]] | None = None,
+    scan_session_date: date | None = None,
 ) -> tuple[list[Suggestion], int]:
     def record(row, decision_reason, **details):
         if audit is not None:
@@ -2399,6 +2411,10 @@ def build_suggestions(
 
         # 5-Minute Breakout Analysis & 1-Minute Institutional Block Surge Radar
         sym_candles = candles_by_symbol.get(symbol, [])
+        latest_bar = datetime.fromtimestamp(sym_candles[-1]["timestamp"], tz=INDIA_TZ) if sym_candles else None
+        fresh_block = None
+        if latest_bar and (scan_session_date is None or latest_bar.date() == scan_session_date):
+            fresh_block = latest_fresh_order_block(sym_candles, bullish=side == "bullish")
         sym_1m_candles = _CANDLE_1M_CACHE.get(symbol, (0, []))[1]
 
         surge_info = detect_institutional_block_surge(
@@ -2410,10 +2426,7 @@ def build_suggestions(
         )
 
         bo_info = analyze_5m_breakout(sym_candles, side, row)
-        bo_info["latest_candle_at_ist"] = (
-            datetime.fromtimestamp(sym_candles[-1]["timestamp"], tz=INDIA_TZ).isoformat()
-            if sym_candles else None
-        )
+        bo_info["latest_candle_at_ist"] = latest_bar.isoformat() if latest_bar else None
         breakout_assessments[symbol] = bo_info
         five_min_status = bo_info["status"]
         breakout_time = bo_info["breakout_time"]
@@ -2474,7 +2487,8 @@ def build_suggestions(
         # Only drop low-scoring consolidating stocks that never triggered a breakout.
         has_earlier_breakout = bool(breakout_time or bo_info.get("breakout_time"))
         is_high_conviction = rally["score"] >= 75
-        if five_min_status.lower() == "consolidating" and not surge_info.get("is_block_surge") and not has_earlier_breakout and not is_high_conviction:
+        if (five_min_status.lower() == "consolidating" and fresh_block is None
+                and not surge_info.get("is_block_surge") and not has_earlier_breakout and not is_high_conviction):
             record(row, "consolidating", rally=rally, breakout=bo_info)
             continue
 
@@ -2548,116 +2562,24 @@ def build_suggestions(
         if (bo_info.get("is_cascade") or surge_info.get("is_block_surge")) and rally_score >= 65:
             status_val = "Priority Rally"
 
-        # SMC Demand / Supply Order Block Analysis for Precision Audio & Chime Timing
-        is_demand_fresh = False
-        demand_zone_str = ""
-        demand_fresh_time = None
-        demand_base_age_minutes = None
-        demand_proximity_gap_pct = None
-        room_to_bear_ob_pct = None
-        is_institutional_launchpad = False
-
-        is_supply_zone = False
-        supply_zone_str = ""
-        supply_zone_time = None
-        supply_base_age_minutes = None
-        supply_proximity_gap_pct = None
-        room_to_bull_ob_pct = None
-        is_institutional_exhaustion = False
-        try:
-            from smc_volume_profile_engine import detect_order_blocks_and_structure
-            ob_res = detect_order_blocks_and_structure(sym_candles)
-            obs = ob_res.get("order_blocks", [])
-            live_ltp_ob = float(row.get("ltp") or (sym_candles[-1]["close"] if sym_candles else 0.0))
-            recent_candles_ob = sym_candles[-min(len(sym_candles), 6):] if sym_candles else []
-            latest_bar_ts = sym_candles[-1]["timestamp"] if sym_candles else 0
-            if side == "bullish":
-                bull_obs = [ob for ob in obs if ob.get("type") == "BULLISH" and not ob.get("mitigated")]
-                # Prioritize genuinely Fresh demand bases first, then latest by time
-                bull_obs.sort(key=lambda x: (0 if x.get("status") == "Fresh" else 1, -x.get("time", 0)))
-                for ob in bull_obs:
-                    top_b = float(ob["top"])
-                    bot_b = float(ob["bottom"])
-                    touched = any(c["low"] <= top_b * 1.005 and c["low"] >= bot_b * 0.995 for c in recent_candles_ob)
-                    held = live_ltp_ob >= bot_b * 0.995
-                    in_zone = (bot_b * 0.995 <= live_ltp_ob <= top_b * 1.015)
-                    is_fresh_ob = (ob.get("status") == "Fresh")
-                    if (is_fresh_ob and held) or (touched and held) or in_zone:
-                        is_demand_fresh = True
-                        st_label = ob.get("status", "Fresh")
-                        demand_zone_str = f"₹{bot_b:.1f}-₹{top_b:.1f} ({st_label})"
-                        ob_t = ob.get("time") or latest_bar_ts
-                        demand_fresh_time = datetime.fromtimestamp(ob_t + 300, tz=INDIA_TZ).strftime("%I:%M %p")
-
-                        if latest_bar_ts and ob.get("time"):
-                            demand_base_age_minutes = max(0, int((latest_bar_ts - ob["time"]) / 60))
-                        else:
-                            demand_base_age_minutes = 0
-                        demand_proximity_gap_pct = round(max(0.0, ((live_ltp_ob - top_b) / top_b) * 100), 2) if top_b > 0 else 0.0
-
-                        overhead_bear_obs = [float(o["bottom"]) for o in obs if o.get("type") == "BEARISH" and not o.get("mitigated") and float(o.get("bottom", 0)) > live_ltp_ob]
-                        if overhead_bear_obs:
-                            nearest_bear_bot = min(overhead_bear_obs)
-                            room_to_bear_ob_pct = round(((nearest_bear_bot - live_ltp_ob) / live_ltp_ob) * 100, 2)
-                        else:
-                            room_to_bear_ob_pct = 99.0
-
-                        if demand_base_age_minutes <= 25 and demand_proximity_gap_pct <= 0.80 and room_to_bear_ob_pct >= 1.0:
-                            is_institutional_launchpad = True
-                        break
-            else:
-                bear_obs = [ob for ob in obs if ob.get("type") == "BEARISH" and not ob.get("mitigated")]
-                # Prioritize genuinely Fresh supply zones first, then latest by time
-                bear_obs.sort(key=lambda x: (0 if x.get("status") == "Fresh" else 1, -x.get("time", 0)))
-                for ob in bear_obs:
-                    top_s = float(ob["top"])
-                    bot_s = float(ob["bottom"])
-                    touched = any(c["high"] >= bot_s * 0.995 and c["high"] <= top_s * 1.005 for c in recent_candles_ob)
-                    held = live_ltp_ob <= top_s * 1.005
-                    in_zone = (bot_s * 0.985 <= live_ltp_ob <= top_s * 1.005)
-                    is_fresh_ob = (ob.get("status") == "Fresh")
-                    if (is_fresh_ob and held) or (touched and held) or in_zone:
-                        is_supply_zone = True
-                        st_label = ob.get("status", "Fresh")
-                        supply_zone_str = f"₹{bot_s:.1f}-₹{top_s:.1f} ({st_label})"
-                        ob_t = ob.get("time") or latest_bar_ts
-                        supply_zone_time = datetime.fromtimestamp(ob_t + 300, tz=INDIA_TZ).strftime("%I:%M %p")
-
-                        if latest_bar_ts and ob.get("time"):
-                            supply_base_age_minutes = max(0, int((latest_bar_ts - ob["time"]) / 60))
-                        else:
-                            supply_base_age_minutes = 0
-                        supply_proximity_gap_pct = round(max(0.0, ((bot_s - live_ltp_ob) / bot_s) * 100), 2) if bot_s > 0 else 0.0
-
-                        underlying_bull_obs = [float(o["top"]) for o in obs if o.get("type") == "BULLISH" and not o.get("mitigated") and float(o.get("top", 0)) < live_ltp_ob]
-                        if underlying_bull_obs:
-                            nearest_bull_top = max(underlying_bull_obs)
-                            room_to_bull_ob_pct = round(((live_ltp_ob - nearest_bull_top) / live_ltp_ob) * 100, 2)
-                        else:
-                            room_to_bull_ob_pct = 99.0
-
-                        if supply_base_age_minutes <= 25 and supply_proximity_gap_pct <= 0.80 and room_to_bull_ob_pct >= 1.0:
-                            is_institutional_exhaustion = True
-                        break
-        except Exception:
-            pass
-
-        if is_demand_fresh and side == "bullish":
+        is_demand_fresh = fresh_block is not None and side == "bullish"
+        is_supply_zone = fresh_block is not None and side == "bearish"
+        zone_time = None
+        zone_range = ""
+        if fresh_block is not None:
+            zone_time = datetime.fromtimestamp(
+                fresh_block["formation_time"], tz=INDIA_TZ
+            ).strftime("%I:%M %p")
+            zone_range = f"₹{fresh_block['bottom']:.2f}-₹{fresh_block['top']:.2f} (Fresh)"
+            label = "🟢 DEMAND" if is_demand_fresh else "🔴 BEAR OB"
+            quality_tags.insert(0, f"{label} · FRESH ({zone_range}) [{zone_time}]")
             rally_score = min(100, rally_score + 10)
-            tag_time = f" [{demand_fresh_time}]" if demand_fresh_time else ""
-            quality_tags.insert(0, f"🟢 DEMAND · FRESH ({demand_zone_str}){tag_time}")
-        elif is_supply_zone and side == "bearish":
-            rally_score = min(100, rally_score + 10)
-            tag_time = f" [{supply_zone_time}]" if supply_zone_time else ""
-            quality_tags.insert(0, f"🔴 BEAR OB · FRESH ({supply_zone_str}){tag_time}")
 
-        # Audio bell trigger condition:
-        # STRICT RULE: Bell rings and alert fires ONLY when DEMAND · FRESH (Bullish) or BEAR OB · FRESH (Bearish) forms or defends!
-        # Generic breakouts, sweet spots without fresh bases, and block surges without fresh bases are strictly excluded.
-        if side == "bullish":
-            bell_rang = bool(is_demand_fresh and demand_fresh_time and "near" not in five_min_status.lower())
-        else:
-            bell_rang = bool(is_supply_zone and supply_zone_time and "near" not in five_min_status.lower())
+        demand_zone_str = zone_range if is_demand_fresh else ""
+        demand_fresh_time = zone_time if is_demand_fresh else None
+        supply_zone_str = zone_range if is_supply_zone else ""
+        supply_zone_time = zone_time if is_supply_zone else None
+        bell_rang = fresh_block is not None
 
         _high, _low, _prev_close = row.get("high"), row.get("low"), row.get("prev_close")
         day_range_percent = (
@@ -2718,30 +2640,16 @@ def build_suggestions(
                 is_demand_fresh=is_demand_fresh,
                 demand_zone=demand_zone_str,
                 demand_fresh_time=demand_fresh_time,
-                demand_base_age_minutes=demand_base_age_minutes,
-                demand_proximity_gap_pct=demand_proximity_gap_pct,
-                room_to_bear_ob_pct=room_to_bear_ob_pct,
-                is_institutional_launchpad=is_institutional_launchpad,
                 is_supply_zone=is_supply_zone,
                 supply_zone=supply_zone_str,
                 supply_zone_time=supply_zone_time,
-                supply_base_age_minutes=supply_base_age_minutes,
-                supply_proximity_gap_pct=supply_proximity_gap_pct,
-                room_to_bull_ob_pct=room_to_bull_ob_pct,
-                is_institutional_exhaustion=is_institutional_exhaustion,
             )
         )
 
-    # Priority Sort:
-    # Pure Quantitative Breakout Setup Engine (Zero Raw Crore Turnover Bias)
-    # Tier 0 is STRICTLY for confirmed active breakouts / waterfalls.
-    # Ranking is computed from: Setup Quality Score (Range hold, Open move, OI, Nifty)
-    # + Price Expansion Momentum + RVOL 5m Expansion + Order Flow Conviction.
-    # Sort strictly by Percentage Change (Highest % gainers on top for Bullish, Largest % drop on top for Bearish)
-    if side == "bullish":
-        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else -9999, reverse=True)
-    else:
-        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else 9999)
+    direction = -1 if side == "bullish" else 1
+    suggestions.sort(key=lambda item: (
+        item.percent_change is None, direction * (item.percent_change or 0)
+    ))
 
     if audit is not None:
         for index, item in enumerate(suggestions, start=1):
@@ -3125,14 +3033,16 @@ def _process_candidate_lifecycle(
     is_qualified = bool(item.is_breakout or item.is_cascade or getattr(item, "is_block_surge", False) or "near" in (item.five_min_status or "").lower())
     is_confirmed_breakout = bool(item.is_breakout or item.is_cascade or getattr(item, "is_block_surge", False))
     breakout_level = item.entry or item.ltp or 0.0
+    ob_time = (item.demand_fresh_time if side == "bullish" and item.is_demand_fresh
+               else item.supply_zone_time if side == "bearish" and item.is_supply_zone
+               else None)
 
     if entry is None:
         # First time seen this session
         alert_fired = bool(item.bell_rang)
         alert_count = 1 if alert_fired else 0
         event_id = f"evt_{item.symbol}_{side}_w1_{int(now_epoch)}" if alert_fired else None
-        current_ob_time = item.demand_fresh_time if side == "bullish" else item.supply_zone_time
-        created_at = (current_ob_time or market_clock_ist) if alert_fired else None
+        created_at = (ob_time or market_clock_ist) if alert_fired else None
         is_top5 = (rank <= 5)
         consecutive_top5_scans = 1 if is_top5 else 0
         top5_streak_minutes = 5 if is_top5 else 0
@@ -3143,14 +3053,14 @@ def _process_candidate_lifecycle(
             "first_qualified_at": market_clock_ist if is_qualified else None,
             "first_top5_at": market_clock_ist if rank <= 5 else None,
             "first_rank1_at": market_clock_ist if rank == 1 else None,
-            "first_alerted_at": (current_ob_time or market_clock_ist) if alert_fired else None,
-            "last_ob_alert_time": current_ob_time if alert_fired else None,
+            "first_alerted_at": market_clock_ist if alert_fired else None,
             "consecutive_top5_scans": consecutive_top5_scans,
             "top5_streak_minutes": top5_streak_minutes,
             "alert_fired": alert_fired,
             "alert_count": alert_count,
             "alert_event_id": event_id,
             "alert_created_at": created_at,
+            "last_ob_alert_time": ob_time if alert_fired else None,
             "alert_created_epoch": now_epoch if alert_fired else None,
             "alert_delivered_at": None,
             "alert_acknowledged_at": None,
@@ -3223,15 +3133,6 @@ def _process_candidate_lifecycle(
             entry["block_surge_time"] = item.block_surge_time
             entry["block_surge_turnover_cr"] = item.block_surge_turnover_cr
             entry["block_surge_rvol"] = item.block_surge_rvol
-        if getattr(item, "is_demand_fresh", False):
-            entry["is_demand_fresh"] = True
-            entry["demand_zone"] = item.demand_zone
-            entry["demand_fresh_time"] = item.demand_fresh_time
-        if getattr(item, "is_supply_zone", False):
-            entry["is_supply_zone"] = True
-            entry["supply_zone"] = item.supply_zone
-            entry["supply_zone_time"] = item.supply_zone_time
-
         # Rule 9: Preserve original timestamps; do not overwrite during refreshes
         if is_qualified and not entry.get("first_qualified_at"):
             entry["first_qualified_at"] = market_clock_ist
@@ -3282,20 +3183,19 @@ def _process_candidate_lifecycle(
             else:
                 new_structure = (breakout_level < old_level * 0.998) and is_confirmed_breakout
 
-            if cooldown_passed and new_structure and item.bell_rang:
-                # Genuinely new structure formed after cooldown with fresh OB!
-                current_ob_time = item.demand_fresh_time if side == "bullish" else item.supply_zone_time
+            if cooldown_passed and new_structure and (ob_time is None or item.bell_rang):
+                # Genuinely new structure formed after cooldown!
                 new_count = entry.get("alert_count", 1) + 1
                 entry["is_invalidated"] = False
                 entry["invalidated_at"] = None
                 entry["invalidation_reason"] = None
                 entry["last_breakout_level"] = breakout_level
                 entry["last_structure"] = item.chart_structure
-                entry["last_ob_alert_time"] = current_ob_time
                 entry["alert_count"] = new_count
                 entry["alert_fired"] = True
                 entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w{new_count}_{int(now_epoch)}"
-                entry["alert_created_at"] = current_ob_time or market_clock_ist
+                entry["alert_created_at"] = ob_time or market_clock_ist
+                entry["last_ob_alert_time"] = ob_time
                 entry["alert_created_epoch"] = now_epoch
                 entry["alert_delivered_at"] = None
                 entry["alert_acknowledged_at"] = None
@@ -3304,21 +3204,17 @@ def _process_candidate_lifecycle(
                 entry["claimed_at"] = None
                 entry["claim_expires_at"] = None
         else:
-            # Active, valid setup: Alert strictly when DEMAND FRESH / BEAR OB FRESH forms, or when a NEW base forms
-            current_ob_time = item.demand_fresh_time if side == "bullish" else item.supply_zone_time
-            last_ob_time = entry.get("last_ob_alert_time")
-            is_new_ob_time = bool(current_ob_time and current_ob_time != last_ob_time)
-
-            if item.bell_rang and (not entry.get("alert_fired") or is_new_ob_time):
-                new_count = (entry.get("alert_count", 0) + 1) if entry.get("alert_fired") else 1
+            # Active, valid setup
+            new_ob = _parse_time_minutes(ob_time) > _parse_time_minutes(entry.get("last_ob_alert_time"))
+            if item.bell_rang and (not entry.get("alert_fired") or new_ob):
                 entry["first_alerted_at"] = entry.get("first_alerted_at") or market_clock_ist
-                entry["last_ob_alert_time"] = current_ob_time
                 entry["alert_fired"] = True
-                entry["alert_count"] = new_count
+                entry["alert_count"] = entry.get("alert_count", 0) + 1
                 entry["last_breakout_level"] = breakout_level
                 entry["last_structure"] = item.chart_structure
-                entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w{new_count}_{int(now_epoch)}"
-                entry["alert_created_at"] = current_ob_time or market_clock_ist
+                entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w{entry['alert_count']}_{int(now_epoch)}"
+                entry["alert_created_at"] = ob_time or market_clock_ist
+                entry["last_ob_alert_time"] = ob_time
                 entry["alert_created_epoch"] = now_epoch
                 entry["alert_delivered_at"] = None
                 entry["alert_acknowledged_at"] = None
@@ -3327,7 +3223,17 @@ def _process_candidate_lifecycle(
                 entry["claimed_at"] = None
                 entry["claim_expires_at"] = None
 
-    # An alert remains active/deliverable as long as it was created and has not been acknowledged
+    entry.update(
+        is_demand_fresh=item.is_demand_fresh, demand_zone=item.demand_zone,
+        demand_fresh_time=item.demand_fresh_time, is_supply_zone=item.is_supply_zone,
+        supply_zone=item.supply_zone, supply_zone_time=item.supply_zone_time,
+    )
+    # Cancel an undelivered zone alert if that zone is no longer the fresh setup.
+    last_ob_time = entry.get("last_ob_alert_time")
+    if last_ob_time and last_ob_time != ob_time and not entry.get("alert_acknowledged_at"):
+        entry["alert_acknowledged_at"] = market_clock_ist
+        entry["delivery_status"] = "ACKNOWLEDGED"
+
     should_alert = bool(
         entry.get("alert_event_id")
         and entry.get("alert_created_at")
@@ -3380,15 +3286,6 @@ def _process_candidate_lifecycle(
     d["should_alert"] = should_alert
     d["alert_count"] = entry.get("alert_count", 0)
     d["bell_rang"] = should_alert
-    if not d.get("demand_fresh_time") and entry.get("demand_fresh_time"):
-        d["demand_fresh_time"] = entry.get("demand_fresh_time")
-        d["is_demand_fresh"] = True
-        d["demand_zone"] = entry.get("demand_zone") or d.get("demand_zone")
-    if not d.get("supply_zone_time") and entry.get("supply_zone_time"):
-        d["supply_zone_time"] = entry.get("supply_zone_time")
-        d["is_supply_zone"] = True
-        d["supply_zone"] = entry.get("supply_zone") or d.get("supply_zone")
-
     return Suggestion(**d)
 
 
@@ -3553,12 +3450,23 @@ def update_tracked_breakouts(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 key = (row.get("symbol"), side_name)
                 if key in by_key:
                     continue
+                zone_time = row.get("demand_fresh_time") or row.get("supply_zone_time")
+                zone_minutes = _parse_time_minutes(zone_time)
                 tracked_entry = {
                     "symbol": row.get("symbol"),
                     "side": side_name,
                     "lot_size": row.get("lot_size"),
                     "setup": row.get("setup"),
-                    "alert_time_ist": row.get("breakout_time") or payload.get("market_clock_ist"),
+                    "alert_time_ist": (
+                        f"{zone_minutes // 60:02d}:{zone_minutes % 60:02d}:00" if zone_minutes >= 0
+                        else row.get("breakout_time") or payload.get("market_clock_ist")
+                    ),
+                    "is_demand_fresh": row.get("is_demand_fresh", False),
+                    "demand_fresh_time": row.get("demand_fresh_time"),
+                    "demand_zone": row.get("demand_zone"),
+                    "is_supply_zone": row.get("is_supply_zone", False),
+                    "supply_zone_time": row.get("supply_zone_time"),
+                    "supply_zone": row.get("supply_zone"),
                     "alert_price": row.get("ltp"),
                     "percent_change": row.get("percent_change"),
                     "volume": row.get("volume"),
@@ -3703,12 +3611,6 @@ def compute_daily_top5(
                 "setup": item.setup,
                 "breakout_time": item.breakout_time,
                 "five_min_status": item.five_min_status,
-                "demand_fresh_time": item.demand_fresh_time,
-                "demand_base_age_minutes": item.demand_base_age_minutes,
-                "is_institutional_launchpad": item.is_institutional_launchpad,
-                "supply_zone_time": item.supply_zone_time,
-                "supply_base_age_minutes": item.supply_base_age_minutes,
-                "is_institutional_exhaustion": item.is_institutional_exhaustion,
                 "composite_score": breakdown["composite"],
                 "factors": breakdown["factors"],
             })
@@ -4342,7 +4244,7 @@ def compute_pmh_pml_filter(
     return result
 
 
-def build_payload(top: int) -> dict[str, Any]:
+def build_payload(top: int, *, require_current_session: bool = False) -> dict[str, Any]:
     import scanner_telemetry
     import scanner_trace
     scan_id = scanner_telemetry.new_scan()
@@ -4394,16 +4296,22 @@ def build_payload(top: int) -> dict[str, Any]:
     if union_symbols:
         bulk_fetch_candles(sorted(union_symbols), shared_candles)
 
+    if require_current_session and not any(
+        bars and datetime.fromtimestamp(bars[-1]["timestamp"], INDIA_TZ).date() == now_ist.date()
+        for bars in shared_candles.values()
+    ):
+        raise LiveDataError("Today's completed stock candles are unavailable. Keeping the last verified session.")
+
     market_universe_rows = list((*gainers, *losers))
     bullish, gainer_stock_overlap = build_suggestions(
         gainers, oi_by_symbol, side="bullish", top=top,
         index_context=index_context, candles_by_symbol=shared_candles, audit=decision_audit,
-        market_universe=market_universe_rows,
+        market_universe=market_universe_rows, scan_session_date=now_ist.date(),
     )
     bearish, loser_stock_overlap = build_suggestions(
         losers, oi_by_symbol, side="bearish", top=top,
         index_context=index_context, candles_by_symbol=shared_candles, audit=decision_audit,
-        market_universe=market_universe_rows,
+        market_universe=market_universe_rows, scan_session_date=now_ist.date(),
     )
     # Enforce candidate lifecycle rules and mutual exclusion
     session_date = now_ist.date().isoformat()
@@ -4863,7 +4771,7 @@ def main() -> int:
     args = parse_args()
     output = Path(args.output)
     try:
-        payload = build_payload(args.top)
+        payload = build_payload(args.top, require_current_session=args.require_current_session)
         exit_code = 0
     except Exception as exc:  # noqa: BLE001 - the UI needs a clear live-data status
         import scanner_trace
@@ -4881,14 +4789,13 @@ def main() -> int:
         log_discovery_delays(payload)
 
     # Never let a failed/empty scan clobber a good snapshot. If this run produced
-    # no usable signal but a previous good snapshot from the SAME session exists,
-    # keep serving that one and write the failure to a side file instead.
+    # no usable signal, retain the last good snapshot across the session change.
     if not _has_signal(payload) and output.exists():
         try:
             prev = json.loads(output.read_text(encoding="utf-8"))
         except Exception:
             prev = {}
-        if _has_signal(prev) and prev.get("session_date") == payload.get("session_date"):
+        if _has_signal(prev):
             (output.parent / "stock_suggestion_index.error.json").write_text(
                 json.dumps(payload, indent=2), encoding="utf-8"
             )

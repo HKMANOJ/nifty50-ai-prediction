@@ -159,6 +159,9 @@ async def push_single_symbol_candle(symbol: str, target_ws: WebSocketServerProto
         candle_payload = {
             "type": "candle_update",
             "symbol": symbol,
+            "provider": pipe_res.get("provider"),
+            "forming": forming is not None,
+            "is_stale": bool(pipe_res.get("is_stale")),
             "candle": {
                 "time": last["timestamp"],
                 "open": round(last["open"], 2),

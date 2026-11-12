@@ -10,7 +10,13 @@ Calculates:
 from __future__ import annotations
 
 import math
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
+
+
+FIVE_MINUTES = 300
+INDIA_TZ = ZoneInfo("Asia/Kolkata")
 
 
 def calculate_volume_profile(
@@ -122,7 +128,7 @@ def detect_order_blocks_and_structure(
     and Bullish/Bearish Order Blocks (+OB and -OB) with mitigation tracking.
     """
     n = len(candles)
-    if n < 5:
+    if n < 2:
         return {
             "trend": "Neutral",
             "swings": [],
@@ -208,34 +214,51 @@ def detect_order_blocks_and_structure(
     # Bullish OB (DEMAND): Origin pivot low candle before an impulsive rally that creates displacement/FVG/BOS
     # Bearish OB (BEAR OB): Origin pivot high candle before an impulsive drop that causes breakdown
     order_blocks = []
-    atr = sum(abs(c["high"] - c["low"]) for c in candles[-14:]) / max(1, min(len(candles), 14))
-    ltp = float(candles[-1]["close"]) if candles else 100.0
-    min_ob_height = max(atr * 0.15, ltp * 0.0004)
-
-    for i in range(1, n - 1):
+    ranges = [c["high"] - c["low"] for c in candles]
+    session_start = 0
+    for i in range(n - 1):
         c_prev = candles[i]
         c_curr = candles[i + 1]
-        c_next = candles[i + 2] if (i + 2 < n) else None
+        origin = c_prev["timestamp"]
+        if i and origin - candles[i - 1]["timestamp"] > 60 * 60:
+            session_start = i
+        if c_curr["timestamp"] != origin + FIVE_MINUTES:
+            continue
+
+        # Freeze the displacement baseline at formation. Later volatility must
+        # not add or erase a previously confirmed base on the same candles.
+        base_ranges = ranges[max(session_start, i - 13):i + 1]
+        atr = sum(base_ranges) / len(base_ranges)
+        if ranges[i] <= 0:
+            continue
+        # A strong first impulse can confirm the base at its close. A weaker
+        # move needs a consecutive second candle with no significant price gap.
+        c_next = candles[i + 2] if i + 2 < n else None
+        if c_next is not None and (
+            c_next["timestamp"] != c_curr["timestamp"] + FIVE_MINUTES
+            or abs(c_next["open"] - c_curr["close"]) > atr * 0.15
+        ):
+            c_next = None
 
         # Check for Strong Bullish Displacement (Demand Setup)
         # Origin candle: bearish or tight base at a pivot low
-        is_pivot_low = (c_prev["low"] <= candles[i - 1]["low"] or c_prev["close"] <= c_prev["open"])
+        is_pivot_low = (c_prev["close"] <= c_prev["open"]
+                        or (i > session_start and c_prev["low"] <= candles[i - 1]["low"]))
         curr_body_bull = c_curr["close"] - c_curr["open"]
         is_bull_displacement = (
             is_pivot_low and
             c_curr["close"] > c_curr["open"] and
-            curr_body_bull >= (atr * 0.6) and
             (
-                (c_curr["high"] - c_prev["low"]) >= (atr * 1.2) or
-                (c_next is not None and (c_next["close"] - c_prev["low"]) >= (atr * 1.5))
+                (curr_body_bull >= atr * 0.6 and c_curr["high"] - c_prev["low"] >= atr) or
+                (c_next is not None and c_next["close"] > c_next["open"] and
+                 c_next["close"] - c_prev["low"] >= atr * 1.5 and
+                 c_next["close"] - c_curr["open"] >= atr * 0.9)
             )
         )
 
         if is_bull_displacement:
             ob_top = round(float(c_prev["high"]), 2)
             ob_bottom = round(float(c_prev["low"]), 2)
-            if (ob_top - ob_bottom) < min_ob_height:
-                ob_top = round(ob_bottom + min_ob_height, 2)
 
             mitigated = False
             tested = False
@@ -258,6 +281,7 @@ def detect_order_blocks_and_structure(
                 "top": ob_top,
                 "bottom": ob_bottom,
                 "time": c_prev["timestamp"],
+                "formation_time": origin + FIVE_MINUTES,
                 "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
                 "mitigated": mitigated,
                 "tested": tested,
@@ -266,23 +290,23 @@ def detect_order_blocks_and_structure(
 
         # Check for Strong Bearish Displacement (Supply Setup)
         # Origin candle: bullish or tight base at a pivot high
-        is_pivot_high = (c_prev["high"] >= candles[i - 1]["high"] or c_prev["close"] >= c_prev["open"])
+        is_pivot_high = (c_prev["close"] >= c_prev["open"]
+                         or (i > session_start and c_prev["high"] >= candles[i - 1]["high"]))
         curr_body_bear = c_curr["open"] - c_curr["close"]
         is_bear_displacement = (
             is_pivot_high and
             c_curr["close"] < c_curr["open"] and
-            curr_body_bear >= (atr * 0.6) and
             (
-                (c_prev["high"] - c_curr["low"]) >= (atr * 1.2) or
-                (c_next is not None and (c_prev["high"] - c_next["close"]) >= (atr * 1.5))
+                (curr_body_bear >= atr * 0.6 and c_prev["high"] - c_curr["low"] >= atr) or
+                (c_next is not None and c_next["close"] < c_next["open"] and
+                 c_prev["high"] - c_next["close"] >= atr * 1.5 and
+                 c_curr["open"] - c_next["close"] >= atr * 0.9)
             )
         )
 
         if is_bear_displacement:
             ob_top = round(float(c_prev["high"]), 2)
             ob_bottom = round(float(c_prev["low"]), 2)
-            if (ob_top - ob_bottom) < min_ob_height:
-                ob_bottom = round(ob_top - min_ob_height, 2)
 
             mitigated = False
             tested = False
@@ -305,6 +329,7 @@ def detect_order_blocks_and_structure(
                 "top": ob_top,
                 "bottom": ob_bottom,
                 "time": c_prev["timestamp"],
+                "formation_time": origin + FIVE_MINUTES,
                 "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
                 "mitigated": mitigated,
                 "tested": tested,
@@ -312,18 +337,15 @@ def detect_order_blocks_and_structure(
             })
 
     # Filter & Deduplicate: Keep cleanest non-overlapping Order Blocks (up to 3 Bullish DEMAND, up to 3 BEAR OB)
-    # Prioritize active (Fresh / Tested) over Mitigated, avoiding duplicate levels within 0.35%
+    # Keep fresh zones visible even if more recent tested zones sit nearby.
     def _dedup_obs(obs_subset: list[dict[str, Any]], max_count: int = 3) -> list[dict[str, Any]]:
         if not obs_subset:
             return []
-        # Sort so active ones come first, then most recent by time
-        active = [o for o in obs_subset if not o["mitigated"]]
-        mitigated = [o for o in obs_subset if o["mitigated"]]
-        active.sort(key=lambda o: o["time"], reverse=True)
-        mitigated.sort(key=lambda o: o["time"], reverse=True)
+        priority = {"Fresh": 0, "Tested": 1, "Mitigated": 2}
+        ordered = sorted(obs_subset, key=lambda o: (priority[o["status"]], -o["time"]))
 
         chosen: list[dict[str, Any]] = []
-        for cand in active + mitigated:
+        for cand in ordered:
             cand_mid = (cand["top"] + cand["bottom"]) / 2.0
             is_overlap = any(
                 abs(cand_mid - ((x["top"] + x["bottom"]) / 2.0)) / max(1.0, cand_mid) < 0.0035
@@ -347,6 +369,27 @@ def detect_order_blocks_and_structure(
         "choch": choch_list[-4:],
         "order_blocks": filtered_obs,
     }
+
+
+def latest_fresh_order_block(
+    candles: list[dict[str, Any]], *, bullish: bool
+) -> dict[str, Any] | None:
+    """Select the latest untouched block of the displayed session and side."""
+    if not candles:
+        return None
+    latest = candles[-1]
+    session = datetime.fromtimestamp(latest["timestamp"], INDIA_TZ).date()
+    block_type = "BULLISH" if bullish else "BEARISH"
+    for block in detect_order_blocks_and_structure(candles)["order_blocks"]:
+        if block["type"] != block_type or block["status"] != "Fresh":
+            continue
+        if datetime.fromtimestamp(block["time"], INDIA_TZ).date() != session:
+            continue
+        if (bullish and latest["close"] > block["top"]) or (
+            not bullish and latest["close"] < block["bottom"]
+        ):
+            return block
+    return None
 
 
 def calculate_order_flow_and_absorption(
@@ -625,11 +668,13 @@ def generate_institutional_trade_plan(
 def analyze_stock_overview(
     symbol: str,
     candles: list[dict[str, Any]],
+    *,
+    completed_candles: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Unified master analysis: Volume Profile + Order Blocks + Order Flow Footprint + Trade Plan
     + FVG + Liquidity Pools + CVD + Per-Candle Footprint."""
     vp = calculate_volume_profile(candles)
-    smc = detect_order_blocks_and_structure(candles)
+    smc = detect_order_blocks_and_structure(candles if completed_candles is None else completed_candles)
     of = calculate_order_flow_and_absorption(candles, val_level=vp.get("val"), vah_level=vp.get("vah"))
     plan = generate_institutional_trade_plan(candles, vp, smc, of)
     fvgs = detect_fair_value_gaps(candles)

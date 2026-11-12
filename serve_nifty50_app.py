@@ -46,14 +46,22 @@ STOCK_SUGGESTION = ROOT / "stock_suggestion_index.py"
 VENV_PYTHON = ROOT / "venv" / "bin" / "python"
 SNAPSHOT = ROOT / "market_snapshot.latest.json"
 MOST_ACTIVE = ROOT / "inputs" / "most_active.latest.json"
-STOCK_SUGGESTION_SNAPSHOT = ROOT / "inputs" / "stock_suggestion_index.latest.json"
+DEFAULT_STOCK_SUGGESTION_SNAPSHOT = ROOT / "inputs" / "stock_suggestion_index.latest.json"
+_scanner_data_dir = os.environ.get("PERSISTENT_DATA_DIR") or os.environ.get("DATA_DIR")
+STOCK_SUGGESTION_SNAPSHOT = (
+    Path(_scanner_data_dir) / DEFAULT_STOCK_SUGGESTION_SNAPSHOT.name
+    if _scanner_data_dir else DEFAULT_STOCK_SUGGESTION_SNAPSHOT
+)
 REFRESH_LOCK = threading.Lock()
 
 # Debounce: collapse a burst of refresh requests (many tabs, reconnects, button
 # spam) into at most one real scan per MIN_SCAN_INTERVAL. Between scans, callers
 # get the last result instead of queueing another subprocess.
-MIN_SCAN_INTERVAL_SECONDS = 30.0
+MIN_SCAN_INTERVAL_SECONDS = 45.0
 _SCAN_STATE: dict[str, Any] = {"ts": 0.0, "payload": None, "signature": None}
+_CLOSED_SESSION_RECOVERY_LOCK = threading.Lock()
+_INDEX_QUOTE_LOCK = threading.Lock()
+_INDEX_QUOTES: dict[str, Any] = {"ts": 0.0, "quotes": {}}
 
 
 def _payload_has_signal(payload: Any) -> bool:
@@ -134,38 +142,30 @@ def _run_premarket_reset_if_due(now_ist: datetime) -> None:
         )
         empty_payload = res.get("stdout") if isinstance(res.get("stdout"), dict) else None
         if empty_payload:
-            STOCK_SUGGESTION_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
-            STOCK_SUGGESTION_SNAPSHOT.write_text(json.dumps(empty_payload, indent=2), encoding="utf-8")
-            _SCAN_STATE["payload"] = empty_payload
-            _SCAN_STATE["signature"] = None
-            _SCAN_STATE["ts"] = time.time()
+            _SCAN_STATE["opening_payload"] = empty_payload
             # Otherwise the Auto-Scan badge keeps showing yesterday's last-run
             # time/status until the first real 9:15+ scan overwrites it.
             LAST_AUTO_SCAN_INFO["status"] = "pre_market"
             LAST_AUTO_SCAN_INFO["last_run_ist"] = None
             LAST_AUTO_SCAN_INFO["last_duration_seconds"] = None
             LAST_AUTO_SCAN_INFO["next_run_ist"] = None
-            try:
-                from websocket_server import broadcast_scanner_update_sync
-                broadcast_scanner_update_sync(empty_payload)
-            except Exception as bc_err:
-                print(f"[PREMARKET-RESET] broadcast skipped: {bc_err}")
-            print(f"[{now_ist.strftime('%H:%M:%S IST')}] [PREMARKET-RESET] Cleared yesterday's picks for {today_str}")
+            print(f"[{now_ist.strftime('%H:%M:%S IST')}] [PREMARKET-RESET] Reset session state for {today_str}")
             _premarket_reset_date = today_str
 
             # Purge Neon database records older than 7 days during daily pre-market window
             try:
-                from scanner_log_retention import run_daily_db_purge
-                purge_summary = run_daily_db_purge(retention_days=7)
-                print(f"[{now_ist.strftime('%H:%M:%S IST')}] [PREMARKET-PURGE] 7-day Neon DB cleanup: {purge_summary}")
+                from scanner_log_retention import retention_enabled, run_daily_db_purge
+                if retention_enabled():
+                    purge_summary = run_daily_db_purge(retention_days=7)
+                    print(f"[PREMARKET-PURGE] {purge_summary}")
             except Exception as purge_err:
                 print(f"[PREMARKET-PURGE ERROR] DB purge failed: {purge_err}")
     except Exception as exc:
         print(f"[PREMARKET-RESET ERROR] {exc}")
 
 
-def compute_seconds_until_next_5min_grid(interval_seconds: int = 60, buffer_seconds: int = 3) -> tuple[float, datetime]:
-    """Calculates sleep seconds to align exactly with the next wall-clock grid (e.g. every 60s).
+def compute_seconds_until_next_5min_grid(interval_seconds: int = 300, buffer_seconds: int = 3) -> tuple[float, datetime]:
+    """Calculates sleep seconds to align exactly with the next wall-clock 5-minute grid (e.g. 09:20:03, 09:25:03).
     Prevents cumulative scheduler drift from scan execution duration."""
     now_ist = get_ist_now()
     market_open = now_ist.replace(hour=9, minute=15, second=buffer_seconds, microsecond=0)
@@ -180,8 +180,8 @@ def compute_seconds_until_next_5min_grid(interval_seconds: int = 60, buffer_seco
     return sleep_secs, target_dt
 
 
-def start_background_auto_scanner(interval_seconds: int = 60) -> None:
-    """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 1 min during market hours."""
+def start_background_auto_scanner(interval_seconds: int = 300) -> None:
+    """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 5 min during market hours."""
     def _loop() -> None:
         import scanner_trace
         scanner_trace.submit_health("scheduler_started", interval_seconds=interval_seconds,
@@ -198,13 +198,14 @@ def start_background_auto_scanner(interval_seconds: int = 60) -> None:
                         scan_start = time.time()
                         attempt_id = scanner_trace.log.new_scan()
                         scanner_trace.submit_health("scheduled_scan_started", attempt_id=attempt_id)
-                        print(f"[{now_ist.strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Executing 1-minute background market scan...")
+                        print(f"[{now_ist.strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Executing 5-minute background market scan...")
                         try:
                             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
                             res = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=120)
                             dur = round(time.time() - scan_start, 1)
                             scan_payload = res.get("stdout") if isinstance(res.get("stdout"), dict) else {}
-                            has_signal = _payload_has_signal(scan_payload)
+                            has_signal = (_payload_has_signal(scan_payload) and not scan_payload.get("_stale_kept")
+                                          and scan_payload.get("session_date") == now_ist.date().isoformat())
                             scanner_trace.submit_health("scheduled_scan_finished", attempt_id=attempt_id,
                                 snapshot_id=scan_payload.get("snapshot_id"), duration_seconds=dur,
                                 subprocess_ok=res.get("ok"), has_signal=has_signal)
@@ -249,7 +250,8 @@ def start_background_auto_scanner(interval_seconds: int = 60) -> None:
                     LAST_AUTO_SCAN_INFO["next_run_ist"] = None
                     time.sleep(30)
                 else:
-                    LAST_AUTO_SCAN_INFO["status"] = "market_closed"
+                    in_warmup = now_ist.weekday() < 5 and PREMARKET_RESET_START_MINUTES <= current_minutes < PREMARKET_RESET_END_MINUTES
+                    LAST_AUTO_SCAN_INFO["status"] = "pre_market" if in_warmup else "market_closed"
                     market_open_today = now_ist.replace(hour=9, minute=15, second=3, microsecond=0)
                     if now_ist.weekday() < 5 and now_ist < market_open_today:
                         pre_sleep = min(60.0, max(5.0, (market_open_today - now_ist).total_seconds()))
@@ -548,54 +550,19 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def _serve_index_live(self) -> None:
-        """Real-time NIFTY 50 & BANK NIFTY fetch from official NSE India API (matches Groww/Zerodha)."""
-        result = {}
-        try:
-            from stock_suggestion_index import nse_get_json, NSE_BASE
-            data = nse_get_json(f"{NSE_BASE}/api/allIndices", referer=f"{NSE_BASE}/market-data/live-equity-market")
-            for item in data.get("data", []):
-                idx = item.get("index")
-                if idx in ("NIFTY 50", "NIFTY BANK"):
-                    pct = float(item.get("percentChange", 0))
-                    ltp = float(item.get("last", 0))
-                    chg = float(item.get("variation", 0))
-                    result[idx] = {
-                        "name": idx,
-                        "ltp": round(ltp, 2),
-                        "percent_change": round(pct, 2),
-                        "change": round(chg, 2),
-                        "direction": "bullish" if pct >= 0 else "bearish",
-                    }
-        except Exception:
-            pass
+        from stock_suggestion_index import fetch_index_context
 
-        # Ensure SENSEX or any missing index is fetched from Yahoo Finance
-        if "SENSEX" not in result or "NIFTY 50" not in result or "NIFTY BANK" not in result:
-            import urllib.request as _ur
-            for symbol, label in [("^NSEI", "NIFTY 50"), ("^NSEBANK", "NIFTY BANK"), ("^BSESN", "SENSEX")]:
-                if label in result:
-                    continue
-                try:
-                    url = f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=1d"
-                    req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                    with _ur.urlopen(req, timeout=6) as r:
-                        data = json.loads(r.read())
-                    meta = data["chart"]["result"][0]["meta"]
-                    ltp = meta.get("regularMarketPrice") or 0
-                    prev = meta.get("chartPreviousClose") or meta.get("previousClose") or ltp
-                    pct = round(((ltp - prev) / prev) * 100, 2) if prev else 0
-                    chg = round(ltp - prev, 2)
-                    result[label] = {
-                        "name": label,
-                        "ltp": round(ltp, 2),
-                        "percent_change": pct,
-                        "change": chg,
-                        "direction": "bullish" if pct >= 0 else "bearish",
-                    }
-                except Exception:
-                    pass
-
-        self._send_json(HTTPStatus.OK, {"ok": True, "index_context": result})
+        with _INDEX_QUOTE_LOCK:
+            if time.monotonic() - _INDEX_QUOTES["ts"] >= 5:
+                current, _ = fetch_index_context()
+                previous = _INDEX_QUOTES["quotes"]
+                _INDEX_QUOTES["quotes"] = {
+                    **{name: {**quote, "is_stale": True} for name, quote in previous.items() if name not in current},
+                    **current,
+                }
+                _INDEX_QUOTES["ts"] = time.monotonic()
+            quotes = _INDEX_QUOTES["quotes"]
+        self._send_json(HTTPStatus.OK, {"ok": True, "index_context": quotes})
 
 
     def do_POST(self) -> None:
@@ -811,53 +778,32 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         })
 
     def _serve_stock_suggestions(self) -> None:
-        """Serve the latest real NSE intraday stock suggestion index."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-        today_str = now_ist.date().isoformat()
-
-        # Prefer the freshest thing we already have (in-memory scan, else disk),
-        # and serve it immediately. A GET must never block on a live scan - that
-        # is what caused every tab load to trigger a scan + broadcast storm.
-        best = None
-        if _payload_has_signal(_SCAN_STATE.get("payload")):
-            best = dict(_SCAN_STATE["payload"])
-        elif STOCK_SUGGESTION_SNAPSHOT.exists():
-            try:
-                best = json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
-            except Exception:
-                best = None
-
-        if _payload_has_signal(best):
-            best["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
-            if best.get("session_date") != today_str:
-                best["_auto_refresh_reason"] = "stale_session_background_refresh"
+        """Serve the last available snapshot without waiting for an upstream scan."""
+        now_ist = get_ist_now()
+        today = now_ist.date().isoformat()
+        best = self._cached_or_snapshot()
+        if best is None:
+            opening = _SCAN_STATE.get("opening_payload") or {}
+            best = dict(opening) if opening.get("session_date") == today else {
+                "ok": True, "bullish": [], "bearish": [], "index_context": {},
+                "session_date": today,
+            }
+            best["_awaiting_scan"] = True
+            if is_ist_market_hours(now_ist) and not REFRESH_LOCK.locked():
                 self._kick_background_refresh()
-                # On trading days (weekday >= 09:00 AM IST), NEVER serve yesterday's stock list
-                # to the browser as active trades! Serve a clean reset state instead so the
-                # user never sees phantom stocks that vanish 15 seconds later.
-                # Tightly bounded to the 9:00-9:15 AM pre-market window only
-                current_minutes = now_ist.hour * 60 + now_ist.minute
-                if now_ist.weekday() < 5 and (PREMARKET_RESET_START_MINUTES <= current_minutes < PREMARKET_RESET_END_MINUTES):
-                    from stock_suggestion_index import build_premarket_reset_payload
-                    reset_payload = build_premarket_reset_payload(now_ist)
-                    reset_payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
-                    reset_payload["_auto_refresh_reason"] = "stale_session_reset"
-                    reset_payload["status_message"] = "Session Reset: Awaiting 09:16 AM First Candle Confirmation"
-                    self._send_json(HTTPStatus.OK, reset_payload)
-                    return
-            self._send_json(HTTPStatus.OK, best)
-            return
-
-        # Nothing usable on hand - do one synchronous (debounced) scan.
-        status, payload = self._refresh_stock_suggestions_payload()
-        payload["_auto_refresh_reason"] = "no_snapshot"
-        payload["_auto_scan_info"] = LAST_AUTO_SCAN_INFO
-        self._send_json(status, payload)
+        elif best.get("session_date") != today:
+            best["_previous_session"] = True
+        after_close = now_ist.weekday() < 5 and now_ist.hour * 60 + now_ist.minute > 15 * 60 + 30
+        if after_close and (best.get("_previous_session") or best.get("_awaiting_scan")):
+            with _CLOSED_SESSION_RECOVERY_LOCK:
+                if not REFRESH_LOCK.locked() and _SCAN_STATE.get("closed_session_recovery") != today:
+                    _SCAN_STATE["closed_session_recovery"] = today
+                    self._kick_background_refresh()
+        best["_auto_scan_info"] = dict(LAST_AUTO_SCAN_INFO)
+        self._send_json(HTTPStatus.OK, best)
 
     def _kick_background_refresh(self) -> None:
-        """Fire a debounced refresh in a daemon thread (never blocks the GET)."""
+        """Fire a debounced refresh in a daemon thread."""
         def _run():
             try:
                 self._refresh_stock_suggestions_payload()
@@ -866,15 +812,19 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         threading.Thread(target=_run, name="BgSuggestionRefresh", daemon=True).start()
 
     def _cached_or_snapshot(self) -> dict[str, Any] | None:
-        """Best available payload without running a scan: in-memory last result,
-        else the on-disk snapshot."""
+        """Find the last good scan without replacing it with an empty opening result."""
         if _payload_has_signal(_SCAN_STATE.get("payload")):
             return dict(_SCAN_STATE["payload"])
-        if STOCK_SUGGESTION_SNAPSHOT.exists():
+        paths = (STOCK_SUGGESTION_SNAPSHOT,)
+        if _scanner_data_dir and "DATA_DIR" in os.environ and "PERSISTENT_DATA_DIR" not in os.environ:
+            paths += (DEFAULT_STOCK_SUGGESTION_SNAPSHOT,)
+        for path in paths:
             try:
-                return json.loads(STOCK_SUGGESTION_SNAPSHOT.read_text(encoding="utf-8"))
-            except Exception:
-                return None
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if _payload_has_signal(payload):
+                return payload
         return None
 
     def _refresh_stock_suggestions_payload(self) -> tuple[HTTPStatus, dict[str, Any]]:
@@ -897,7 +847,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
         try:
             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
-            result = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=120)
+            command = [exec_py, str(STOCK_SUGGESTION)]
+            if not is_ist_market_hours():
+                command.append("--require-current-session")
+            result = run_command(command, timeout=120)
             import scanner_trace
             output = result.get("stdout") if isinstance(result.get("stdout"), dict) else {}
             scanner_trace.submit_health("requested_scan_finished", snapshot_id=output.get("snapshot_id"),
@@ -918,7 +871,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "stderr": result.get("stderr"),
             }
 
-            if _payload_has_signal(payload):
+            if _payload_has_signal(payload) and not payload.get("_stale_kept"):
                 _SCAN_STATE["payload"] = payload
                 signature = _payload_signature(payload)
                 # Only push to open tabs when the scan actually has data AND
@@ -950,6 +903,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def _refresh_stock_suggestions(self) -> None:
         status, payload = self._refresh_stock_suggestions_payload()
+        session_date = payload.get("session_date")
+        if payload.get("ok") and session_date and session_date != get_ist_now().date().isoformat():
+            payload["_previous_session"] = True
+        payload["_auto_scan_info"] = dict(LAST_AUTO_SCAN_INFO)
         self._send_json(status, payload)
 
     def _serve_stock_candles(self, query: dict[str, list[str]]) -> None:
@@ -957,13 +914,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         try:
             from stock_suggestion_index import (
                 fetch_5m_candles_pipeline,
-                _load_candle_cache,
-                _CANDLE_CACHE,
-                get_candle_cache_ttl,
+                index_quote_from_candles,
             )
             from zoneinfo import ZoneInfo as _ZoneInfo
             _ist = _ZoneInfo("Asia/Kolkata")
-            import time as _time
 
             # Hierarchical validated fetch pipeline
             pipe_res = fetch_5m_candles_pipeline(symbol, full_range=True)
@@ -1045,12 +999,14 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             try:
                 from smc_volume_profile_engine import detect_fair_value_gaps, detect_order_blocks_and_structure
                 fvg_data = detect_fair_value_gaps(all_display_candles)
-                ob_structure = detect_order_blocks_and_structure(all_display_candles)
+                ob_structure = detect_order_blocks_and_structure(candles)
                 order_blocks = ob_structure.get("order_blocks", [])
             except Exception:
                 pass
 
             latest_bar_label = pipe_res.get("latest_completed_candle_ist")
+            if not latest_bar_label and candles:
+                latest_bar_label = datetime.fromtimestamp(candles[-1]["timestamp"], tz=_ist).strftime("%I:%M %p")
             if forming_c:
                 forming_dt = datetime.fromtimestamp(forming_c["timestamp"], tz=_ist)
                 latest_bar_label = f"{forming_dt.strftime('%I:%M %p')} (Live)"
@@ -1067,6 +1023,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "day_low": round(min(lows), 2) if lows else None,
                 "day_open": round(opens[0], 2) if opens else None,
                 "ltp": round(closes[-1], 2) if closes else None,
+                "index_quote": index_quote_from_candles(symbol, pipe_res),
                 "fvg": fvg_data,
                 "order_blocks": order_blocks,
                 "forming_candle": forming_c,
@@ -1089,7 +1046,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
     def _serve_stock_overview(self, query: dict[str, list[str]]) -> None:
         symbol = (query.get("symbol") or ["BRITANNIA"])[0].strip().upper()
         try:
-            from stock_suggestion_index import fetch_5m_candles_pipeline
+            from stock_suggestion_index import fetch_5m_candles_pipeline, index_quote_from_candles
             from smc_volume_profile_engine import analyze_stock_overview
             import upstox_provider
 
@@ -1100,7 +1057,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             if forming_c:
                 all_candles.append(forming_c)
 
-            analysis = analyze_stock_overview(symbol, all_candles)
+            analysis = analyze_stock_overview(symbol, all_candles, completed_candles=candles)
 
             tv_candles = []
             tv_volumes = []
@@ -1137,6 +1094,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             ltp = all_candles[-1]["close"] if all_candles else None
             prev_close = all_candles[0]["open"] if all_candles else None
             pct_change = round(((ltp - prev_close) / prev_close) * 100, 2) if ltp and prev_close else 0.0
+            index_quote = index_quote_from_candles(symbol, pipe_res)
+            if index_quote is not None:
+                pct_change = index_quote["percent_change"]
+            latest_bar = datetime.fromtimestamp(all_candles[-1]["timestamp"], IST_TZ) if all_candles else None
 
             self._send_json(HTTPStatus.OK, {
                 "ok": True,
@@ -1144,6 +1105,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "name": name,
                 "ltp": ltp,
                 "percent_change": pct_change,
+                "index_quote": index_quote,
                 "candles": tv_candles,
                 "volumes": tv_volumes,
                 "volume_profile": analysis["volume_profile"],
@@ -1157,7 +1119,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "mtf_matrix": analysis.get("mtf_matrix", {}),
                 "telemetry": {
                     "provider": pipe_res.get("provider", "Unknown"),
-                    "latest_candle": pipe_res.get("latest_completed_candle_ist"),
+                    "latest_candle": latest_bar.strftime("%d %b %I:%M %p IST") if latest_bar else None,
+                    "is_stale": bool(pipe_res.get("is_stale")),
                     "latency_ms": pipe_res.get("observed_latency_ms", 0),
                 }
             })
@@ -1467,14 +1430,15 @@ def main() -> None:
     except Exception as exc:
         print("[scanner-retention] worker_start_failed", file=sys.stderr)
     
-    # Launch autonomous 1-minute background auto-scanner
-    start_background_auto_scanner(interval_seconds=60)
+    # Launch autonomous 5-minute background auto-scanner
+    start_background_auto_scanner(interval_seconds=300)
 
-    # Launch Real-Time WebSocket Push Server on port 8765
+    # Bind the private WebSocket listener used by the same-origin /ws proxy.
     try:
         from websocket_server import start_websocket_server_thread
-        start_websocket_server_thread(host="0.0.0.0", port=8765)
-        print("[WEBSOCKET] Real-time push engine active on ws://127.0.0.1:8765")
+        ws_port = int(os.environ.get("WS_BACKEND_PORT", "8765"))
+        start_websocket_server_thread(host="127.0.0.1", port=ws_port)
+        print(f"[WEBSOCKET] Real-time push engine starting on ws://127.0.0.1:{ws_port}")
     except Exception as ws_err:
         print(f"[WEBSOCKET ERROR] Failed to start WebSocket engine: {ws_err}")
 
