@@ -193,16 +193,14 @@ class Test3BarImpulseCascade(unittest.TestCase):
         self.assertEqual(bo["chart_structure"], "Bull Trap Reversal")
 
     def test_ultracemco_bull_trap_invalidated(self):
-        import json
-        from pathlib import Path
-        cache_path = Path("inputs/candle_cache.json")
-        if not cache_path.exists():
-            return
-        cache = json.loads(cache_path.read_text(encoding="utf-8"))
-        entry = cache.get("ULTRACEMCO")
-        if not entry:
-            return
-        candles = entry[1]
+        t0 = 1729741500
+        candles = [
+            {"timestamp": t0, "open": 11050.0, "high": 11150.0, "low": 11000.0, "close": 11100.0, "volume": 10000},
+            {"timestamp": t0 + 600, "open": 11100.0, "high": 11250.0, "low": 11100.0, "close": 11220.0, "volume": 60000},
+            {"timestamp": t0 + 900, "open": 11200.0, "high": 11200.0, "low": 11020.0, "close": 11030.0, "volume": 80000},
+            {"timestamp": t0 + 1800, "open": 11000.0, "high": 11000.0, "low": 10920.0, "close": 10940.0, "volume": 50000},
+            {"timestamp": t0 + 22200, "open": 10950.0, "high": 11080.0, "low": 10950.0, "close": 11050.0, "volume": 10000},
+        ]
         row = {"symbol": "ULTRACEMCO", "ltp": 11050.0, "percent_change": 0.84}
         bo = analyze_5m_breakout(candles, "bullish", row)
         self.assertTrue(bo["is_failed_trend"])

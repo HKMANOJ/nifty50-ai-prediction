@@ -36,7 +36,7 @@ class RetentionServerTests(unittest.TestCase):
         stop = worker.call_args.kwargs["stop_event"]
         self.assertTrue(stop.is_set())
         thread.join.assert_called_once_with(timeout=1)
-        scanner.assert_called_once_with(interval_seconds=300)
+        scanner.assert_called_once_with(interval_seconds=60)
         server.serve_forever.assert_called_once()
         server.server_close.assert_called_once()
 

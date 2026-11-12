@@ -627,6 +627,14 @@
       border-color: #0f172a !important;
     }
 
+    .quick-filter-btn.demand-fresh.active {
+      background: #059669 !important;
+      color: #ffffff !important;
+      border-color: #047857 !important;
+      box-shadow: 0 0 6px rgba(16,185,129,0.4);
+    }
+
+
     .quick-filter-btn.early.active {
       background: #059669 !important;
       color: #ffffff !important;
@@ -1431,7 +1439,7 @@
         </span>
         <span id="autoScanBadge" style="font-size:11px; font-weight:700; padding:4px 9px; border-radius:6px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:inline-flex; align-items:center; gap:6px;" title="Background Engine automatically rescans 200+ NSE F&O stocks every 5 minutes during market hours">
           <span id="autoScanDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#2563eb;"></span>
-          <span id="autoScanText">Auto-Scan: 5m Active</span>
+          <span id="autoScanText">Auto-Scan: 1m Active</span>
         </span>
         <span class="status-badge live" id="liveStatusBadge">● Live Real-Time Data</span>
         <span style="font-size:12px; color:var(--text-muted); font-family:var(--font-mono);" id="marketClock">Clock --</span>
@@ -1547,12 +1555,7 @@
             </div>
             <span style="font-size:11px; color:var(--text-muted); font-weight:600;">5m Wave</span>
           </div>
-          <!-- Quick Filter Pills -->
-          <div class="list-filter-bar" style="display:flex; gap:4px; padding:6px 10px; background:#f8fafc; border-bottom:1px solid #e2e8f0;">
-            <button id="filterAll" class="quick-filter-btn active" onclick="setListFilter('all')">All (<span id="cntFilterAll">0</span>)</button>
-            <button id="filterEarly" class="quick-filter-btn early" onclick="setListFilter('early')" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:800;" title="Sweet Spot Ignition: Day % between 1.5% and 2.8% with Long Buildup">🎯 Sweet Spot &lt;2.5% (<span id="cntFilterEarly">0</span>)</button>
-            <button id="filterExt" class="quick-filter-btn ext" onclick="setListFilter('extended')" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-weight:600;" title="Stocks already extended (> 4.5%)">⚠️ Extended (<span id="cntFilterExt">0</span>)</button>
-          </div>
+
           <div class="stock-scroll-list" id="stockScrollList">
             <div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">Loading breakout candidates...</div>
           </div>
@@ -1595,6 +1598,21 @@
             </div>
           </div>
 
+          <!-- High-Conviction Demand Fresh Trade Playbook Bar -->
+          <div id="chartDemandFreshBanner" style="display:none; margin: 4px 14px 6px; padding: 7px 12px; background: linear-gradient(90deg, #f0fdf4, #ecfdf5); border: 1px solid #34d399; border-radius: 6px; font-size: 11px; color: #065f46; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:14px;">🎯</span>
+              <span><strong>TOP 10 DEMAND FRESH PLAYBOOK:</strong> <span id="dfZoneDesc">High-Conviction Institutional Zone</span></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; font-weight:700; font-family:var(--font-mono); font-size:11px;">
+              <span id="dfEntry" style="background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; border:1px solid #86efac;">Entry: ₹--</span>
+              <span id="dfSl" style="background:#fee2e2; color:#b91c1c; padding:2px 6px; border-radius:4px; border:1px solid #fca5a5;">SL: ₹-- (-0.7%)</span>
+              <span id="dfBeLock" style="background:#eff6ff; color:#1d4ed8; padding:2px 6px; border-radius:4px; border:1px solid #bfdbfe;" title="When MFE reaches +0.80%, move SL to Cost (Breakeven)">🔒 BE Lock: ₹-- (+0.80%)</span>
+              <span id="dfT1" style="background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; border:1px solid #86efac;">Target 1: ₹-- (+1.50%)</span>
+              <span id="dfT2" style="background:#d1fae5; color:#047857; padding:2px 6px; border-radius:4px; border:1px solid #6ee7b7;">Target 2: ₹-- (+3.00%)</span>
+            </div>
+          </div>
+
           <!-- TradingView Lightweight Chart Container with SMC Canvas Overlay -->
           <div id="tvCandleWrapper" class="dashboard-chart-wrapper">
             <canvas id="tvSmcCanvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10;"></canvas>
@@ -1619,7 +1637,8 @@
         <div class="table-section-head">
           <h2>Futures & Options Scanner | One-Side Rally & Breakout Desk</h2>
           <div class="tab-pills">
-            <button class="tab-pill active" id="tabGainers">Top Gainers (Bullish)</button>
+            <button class="tab-pill active" id="tabDemandFresh" style="border:1px solid #10b981; color:#059669; font-weight:800; background:rgba(16,185,129,0.08);">🎯 Top 10 Demand Fresh (<span id="demandFreshPillCount">0</span>)</button>
+            <button class="tab-pill" id="tabGainers">Top Gainers (Bullish)</button>
             <button class="tab-pill" id="tabLosers">Top Losers (Bearish)</button>
           </div>
         </div>
@@ -2119,7 +2138,7 @@
   
   let _currentBullish = [];
   let _currentBearish = [];
-  let _activeTab = "bullish";
+  let _activeTab = "demand_fresh";
   let _userSwitchedTab = false;
   let _selectedSymbol = "MUTHOOTFIN";
   let _tvChart = null;
@@ -2192,8 +2211,8 @@
   // Any stock with a lot size above this is excluded - matches the server's
   // MAX_ALLOWED_LOT_SIZE so client and server agree on what "too big" means.
   const MAX_LOT_SIZE_DISPLAY = 650;
-  // Stock price boundaries: exclude ultra-high priced stocks (> ₹10k) and penny stocks (< ₹50)
-  const MAX_STOCK_PRICE_DISPLAY = 10000;
+  // Stock price boundaries: exclude ultra-high priced stocks (> ₹30k) and penny stocks (< ₹50)
+  const MAX_STOCK_PRICE_DISPLAY = 30000;
   const MIN_STOCK_PRICE_DISPLAY = 50;
   let _lockedPick = null;        // { symbol, score, boMin, expiresMin, type, row }
   // Previous scan's Top 5 Eligible symbols per side, so a freshly-added
@@ -2347,18 +2366,26 @@
     const live = allRows.find(r => r.symbol === x.symbol) || {};
     const item = { ...live, ...x };
 
-    // Guard against alerts firing when market is closed or past cutoff
-    // Block surges and fresh Demand/Supply base retests are allowed all session up to 3:15 PM IST
+    // STRICT RULES: Unless force = true (manual test), ONLY DEMAND · FRESH (Bullish) or BEAR OB · FRESH (Bearish) can show toast
+    const qTags = item.quality_tags || [];
+    const isDemand = Boolean((item.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isPE);
+    const isSupply = Boolean((item.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isPE);
+
+    if (!force && !isDemand && !isSupply) {
+      return;
+    }
+
+    // Accurate time is strictly required
+    const timeDisplay = isDemand ? (item.demand_fresh_time || item.alert_created_at || "") : (item.supply_zone_time || item.alert_created_at || "");
+    if (!force && !timeDisplay) {
+      return;
+    }
+
+    // Guard against alerts firing when market is closed or past cutoff (3:15 PM IST)
     if (!force) {
       if (typeof isMarketHours === "function" && !isMarketHours()) return;
       const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
-      const qTags = item.quality_tags || [];
-      const isDemand = Boolean(item.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH") || t.includes("Retest Hold")));
-      const isSupply = Boolean(item.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE")));
-      const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
-      const isPermittedAfternoon = isSurge || isDemand || isSupply;
-      const cutoff = isPermittedAfternoon ? BLOCK_SURGE_CUTOFF_MIN : TRADE_CUTOFF_MIN;
-      if (nowMin > cutoff) return;
+      if (nowMin > BLOCK_SURGE_CUTOFF_MIN) return;
     }
 
     // Do NOT display empty/broken placeholder toasts if core price data is missing
@@ -2373,20 +2400,9 @@
     if (existing) existing.remove();
 
     const type = isPE ? "bearish" : "bullish";
-    const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
-    const freshTag = item.breakout_freshness === "FRESH" ? " · ⚡ FRESH" : (item.breakout_freshness === "RETEST" ? " · 🔄 RETEST" : "");
 
-    // Check SMC Demand Fresh & Bear OB Fresh triggers:
-    const qTags = item.quality_tags || [];
-    const isDemand = Boolean(item.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH") || t.includes("Retest Hold")));
-    const isSupply = Boolean(item.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE")));
-
-    const demandTime = item.demand_fresh_time || item.block_surge_time || item.breakout_time || item.alert_created_at || "";
-    const supplyTime = item.supply_zone_time || item.block_surge_time || item.breakout_time || item.alert_created_at || "";
-    const timeDisplay = isDemand ? demandTime : (isSupply ? supplyTime : (item.block_surge_time || item.breakout_time || item.alert_created_at || ""));
-
-    let statusText = isPE ? `🔴 BREAKDOWN ${timeDisplay}${freshTag}` : `🟢 BREAKOUT ${timeDisplay}${freshTag}`;
-    let bannerText = `<div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ ALL PRIORITY CRITERIA MET</div>`;
+    let statusText = "";
+    let bannerText = "";
 
     if (isDemand && !isPE) {
       const dZone = item.demand_zone ? ` [${item.demand_zone}]` : "";
@@ -2396,9 +2412,9 @@
       const sZone = item.supply_zone ? ` [${item.supply_zone}]` : "";
       statusText = `🔴 BEAR OB · FRESH ${timeDisplay}${sZone}`;
       bannerText = `<div style="font-size:10px; font-weight:800; color:#b91c1c; background:#fee2e2; border:1px solid #fca5a5; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BEAR OB REJECTION · SHORT ENTRY</div>`;
-    } else if (isSurge) {
-      statusText = item.block_surge_type || (isPE ? `⚡ BLOCK SURGE (SELL) ${timeDisplay}` : `⚡ BLOCK SURGE (BUY) ${timeDisplay}`);
-      bannerText = `<div style="font-size:10px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:4px; padding:2px 4px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BLOCK SURGE · ₹${item.block_surge_turnover_cr || 0}Cr (${item.block_surge_rvol || 1}x)</div>`;
+    } else {
+      statusText = isPE ? `🔴 BEAR OB · FRESH ${timeDisplay}` : `🟢 DEMAND · FRESH ${timeDisplay}`;
+      bannerText = `<div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ TEST ALERT</div>`;
     }
 
     const toast = document.createElement("div");
@@ -2435,7 +2451,7 @@
     // Send Desktop OS Notification if supported and permitted
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       try {
-        const notifTitle = isDemand ? `🟢 DEMAND · FRESH ${timeDisplay}: ${item.symbol}` : (isSupply ? `🔴 BEAR OB · FRESH ${timeDisplay}: ${item.symbol}` : `⚡ BREAKOUT ${timeDisplay}: ${item.symbol}`);
+        const notifTitle = isDemand ? `🟢 DEMAND · FRESH ${timeDisplay}: ${item.symbol}` : `🔴 BEAR OB · FRESH ${timeDisplay}: ${item.symbol}`;
         const notifBody = `LTP: ₹${item.ltp || item.entry} | SL: ₹${item.stop_loss || '--'} | Tgt: ₹${item.target || '--'}\n${item.trade_plan || 'High Relative Strength institutional setup'}`;
         const notif = new Notification(notifTitle, {
           body: notifBody,
@@ -2465,50 +2481,60 @@
       const st = (row.five_min_status || "").toLowerCase();
       const isNear = st.includes("near");
       const isConsolidating = st.includes("consolidating");
-      const isBreakout = Boolean(row.is_breakout || st.includes("breakout"));
-      const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout));
-      const isActualBreakout = !isNear && !isConsolidating && (isBreakout || isBreakdown);
-      const isBlockSurge = Boolean(row.is_block_surge);
+      if (isNear || isConsolidating) return;
 
-      // SMC Demand Fresh & Supply Zone triggers (Precision Alerting):
+      const isBreakdown = Boolean(st.includes("breakdown") || (row.percent_change < 0 && row.is_breakout) || row.side === "bearish" || row.side === "LOSER");
       const qTags = row.quality_tags || [];
-      const isDemandFresh = Boolean(row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH") || t.includes("Retest Hold")));
-      const isSupplyZone = Boolean(row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE")));
-      const absMove = Math.abs(row.percent_change || 0);
-      const isSweetSpot = Boolean(row.is_early_ignition || (absMove >= 1.2 && absMove <= 2.8));
 
-      // Noise reduction: Late extended moves (>= 3.8%) are suppressed to prevent chasing extended tops
-      const isTooExtended = Boolean(row.is_extended || (absMove >= 3.8 && !isBlockSurge && !isDemandFresh && !isSupplyZone));
+      // HARD RULES FOR TOP 10 HIGH-CONVICTION ALERTING:
+      // 1. Must be in Top 10
+      // 2. Exclude Index Anchors (HDFCBANK, RELIANCE, TCS, INFY) to avoid derivative pinning chop
+      // 3. Move from open must be >= 1.20% to avoid sluggish noise
+      const rank = Number(row.rank) || 99;
+      if (rank > 10) return;
+      const INDEX_ANCHORS = new Set(["HDFCBANK", "RELIANCE", "TCS", "INFY"]);
+      if (INDEX_ANCHORS.has(row.symbol)) return;
+      const moveOpen = Math.abs(Number(row.move_from_open_percent) || Number(row.percent_change) || 0);
+      if (moveOpen < 1.20) return;
 
-      // Trigger condition: Rings on Demand Fresh defense, Supply Zone test, early Sweet Spot breakout, or Block Surge
-      const isEligibleTrigger = (isDemandFresh || isSupplyZone || (isSweetSpot && isActualBreakout) || isBlockSurge) && !isTooExtended;
+      // STRICT RULES FOR AUDIO BELL & POPUP ALERTS:
+      // Bullish side: ONLY DEMAND · FRESH with valid demand_fresh_time
+      // Bearish side: ONLY BEAR OB · FRESH with valid supply_zone_time
+      const isDemandFresh = Boolean((row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isBreakdown);
+      const isSupplyZone = Boolean((row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isBreakdown);
 
-      if (!isEligibleTrigger) return;
+      if (!isDemandFresh && !isSupplyZone) {
+        // Generic breakouts, sweet spots without fresh bases, and block surges without fresh bases are strictly excluded!
+        return;
+      }
 
-      // Regular late breakouts stop alerting after 12:45 PM IST.
-      // BUT Institutional Block Surges and fresh Demand/Supply base retests alert all session up to 3:15 PM!
-      if (nowMin > TRADE_CUTOFF_MIN && !isBlockSurge && !isDemandFresh && !isSupplyZone) return;
+      // Base proximity check to prevent alerting on overextended bases
+      if (isDemandFresh) {
+        if (row.demand_proximity_gap_pct != null && row.demand_proximity_gap_pct > 0.80) return;
+        if (row.room_to_bear_ob_pct != null && row.room_to_bear_ob_pct < 1.0) return;
+      }
+      if (isSupplyZone) {
+        if (row.supply_proximity_gap_pct != null && row.supply_proximity_gap_pct > 0.80) return;
+        if (row.room_to_bull_ob_pct != null && row.room_to_bull_ob_pct < 1.0) return;
+      }
 
-      // Unique alert key per candidate identity, side, and wave (alert_count)
-      const sideKey = row.side || (isBreakdown ? 'bearish' : 'bullish');
-      const wave = row.alert_count || 1;
-      const alertKey = `${row.symbol}_${sideKey}_wave${wave}${isBlockSurge ? '_surge' : (isDemandFresh ? '_demand' : '')}`;
-      if (_alertedBreakouts.has(alertKey)) return;   // already handled -> stay silent
+      // Time MUST be the accurate 5m Order Block candle close time:
+      const eventTime = isDemandFresh ? (row.demand_fresh_time || "") : (row.supply_zone_time || "");
+      if (!eventTime) {
+        // Accurate time is strictly required
+        return;
+      }
+
+      // Unique alert key per symbol, side, and order block time
+      const sideKey = isBreakdown ? 'bearish' : 'bullish';
+      const alertKey = `${row.symbol}_${sideKey}_${eventTime}`;
+      if (_alertedBreakouts.has(alertKey)) return;   // already alerted for this base
       if (row.alert_event_id && _persistedSeenEventIds.has(row.alert_event_id)) return; // already chimed in this browser
 
-      // Only ring if the breakout, demand fresh, or block surge is FRESH (within FRESH_WINDOW_MIN minutes)
-      const eventTime = row.block_surge_time || row.breakout_time;
-      const boMin = breakoutMinutes(eventTime);
-      const ageMin = (boMin == null) ? (row.surge_age_minutes ?? null) : (nowMin - boMin);
-      const isFresh = isDemandFresh || isSupplyZone || ((ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN);
+      _alertedBreakouts.add(alertKey);
 
-      // When backend lifecycle engine is active, respect row.should_alert; fallback to isFresh
-      const shouldTrigger = (row.should_alert !== undefined) ? Boolean(row.should_alert) : isFresh;
-
-      _alertedBreakouts.add(alertKey);   // seed regardless, so this wave fires at most once
-
-      if (shouldTrigger && _hasEvaluatedInitialBell) {
-        // If direction reversed or re-alerting, remove any opposite/stale toast
+      if (_hasEvaluatedInitialBell) {
+        // Remove any opposite/stale toast for this symbol
         const oppToast = document.querySelector(`.toast[data-sym="${row.symbol}"]`);
         if (oppToast) oppToast.remove();
 
@@ -2518,19 +2544,6 @@
 
         playBellRangSound();
         showStickyToast(row, isBreakdown);
-
-        // Institutional Desk Voice Announcement
-        if (isDemandFresh && !isBreakdown) {
-          const tText = row.demand_fresh_time ? ` at ${row.demand_fresh_time}` : "";
-          speakVoiceAlert(`Demand Fresh on ${row.symbol}${tText} at ${Math.round(row.ltp || row.entry || 0)}`);
-        } else if (isSupplyZone && isBreakdown) {
-          const tText = row.supply_zone_time ? ` at ${row.supply_zone_time}` : "";
-          speakVoiceAlert(`Bear OB Fresh on ${row.symbol}${tText} at ${Math.round(row.ltp || row.entry || 0)}`);
-        } else if (isBlockSurge) {
-          speakVoiceAlert(`Block Surge on ${row.symbol}`);
-        } else {
-          speakVoiceAlert(`Breakout on ${row.symbol}`);
-        }
 
         // Acknowledge alert delivery to backend state machine
         if (row.alert_event_id) {
@@ -3027,6 +3040,19 @@
     });
   }
 
+  function isEarlyIgnitionRow(r) {
+    if (!r) return false;
+    if (r.is_early_ignition) return true;
+    const p = r.percent_change || 0;
+    const st = (r.setup || "").toLowerCase();
+    const isBull = (r.side || "bullish") === "bullish" || p >= 0;
+    if (isBull) {
+      return (p >= 1.5 && p <= 2.8) && (st.includes("long buildup") || st.includes("buildup"));
+    } else {
+      return (p <= -1.5 && p >= -2.8) && (st.includes("short buildup") || st.includes("buildup"));
+    }
+  }
+
   /* ── Load Stock Candles into Chart ── */
   async function selectStock(symbol, meta = {}) {
     if (!symbol) return;
@@ -3099,8 +3125,43 @@
         ignitionChip.style.display = "none";
       }
     }
+    // High-Conviction Demand Fresh Banner
+    const dfBanner = document.getElementById("chartDemandFreshBanner");
+    const allRowsForDF = [...(_currentBullish || []), ...(_currentBearish || [])];
+    const liveRowForDF = allRowsForDF.find(x => x.symbol === _selectedSymbol) || meta;
+    const isDF = isTop10DemandFreshQualified(liveRowForDF);
+
+    if (dfBanner) {
+      if (isDF && liveRowForDF && (liveRowForDF.ltp || meta.ltp)) {
+        dfBanner.style.display = "flex";
+        const ltpVal = Number(liveRowForDF.ltp || meta.ltp);
+        const entryVal = Number(liveRowForDF.entry) || ltpVal;
+        const isUp = (liveRowForDF.percent_change ?? meta.percent_change ?? 0) >= 0;
+        const slVal = Number(liveRowForDF.stop_loss) || (isUp ? entryVal * 0.993 : entryVal * 1.007);
+        const beVal = isUp ? entryVal * 1.008 : entryVal * 0.992;
+        const t1Val = Number(liveRowForDF.target) || (isUp ? entryVal * 1.015 : entryVal * 0.985);
+        const t2Val = isUp ? entryVal * 1.030 : entryVal * 0.970;
+
+        const dfZoneDesc = document.getElementById("dfZoneDesc");
+        const dfEntry = document.getElementById("dfEntry");
+        const dfSl = document.getElementById("dfSl");
+        const dfBeLock = document.getElementById("dfBeLock");
+        const dfT1 = document.getElementById("dfT1");
+        const dfT2 = document.getElementById("dfT2");
+
+        if (dfZoneDesc) dfZoneDesc.textContent = isUp ? (liveRowForDF.demand_zone ? `Demand Zone ${liveRowForDF.demand_zone}` : "Institutional Base Defended") : (liveRowForDF.supply_zone ? `Bear OB ${liveRowForDF.supply_zone}` : "Supply Block Defended");
+        if (dfEntry) dfEntry.textContent = `Entry: ₹${entryVal.toFixed(1)}`;
+        if (dfSl) dfSl.textContent = `SL: ₹${slVal.toFixed(1)}`;
+        if (dfBeLock) dfBeLock.textContent = `🔒 BE Lock: ₹${beVal.toFixed(1)} (${isUp ? '+0.8%' : '-0.8%'})`;
+        if (dfT1) dfT1.textContent = `T1: ₹${t1Val.toFixed(1)} (${isUp ? '+1.5%' : '-1.5%'})`;
+        if (dfT2) dfT2.textContent = `T2: ₹${t2Val.toFixed(1)} (${isUp ? '+3.0%' : '-3.0%'})`;
+      } else {
+        dfBanner.style.display = "none";
+      }
+    }
+
     if (playbookBanner) {
-      if (isEarly && meta.ltp) {
+      if (!isDF && isEarly && meta.ltp) {
         playbookBanner.style.display = "flex";
         const ltpVal = Number(meta.ltp);
         const entryLow = (ltpVal * 0.997).toFixed(1);
@@ -3624,137 +3685,34 @@
     bearBody.innerHTML = renderSide(top5.bearish);
   }
 
-  /* ── Early Ignition & Filter Helpers ── */
-  let _currentListFilter = "all"; // "all" | "early" | "extended"
-
-  function isEarlyIgnitionRow(r) {
-    if (!r) return false;
-    if (r.is_early_ignition) return true;
-    const p = r.percent_change || 0;
-    const st = (r.setup || "").toLowerCase();
-    const isBull = (r.side || "bullish") === "bullish" || p >= 0;
-    if (isBull) {
-      return (p >= 1.5 && p <= 2.8) && (st.includes("long buildup") || st.includes("buildup"));
-    } else {
-      return (p <= -1.5 && p >= -2.8) && (st.includes("short buildup") || st.includes("buildup"));
-    }
-  }
-
-  function isExtendedRow(r) {
-    if (!r) return false;
-    if (r.is_extended) return true;
-    return Math.abs(r.percent_change || 0) >= 4.5;
-  }
-
-  function setListFilter(type) {
-    _currentListFilter = type;
-    document.querySelectorAll(".quick-filter-btn").forEach(b => b.classList.remove("active"));
-    const btn = document.getElementById(type === "early" ? "filterEarly" : (type === "extended" ? "filterExt" : "filterAll"));
-    if (btn) btn.classList.add("active");
-    renderLeftList(_activeTab === "bullish" ? _currentBullish : _currentBearish);
-  }
-
   /* ── Render Left Scroll List ── */
   function renderLeftList(rows) {
     const list = document.getElementById("stockScrollList");
     const badge = document.getElementById("listBadge");
     if (!list) return;
 
-    const baseRows = (rows || []).filter(r => {
-      if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
-      if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
-      const st = (r.five_min_status || "").toLowerCase();
-      const score = r.score || r.rally_score || 0;
-      // Anti-Disappear: Keep breakouts, near BO/BD, and high-conviction runners (score >= 70).
-      // Only drop low-conviction consolidating filler.
-      if (st === "consolidating" && score < 70 && !r.is_breakout && !r.breakout_time) return false;
-      return true;
-    });
-
-    const earlyCount = baseRows.filter(isEarlyIgnitionRow).length;
-    const extCount = baseRows.filter(isExtendedRow).length;
-
-    const cntAllEl = document.getElementById("cntFilterAll");
-    const cntEarlyEl = document.getElementById("cntFilterEarly");
-    const cntExtEl = document.getElementById("cntFilterExt");
-    if (cntAllEl) cntAllEl.textContent = String(baseRows.length);
-    if (cntEarlyEl) cntEarlyEl.textContent = String(earlyCount);
-    if (cntExtEl) cntExtEl.textContent = String(extCount);
-
-    let displayRows = baseRows;
-    if (_currentListFilter === "early") {
-      displayRows = baseRows.filter(isEarlyIgnitionRow);
-    } else if (_currentListFilter === "extended") {
-      displayRows = baseRows.filter(isExtendedRow);
-    }
-    displayRows = displayRows.slice(0, MAX_DISPLAY_ROWS);
-
-    if (!Array.isArray(displayRows) || displayRows.length === 0) {
-      const msg = _currentListFilter === "early"
-        ? "No candidates currently in the 1.5%–2.8% Early Ignition sweet spot."
-        : (_currentListFilter === "extended" ? "No extended candidates (>4.5%)." : "No breakout candidates right now.");
-      list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">${msg}</div>`;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">No breakout candidates right now.</div>`;
       if (badge) badge.textContent = "0";
       return;
     }
 
-    if (badge) badge.textContent = String(displayRows.length);
+    if (badge) badge.textContent = String(rows.length);
 
-    list.innerHTML = displayRows.map((row, idx) => {
+    list.innerHTML = rows.map((row, idx) => {
       const isUp = (row.percent_change || 0) >= 0;
       const isSelected = row.symbol === _selectedSymbol;
-      const streakMin = row.top5_streak_minutes || 0;
-      const isEarly = isEarlyIgnitionRow(row);
-      const isExt = isExtendedRow(row);
-      const qTags = row.quality_tags || [];
-      const isDemand = Boolean(row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH")));
-      const isSupply = Boolean(row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE")));
-
-      const streakBadge = (streakMin > 0 && idx < 5)
-        ? `<span class="top5-streak-pill ${isUp ? 'green' : 'red'}" style="font-size:9px; padding:0 4px;" title="Continuous time in Top 5 (resets if dropped below rank 5)">⏱️ ${streakMin}m</span>`
-        : "";
-
-      const demandPill = isDemand
-        ? `<span style="font-size:8.5px; font-weight:800; background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:1px 5px; border-radius:3px; letter-spacing:0.02em;" title="Institutional Demand Fresh Base at ${row.demand_fresh_time || ''}">🟢 DEMAND · FRESH ${row.demand_fresh_time || ''}</span>`
-        : "";
-
-      const supplyPill = isSupply
-        ? `<span style="font-size:8.5px; font-weight:800; background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; padding:1px 5px; border-radius:3px; letter-spacing:0.02em;" title="Institutional Bear Order Block Fresh at ${row.supply_zone_time || ''}">🔴 BEAR OB · FRESH ${row.supply_zone_time || ''}</span>`
-        : "";
-
-      const earlyPill = isEarly
-        ? `<span style="font-size:8.5px; font-weight:800; background:#10b981; color:#ffffff; padding:1px 5px; border-radius:3px; letter-spacing:0.02em;" title="In Sweet Spot Zone (1.8%–2.5%) before extension">🎯 SWEET SPOT 2+</span>`
-        : "";
-
-      const surgePill = (row.rank_velocity === "SURGING" || row.rank_velocity === "CLIMBING")
-        ? `<span style="font-size:8.5px; font-weight:800; background:#dcfce7; color:#15803d; border:1px solid #86efac; padding:1px 4px; border-radius:3px;" title="Climbing leaderboard ranks">▲ ${row.rank_progression || 'CLIMBING'}</span>`
-        : "";
-
-      const extPill = (!isEarly && isExt)
-        ? `<span style="font-size:8px; font-weight:700; background:#fffbeb; color:#b45309; border:1px solid #fde68a; padding:1px 4px; border-radius:3px;" title="Extended gain (+${(row.percent_change||0).toFixed(1)}%). High risk of pullback, avoid chasing.">⚠️ EXTENDED</span>`
-        : "";
-
       return `
-        <div class="stock-card-item ${isSelected ? 'active' : ''} ${isEarly ? 'early-ignition-card' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${row.vc_ranking || 1}, setup:'${row.setup || ""}', is_early_ignition:${Boolean(isEarly)}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
+        <div class="stock-card-item ${isSelected ? 'active' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${row.vc_ranking || 1}, setup:'${row.setup || ""}', chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <div class="item-left">
             <span class="item-rank">${idx + 1}</span>
             <div class="item-names">
-              <span class="item-symbol">${row.symbol} ${row.lot_size ? `<span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${row.lot_size}</span>` : ""} ${row.is_block_surge ? `<span style="font-size:8px; font-weight:800; background:#f5f3ff; color:#6d28d9; border:1px solid #c4b5fd; padding:1px 4px; border-radius:3px; margin-left:3px;">⚡ BLOCK ${row.block_surge_turnover_cr ? '₹' + row.block_surge_turnover_cr.toFixed(0) + 'Cr' : ''}</span>` : ""}</span>
-              <div style="display:flex; align-items:center; gap:4px; margin-top:2px; flex-wrap:wrap;">
-                <span class="item-setup-tag">${row.setup || "OI Confirmed"}${streakBadge}</span>
-                ${demandPill}
-                ${supplyPill}
-                ${earlyPill}
-                ${surgePill}
-                ${extPill}
-              </div>
+              <span class="item-symbol">${row.symbol}${row.lot_size ? ` <span style="font-size:9px; color:var(--text-muted); font-weight:700;">Lot ${row.lot_size}</span>` : ''}</span>
+              <span class="item-setup-tag">${row.setup || "Long buildup"}</span>
             </div>
           </div>
-          <div class="item-right" style="display:flex; flex-direction:column; align-items:flex-end; gap:3px;">
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span class="item-chg ${isUp ? 'up' : 'down'}">${pct(row.percent_change)}</span>
-              <button onclick="event.stopPropagation(); openStockInOverview('${row.symbol}')" style="background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe; border-radius:4px; font-size:10px; font-weight:800; padding:1px 5px; cursor:pointer;" title="Open in Stock Overview">🔬</button>
-            </div>
+          <div class="item-right">
+            <span class="item-chg ${isUp ? 'up' : 'down'}">${pct(row.percent_change)}</span>
             <span class="item-status-pill ${isUp ? 'leading' : 'lagging'}">${isUp ? 'LEADING' : 'LAGGING'}</span>
           </div>
         </div>
@@ -3762,23 +3720,91 @@
     }).join("");
   }
 
+  /* ── Hard Rules for Top 10 High-Conviction Demand Fresh Filter ── */
+  const INDEX_ANCHORS_SET = new Set(["HDFCBANK", "RELIANCE", "TCS", "INFY"]);
+  const _sessionQualifiedDemandFreshMap = new Map(); // Anti-Flicker: Keeps entered trades persistent throughout the session
+
+  function isTop10DemandFreshQualified(row) {
+    if (!row) return false;
+    const rank = Number(row.rank) || 99;
+    if (rank > 10) return false;
+    if (INDEX_ANCHORS_SET.has(row.symbol)) return false;
+
+    const qTags = row.quality_tags || [];
+    const st = (row.five_min_status || "").toLowerCase();
+    const isBreakdown = Boolean(st.includes("breakdown") || ((row.percent_change || 0) < 0 && row.is_breakout) || row.side === "bearish" || row.side === "LOSER");
+    const isDemand = Boolean((row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isBreakdown);
+    const isSupply = Boolean((row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isBreakdown);
+
+    if (!isDemand && !isSupply) return false;
+
+    // Open momentum gate: must be at least 1.20% directional move to eliminate sluggish chop
+    const moveOpen = Math.abs(Number(row.move_from_open_percent) || Number(row.percent_change) || 0);
+    if (moveOpen < 1.20) return false;
+
+    if (st.includes("near") || st.includes("consolidating")) return false;
+
+    return true;
+  }
+
+  function getTop10DemandFreshQualifiedRows() {
+    const all = [...(_currentBullish || []), ...(_currentBearish || [])];
+
+    // 1. Check current scan candidates and lock any qualifying stocks into session memory
+    for (const r of all) {
+      if (isTop10DemandFreshQualified(r)) {
+        if (!_sessionQualifiedDemandFreshMap.has(r.symbol)) {
+          _sessionQualifiedDemandFreshMap.set(r.symbol, { ...r, sessionLockedAt: Date.now() });
+        }
+      }
+    }
+
+    // 2. Build live list from session memory, updating live LTP/P&L while maintaining persistence
+    const persistentRows = [];
+    for (const [sym, saved] of _sessionQualifiedDemandFreshMap.entries()) {
+      const live = all.find(x => x.symbol === sym);
+      if (live) {
+        // If live stock has invalidated / breached stop loss, cleanly retire it
+        if (live.is_failed_trend) {
+          _sessionQualifiedDemandFreshMap.delete(sym);
+          continue;
+        }
+        persistentRows.push({ ...saved, ...live });
+      } else {
+        persistentRows.push(saved);
+      }
+    }
+
+    // 3. Fallback: If session map empty yet, show current qualified
+    if (persistentRows.length === 0) {
+      return all.filter(isTop10DemandFreshQualified).sort((a, b) => (Number(a.rank) || 99) - (Number(b.rank) || 99)).slice(0, 10);
+    }
+
+    // 4. Sort: ranked by institutional strength / percentage (max 10 active)
+    return persistentRows.sort((a, b) => (Number(a.rank) || 99) - (Number(b.rank) || 99)).slice(0, 10);
+  }
+
   /* ── Render Bottom Detail Table ── */
   function renderTable(rows) {
     const body = document.getElementById("vcTableBody");
     if (!body) return;
 
-    rows = (rows || []).filter(r => {
-      if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
-      if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
-      const st = (r.five_min_status || "").toLowerCase();
-      const score = r.score || r.rally_score || 0;
-      // Anti-Disappear: Keep breakouts, near BO/BD, and high-conviction runners (score >= 70).
-      // Only drop low-conviction consolidating filler.
-      if (st === "consolidating" && score < 70 && !r.is_breakout && !r.breakout_time) return false;
-      return true;
-    }).slice(0, MAX_DISPLAY_ROWS);
+    if (_activeTab !== "demand_fresh") {
+      rows = (rows || []).filter(r => {
+        if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
+        if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
+        const st = (r.five_min_status || "").toLowerCase();
+        const score = r.score || r.rally_score || 0;
+        if (st === "consolidating" && score < 70 && !r.is_breakout && !r.breakout_time) return false;
+        return true;
+      }).slice(0, MAX_DISPLAY_ROWS);
+    }
 
     if (!Array.isArray(rows) || rows.length === 0) {
+      if (_activeTab === "demand_fresh") {
+        body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:24px; color:var(--text-muted); font-weight:600;">No Top 10 Demand Fresh candidates qualified yet. Waiting for confirmed Demand Fresh bases with &ge; +1.20% open momentum.</td></tr>`;
+        return;
+      }
       const opposite = _activeTab === "bullish" ? _currentBearish : _currentBullish;
       const label = _activeTab === "bullish" ? "bullish" : "bearish";
       const hint = opposite.length ? ` Check Top ${_activeTab === "bullish" ? "Losers" : "Gainers"} (${opposite.length} candidates).` : "";
@@ -3874,6 +3900,37 @@
         ? `<span class="top5-streak-pill ${isUp ? 'green' : 'red'}" title="Continuous time in Top 5 (resets if dropped below rank 5)">⏱️ ${streakMin}m</span>`
         : "";
 
+      const noBaseBadge = (idx < 5 && !isDemand && !isSupply)
+        ? `<span style="background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; font-size:9px; font-weight:800; padding:2px 5px; border-radius:4px; margin-left:5px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle;" title="No Institutional Base. Higher risk of air-pocket pullback.">⚪ NO BASE</span>`
+        : "";
+
+      // Trade Levels & Breakeven Lock for High-Conviction Setups:
+      let tradeLevelsBadge = "";
+      if (isDemand || isSupply || _activeTab === "demand_fresh") {
+        const ltpVal = Number(row.ltp) || 0;
+        const entryVal = Number(row.entry) || ltpVal;
+        if (entryVal > 0) {
+          let slVal, beVal, t1Val;
+          if (!isBreakdown) { // Bullish / Demand Fresh
+            slVal = Number(row.stop_loss) || (entryVal * 0.993);
+            beVal = entryVal * 1.008; // +0.80% Breakeven Lock
+            t1Val = Number(row.target) || (entryVal * 1.015); // +1.50% Target 1
+          } else { // Bearish / Bear OB Fresh
+            slVal = Number(row.stop_loss) || (entryVal * 1.007);
+            beVal = entryVal * 0.992; // -0.80% Breakeven Lock
+            t1Val = Number(row.target) || (entryVal * 0.985); // -1.50% Target 1
+          }
+          tradeLevelsBadge = `
+            <div class="trade-levels-strip" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; font-size:10px; font-family:var(--font-mono);">
+              <span style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; padding:1px 5px; border-radius:3px; font-weight:700;">🎯 Entry ₹${entryVal.toFixed(1)}</span>
+              <span style="background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; padding:1px 5px; border-radius:3px; font-weight:700;">🛑 SL ₹${slVal.toFixed(1)}</span>
+              <span style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:1px 5px; border-radius:3px; font-weight:700;" title="When MFE reaches 0.80%, move SL to Cost (Breakeven)">🔒 BE Lock ₹${beVal.toFixed(1)}</span>
+              <span style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; padding:1px 5px; border-radius:3px; font-weight:800;">🎯 T1 (1.5%) ₹${t1Val.toFixed(1)}</span>
+            </div>
+          `;
+        }
+      }
+
       return `
         <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">${idx + 1}</td>
@@ -3881,6 +3938,7 @@
             <div class="stock-col">
               <span class="sym">${row.symbol} ${row.lot_size ? `<span style="font-size:10px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 5px; border-radius:3px; border:1px solid #cbd5e1; margin-left:5px;">Lot ${row.lot_size}</span>` : ""}</span>
               <span class="sub">${row.setup || "F&O Active"}${streakBadge}</span>
+              ${tradeLevelsBadge}
             </div>
           </td>
           <td style="font-weight:700; font-family:var(--font-mono); color:${(row.money_flow_percentage ?? 0) >= 70 ? 'var(--green)' : (row.money_flow_percentage ?? 0) >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${(row.money_flow_percentage ?? 0).toFixed(1)}%</td>
@@ -3894,7 +3952,7 @@
             </span>
           </td>
           <td>
-            <span class="bo-status-pill ${boCls}">${statusBadge}</span>${freshBadge}${blockBadge}
+            <span class="bo-status-pill ${boCls}">${statusBadge}</span>${freshBadge}${blockBadge}${noBaseBadge}
           </td>
           <td>
             <div class="score-meter">
@@ -3964,64 +4022,10 @@
     if (hasRows) _lastGoodRenderAt = Date.now();
     window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
 
-    const sortBullish = (a, b) => {
-      const aSt = String(a.five_min_status || '').toLowerCase();
-      const bSt = String(b.five_min_status || '').toLowerCase();
-      const aProven = ((a.top5_streak_minutes || 0) >= 10) || ((a.percent_change || 0) >= 3.5 && (a.one_side_rally_score || a.score || 0) >= 90 && (a.range_position_percent == null || a.range_position_percent >= 80));
-      const bProven = ((b.top5_streak_minutes || 0) >= 10) || ((b.percent_change || 0) >= 3.5 && (b.one_side_rally_score || b.score || 0) >= 90 && (b.range_position_percent == null || b.range_position_percent >= 80));
-      const aConfirmed = (a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired')) || aProven;
-      const bConfirmed = (b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired')) || bProven;
+    _currentBullish = (payload.bullish || []).slice().sort((a, b) => (b.percent_change ?? 0) - (a.percent_change ?? 0));
+    _currentBearish = (payload.bearish || []).slice().sort((a, b) => (a.percent_change ?? 0) - (b.percent_change ?? 0));
 
-      const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : ((aSt.includes('near') || aSt.includes('coiling')) ? 2 : 3));
-      const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : ((bSt.includes('near') || bSt.includes('coiling')) ? 2 : 3));
-      if (aTier !== bTier) return aTier - bTier;
-
-      const aPct = a.percent_change ?? -9999;
-      const bPct = b.percent_change ?? -9999;
-      const aSetup = ((a.one_side_rally_score || a.score || 0) / 100) * 8.0;
-      const bSetup = ((b.one_side_rally_score || b.score || 0) / 100) * 8.0;
-      const aMf = ((a.money_flow_percentage || 0) / 100) * 2.5;
-      const bMf = ((b.money_flow_percentage || 0) / 100) * 2.5;
-      const aRvol = a.rvol_5m || 1.0;
-      const bRvol = b.rvol_5m || 1.0;
-      const aRvolBoost = aRvol >= 1.5 ? Math.min(3.0, (aRvol - 1.0) * 0.5) : 0;
-      const bRvolBoost = bRvol >= 1.5 ? Math.min(3.0, (bRvol - 1.0) * 0.5) : 0;
-
-      const aScore = aSetup + Math.max(0, aPct) + aRvolBoost + aMf;
-      const bScore = bSetup + Math.max(0, bPct) + bRvolBoost + bMf;
-      return bScore - aScore;
-    };
-    const sortBearish = (a, b) => {
-      const aSt = String(a.five_min_status || '').toLowerCase();
-      const bSt = String(b.five_min_status || '').toLowerCase();
-      const aProven = ((a.top5_streak_minutes || 0) >= 10) || ((a.percent_change || 0) <= -3.5 && (a.one_side_rally_score || a.score || 0) >= 90 && (a.range_position_percent == null || a.range_position_percent <= 20));
-      const bProven = ((b.top5_streak_minutes || 0) >= 10) || ((b.percent_change || 0) <= -3.5 && (b.one_side_rally_score || b.score || 0) >= 90 && (b.range_position_percent == null || b.range_position_percent <= 20));
-      const aConfirmed = (a.is_breakout && !aSt.includes('near') && !aSt.includes('coiling') && !aSt.includes('expired')) || aProven;
-      const bConfirmed = (b.is_breakout && !bSt.includes('near') && !bSt.includes('coiling') && !bSt.includes('expired')) || bProven;
-
-      const aTier = aConfirmed ? 0 : (a.is_cascade ? 1 : ((aSt.includes('near') || aSt.includes('coiling')) ? 2 : 3));
-      const bTier = bConfirmed ? 0 : (b.is_cascade ? 1 : ((bSt.includes('near') || bSt.includes('coiling')) ? 2 : 3));
-      if (aTier !== bTier) return aTier - bTier;
-
-      const aPct = a.percent_change ?? 9999;
-      const bPct = b.percent_change ?? 9999;
-      const aSetup = ((a.one_side_rally_score || a.score || 0) / 100) * 8.0;
-      const bSetup = ((b.one_side_rally_score || b.score || 0) / 100) * 8.0;
-      const aMf = ((a.money_flow_percentage || 0) / 100) * 2.5;
-      const bMf = ((b.money_flow_percentage || 0) / 100) * 2.5;
-      const aRvol = a.rvol_5m || 1.0;
-      const bRvol = b.rvol_5m || 1.0;
-      const aRvolBoost = aRvol >= 1.5 ? Math.min(3.0, (aRvol - 1.0) * 0.5) : 0;
-      const bRvolBoost = bRvol >= 1.5 ? Math.min(3.0, (bRvol - 1.0) * 0.5) : 0;
-
-      const aScore = aSetup + Math.abs(aPct) + aRvolBoost + aMf;
-      const bScore = bSetup + Math.abs(bPct) + bRvolBoost + bMf;
-      return bScore - aScore;
-    };
-    _currentBullish = (payload.bullish || []).slice().sort(sortBullish);
-    _currentBearish = (payload.bearish || []).slice().sort(sortBearish);
-
-    // Re-assign ranks 1..N based on institutional priority + percentage
+    // Re-assign ranks 1..N based on sorted percentage
     _currentBullish.forEach((r, idx) => { r.rank = idx + 1; });
     _currentBearish.forEach((r, idx) => { r.rank = idx + 1; });
 
@@ -4101,7 +4105,7 @@
           if (scanDot) scanDot.style.background = "#f59e0b";
         } else {
           const lastT = scanInfo.last_run_ist ? scanInfo.last_run_ist.replace(" IST", "") : (payload.market_clock_ist || "");
-          scanText.textContent = lastT ? `Auto-Scan: 5m (Last: ${lastT})` : "Auto-Scan: 5m Active";
+          scanText.textContent = lastT ? `Auto-Scan: 1m (Last: ${lastT})` : "Auto-Scan: 1m Active";
           if (scanBadge) {
             scanBadge.style.background = "#eff6ff";
             scanBadge.style.color = "#1d4ed8";
@@ -4398,23 +4402,25 @@
     const pdhEl = document.getElementById("pdhCount");
     if (pdhEl) pdhEl.textContent = String(_currentBullish.filter(x => (x.range_position_percent || 0) >= 70).length || 14);
 
-    // Automatic Index Alignment (Market Direction):
-    // If NIFTY is negative (<= -0.20%) and user hasn't explicitly clicked a tab,
-    // automatically align view with Bearish (short) stocks to prevent fighting the market tide.
+    // High-Conviction Top 10 Demand Fresh Default View:
+    // User defaults directly to the highest-conviction filtered view (never 30+ clutter).
     if (!_userSwitchedTab) {
-      const n50Chg = (payload.index_context?.["NIFTY 50"]?.percent_change) ?? 0;
-      if (n50Chg <= -0.20 && _currentBearish.length > 0) {
-        _activeTab = "bearish";
-        document.getElementById("tabLosers")?.classList.add("active");
-        document.getElementById("tabGainers")?.classList.remove("active");
-      } else if (n50Chg >= 0.20 && _currentBullish.length > 0) {
-        _activeTab = "bullish";
-        document.getElementById("tabGainers")?.classList.add("active");
-        document.getElementById("tabLosers")?.classList.remove("active");
-      }
+      _activeTab = "demand_fresh";
+      document.getElementById("tabDemandFresh")?.classList.add("active");
+      document.getElementById("tabGainers")?.classList.remove("active");
+      document.getElementById("tabLosers")?.classList.remove("active");
     }
 
-    const currentRows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
+    const dfQualified = getTop10DemandFreshQualifiedRows();
+    const dfPillCountEl = document.getElementById("demandFreshPillCount");
+    if (dfPillCountEl) dfPillCountEl.textContent = String(dfQualified.length);
+
+    let currentRows;
+    if (_activeTab === "demand_fresh") {
+      currentRows = dfQualified;
+    } else {
+      currentRows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
+    }
     renderLeftList(currentRows);
     renderTable(currentRows);
 
@@ -4514,6 +4520,7 @@
     _activeTab = "bullish";
     document.getElementById("tabGainers").classList.add("active");
     document.getElementById("tabLosers").classList.remove("active");
+    document.getElementById("tabDemandFresh")?.classList.remove("active");
     renderLeftList(_currentBullish);
     renderTable(_currentBullish);
     if (_currentBullish.length > 0) selectStock(_currentBullish[0].symbol, _currentBullish[0]);
@@ -4524,9 +4531,22 @@
     _activeTab = "bearish";
     document.getElementById("tabLosers").classList.add("active");
     document.getElementById("tabGainers").classList.remove("active");
+    document.getElementById("tabDemandFresh")?.classList.remove("active");
     renderLeftList(_currentBearish);
     renderTable(_currentBearish);
     if (_currentBearish.length > 0) selectStock(_currentBearish[0].symbol, _currentBearish[0]);
+  });
+
+  document.getElementById("tabDemandFresh")?.addEventListener("click", () => {
+    _userSwitchedTab = true;
+    _activeTab = "demand_fresh";
+    document.getElementById("tabDemandFresh").classList.add("active");
+    document.getElementById("tabGainers")?.classList.remove("active");
+    document.getElementById("tabLosers")?.classList.remove("active");
+    const dfRows = getTop10DemandFreshQualifiedRows();
+    renderLeftList(dfRows);
+    renderTable(dfRows);
+    if (dfRows.length > 0) selectStock(dfRows[0].symbol, dfRows[0]);
   });
 
   refreshBtn?.addEventListener("click", () => {
@@ -5039,22 +5059,9 @@
             ackAlert();
 
             // Catch-up notification gate:
-            // Do NOT play sounds or show popups if:
-            // 1. Outside market hours (e.g. evening, weekend)
-            // 2. Past cutoff (12:45 PM for regular breakouts, 3:15 PM for institutional block surges)
-            // 3. Alert is stale (> FRESH_WINDOW_MIN old)
             if (typeof isMarketHours === "function" && !isMarketHours()) return;
             const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
-            const isSurge = Boolean(item.is_block_surge || item.block_surge_type);
-            const cutoff = isSurge ? BLOCK_SURGE_CUTOFF_MIN : TRADE_CUTOFF_MIN;
-            if (nowMin > cutoff) return;
-
-            const boTime = item.breakout_time || item.alert_created_at;
-            const boMin = breakoutMinutes(boTime);
-            const ageMin = (boMin != null) ? (nowMin - boMin) : null;
-            const isFresh = (ageMin != null) && ageMin >= 0 && ageMin <= FRESH_WINDOW_MIN;
-
-            if (!isFresh) return; // Stale alert from earlier; silently acknowledged
+            if (nowMin > BLOCK_SURGE_CUTOFF_MIN) return;
 
             // Truly fresh missed alert while briefly disconnected! Enrich before display
             const allRows = [...(_currentBullish || []), ...(_currentBearish || [])];
@@ -5062,6 +5069,15 @@
             const enriched = { ...live, ...item };
 
             const isPE = (enriched.side === "bearish") || (enriched.percent_change < 0);
+            const qTags = enriched.quality_tags || [];
+            const isDemand = Boolean((enriched.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isPE);
+            const isSupply = Boolean((enriched.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isPE);
+
+            if (!isDemand && !isSupply) return;
+
+            const obTime = isDemand ? (enriched.demand_fresh_time || enriched.alert_created_at) : (enriched.supply_zone_time || enriched.alert_created_at);
+            if (!obTime) return;
+
             if (_hasEvaluatedInitialBell) {
               playBellRangSound();
               showStickyToast(enriched, isPE);

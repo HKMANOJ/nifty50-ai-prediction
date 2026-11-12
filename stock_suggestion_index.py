@@ -164,11 +164,11 @@ def get_sector(symbol: str) -> str:
 # Any stock with a lot size above this is excluded entirely - too much
 # capital per contract to be a practical suggestion.
 MAX_ALLOWED_LOT_SIZE = 650
-# Stock price boundaries for practical retail trading:
-# Excludes ultra-high priced stocks (> ₹10,000 like BOSCH, PAGEIND, FORCEMOT)
+# Stock price boundaries for practical trading:
+# Excludes ultra-high priced stocks (> ₹30,000 like BOSCH, PAGEIND)
 # where contract value/capital is excessive, and penny stocks (< ₹50).
 MIN_ALLOWED_STOCK_PRICE = 50.0
-MAX_ALLOWED_STOCK_PRICE = 10000.0
+MAX_ALLOWED_STOCK_PRICE = 30000.0
 # Every F&O stock with a lot size below this is scanned directly every cycle,
 # independent of NSE's top-20 gainers/losers or its OI-spurts feed.
 LOT_SCAN_THRESHOLD = 650
@@ -180,16 +180,16 @@ _FO_LOT_SIZES_CACHE: dict[str, int] | None = None
 # refreshes (manual "Refresh Live" spam, or bullish+bearish in the same scan)
 # reuse the same download instead of re-hitting the slow upstream chart API.
 def get_candle_cache_ttl() -> float:
-    """Dynamic cache TTL: strict 90 seconds during live NSE market hours to prevent stale data;
+    """Dynamic cache TTL: strict 45 seconds during live NSE market hours to capture newly completed 5m bars immediately;
     24 hours outside market hours to preserve closed session snapshots between restarts.
     """
     now_ist = datetime.now(INDIA_TZ)
     current_minutes = now_ist.hour * 60 + now_ist.minute
     is_live_market = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
-    return 90.0 if is_live_market else 86400.0
+    return 45.0 if is_live_market else 86400.0
 
 
-CANDLE_CACHE_TTL_SECONDS = 90.0     # Default market-hours fallback
+CANDLE_CACHE_TTL_SECONDS = 45.0     # Default market-hours fallback
 CANDLE_FETCH_TIMEOUT = 3.5          # per-request socket timeout
 CANDLE_POOL_WAIT_SECONDS = 9.0     # hard cap on the whole batch; stragglers are abandoned
 CANDLE_POOL_MAX_WORKERS = 24
@@ -339,9 +339,17 @@ class Suggestion:
     is_demand_fresh: bool = False
     demand_zone: str = ""
     demand_fresh_time: str | None = None
+    demand_base_age_minutes: int | None = None
+    demand_proximity_gap_pct: float | None = None
+    room_to_bear_ob_pct: float | None = None
+    is_institutional_launchpad: bool = False
     is_supply_zone: bool = False
     supply_zone: str = ""
     supply_zone_time: str | None = None
+    supply_base_age_minutes: int | None = None
+    supply_proximity_gap_pct: float | None = None
+    room_to_bull_ob_pct: float | None = None
+    is_institutional_exhaustion: bool = False
     prev_rank: int | None = None
     rank_velocity: str = "STABLE"
     rank_progression: str = ""
@@ -419,9 +427,17 @@ class Suggestion:
             "is_demand_fresh": self.is_demand_fresh,
             "demand_zone": self.demand_zone,
             "demand_fresh_time": self.demand_fresh_time,
+            "demand_base_age_minutes": self.demand_base_age_minutes,
+            "demand_proximity_gap_pct": self.demand_proximity_gap_pct,
+            "room_to_bear_ob_pct": self.room_to_bear_ob_pct,
+            "is_institutional_launchpad": self.is_institutional_launchpad,
             "is_supply_zone": self.is_supply_zone,
             "supply_zone": self.supply_zone,
             "supply_zone_time": self.supply_zone_time,
+            "supply_base_age_minutes": self.supply_base_age_minutes,
+            "supply_proximity_gap_pct": self.supply_proximity_gap_pct,
+            "room_to_bull_ob_pct": self.room_to_bull_ob_pct,
+            "is_institutional_exhaustion": self.is_institutional_exhaustion,
             "prev_rank": self.prev_rank,
             "rank_velocity": self.rank_velocity,
             "rank_progression": self.rank_progression,
@@ -2536,15 +2552,25 @@ def build_suggestions(
         is_demand_fresh = False
         demand_zone_str = ""
         demand_fresh_time = None
+        demand_base_age_minutes = None
+        demand_proximity_gap_pct = None
+        room_to_bear_ob_pct = None
+        is_institutional_launchpad = False
+
         is_supply_zone = False
         supply_zone_str = ""
         supply_zone_time = None
+        supply_base_age_minutes = None
+        supply_proximity_gap_pct = None
+        room_to_bull_ob_pct = None
+        is_institutional_exhaustion = False
         try:
             from smc_volume_profile_engine import detect_order_blocks_and_structure
             ob_res = detect_order_blocks_and_structure(sym_candles)
             obs = ob_res.get("order_blocks", [])
             live_ltp_ob = float(row.get("ltp") or (sym_candles[-1]["close"] if sym_candles else 0.0))
             recent_candles_ob = sym_candles[-min(len(sym_candles), 6):] if sym_candles else []
+            latest_bar_ts = sym_candles[-1]["timestamp"] if sym_candles else 0
             if side == "bullish":
                 bull_obs = [ob for ob in obs if ob.get("type") == "BULLISH" and not ob.get("mitigated")]
                 # Prioritize genuinely Fresh demand bases first, then latest by time
@@ -2560,10 +2586,24 @@ def build_suggestions(
                         is_demand_fresh = True
                         st_label = ob.get("status", "Fresh")
                         demand_zone_str = f"₹{bot_b:.1f}-₹{top_b:.1f} ({st_label})"
-                        if ob.get("time"):
-                            demand_fresh_time = datetime.fromtimestamp(ob["time"] + 300, tz=INDIA_TZ).strftime("%I:%M %p")
-                        elif sym_candles:
-                            demand_fresh_time = datetime.fromtimestamp(sym_candles[-1]["timestamp"] + 300, tz=INDIA_TZ).strftime("%I:%M %p")
+                        ob_t = ob.get("time") or latest_bar_ts
+                        demand_fresh_time = datetime.fromtimestamp(ob_t + 300, tz=INDIA_TZ).strftime("%I:%M %p")
+
+                        if latest_bar_ts and ob.get("time"):
+                            demand_base_age_minutes = max(0, int((latest_bar_ts - ob["time"]) / 60))
+                        else:
+                            demand_base_age_minutes = 0
+                        demand_proximity_gap_pct = round(max(0.0, ((live_ltp_ob - top_b) / top_b) * 100), 2) if top_b > 0 else 0.0
+
+                        overhead_bear_obs = [float(o["bottom"]) for o in obs if o.get("type") == "BEARISH" and not o.get("mitigated") and float(o.get("bottom", 0)) > live_ltp_ob]
+                        if overhead_bear_obs:
+                            nearest_bear_bot = min(overhead_bear_obs)
+                            room_to_bear_ob_pct = round(((nearest_bear_bot - live_ltp_ob) / live_ltp_ob) * 100, 2)
+                        else:
+                            room_to_bear_ob_pct = 99.0
+
+                        if demand_base_age_minutes <= 25 and demand_proximity_gap_pct <= 0.80 and room_to_bear_ob_pct >= 1.0:
+                            is_institutional_launchpad = True
                         break
             else:
                 bear_obs = [ob for ob in obs if ob.get("type") == "BEARISH" and not ob.get("mitigated")]
@@ -2580,10 +2620,24 @@ def build_suggestions(
                         is_supply_zone = True
                         st_label = ob.get("status", "Fresh")
                         supply_zone_str = f"₹{bot_s:.1f}-₹{top_s:.1f} ({st_label})"
-                        if ob.get("time"):
-                            supply_zone_time = datetime.fromtimestamp(ob["time"] + 300, tz=INDIA_TZ).strftime("%I:%M %p")
-                        elif sym_candles:
-                            supply_zone_time = datetime.fromtimestamp(sym_candles[-1]["timestamp"] + 300, tz=INDIA_TZ).strftime("%I:%M %p")
+                        ob_t = ob.get("time") or latest_bar_ts
+                        supply_zone_time = datetime.fromtimestamp(ob_t + 300, tz=INDIA_TZ).strftime("%I:%M %p")
+
+                        if latest_bar_ts and ob.get("time"):
+                            supply_base_age_minutes = max(0, int((latest_bar_ts - ob["time"]) / 60))
+                        else:
+                            supply_base_age_minutes = 0
+                        supply_proximity_gap_pct = round(max(0.0, ((bot_s - live_ltp_ob) / bot_s) * 100), 2) if bot_s > 0 else 0.0
+
+                        underlying_bull_obs = [float(o["top"]) for o in obs if o.get("type") == "BULLISH" and not o.get("mitigated") and float(o.get("top", 0)) < live_ltp_ob]
+                        if underlying_bull_obs:
+                            nearest_bull_top = max(underlying_bull_obs)
+                            room_to_bull_ob_pct = round(((live_ltp_ob - nearest_bull_top) / live_ltp_ob) * 100, 2)
+                        else:
+                            room_to_bull_ob_pct = 99.0
+
+                        if supply_base_age_minutes <= 25 and supply_proximity_gap_pct <= 0.80 and room_to_bull_ob_pct >= 1.0:
+                            is_institutional_exhaustion = True
                         break
         except Exception:
             pass
@@ -2598,17 +2652,12 @@ def build_suggestions(
             quality_tags.insert(0, f"🔴 BEAR OB · FRESH ({supply_zone_str}){tag_time}")
 
         # Audio bell trigger condition:
-        # Ring chime on DEMAND · FRESH defense, BEAR OB · FRESH test, early Sweet Spot breakout (<2.5%),
-        # or Institutional Block Surge. Extended stocks (>= 3.8%) are suppressed to reduce noise.
-        pct_move_now = abs(float(row.get("percent_change") or 0.0))
-        is_too_ext = (pct_move_now >= 3.8) and not surge_info.get("is_block_surge") and not is_demand_fresh and not is_supply_zone
-        is_sweet_spot_pct = (pct_move_now <= 2.8)
-
-        bell_rang = bool(
-            (is_demand_fresh or is_supply_zone or (is_sweet_spot_pct and is_breakout) or surge_info.get("is_block_surge"))
-            and not is_too_ext
-            and "near" not in five_min_status.lower()
-        )
+        # STRICT RULE: Bell rings and alert fires ONLY when DEMAND · FRESH (Bullish) or BEAR OB · FRESH (Bearish) forms or defends!
+        # Generic breakouts, sweet spots without fresh bases, and block surges without fresh bases are strictly excluded.
+        if side == "bullish":
+            bell_rang = bool(is_demand_fresh and demand_fresh_time and "near" not in five_min_status.lower())
+        else:
+            bell_rang = bool(is_supply_zone and supply_zone_time and "near" not in five_min_status.lower())
 
         _high, _low, _prev_close = row.get("high"), row.get("low"), row.get("prev_close")
         day_range_percent = (
@@ -2669,9 +2718,17 @@ def build_suggestions(
                 is_demand_fresh=is_demand_fresh,
                 demand_zone=demand_zone_str,
                 demand_fresh_time=demand_fresh_time,
+                demand_base_age_minutes=demand_base_age_minutes,
+                demand_proximity_gap_pct=demand_proximity_gap_pct,
+                room_to_bear_ob_pct=room_to_bear_ob_pct,
+                is_institutional_launchpad=is_institutional_launchpad,
                 is_supply_zone=is_supply_zone,
                 supply_zone=supply_zone_str,
                 supply_zone_time=supply_zone_time,
+                supply_base_age_minutes=supply_base_age_minutes,
+                supply_proximity_gap_pct=supply_proximity_gap_pct,
+                room_to_bull_ob_pct=room_to_bull_ob_pct,
+                is_institutional_exhaustion=is_institutional_exhaustion,
             )
         )
 
@@ -2680,54 +2737,11 @@ def build_suggestions(
     # Tier 0 is STRICTLY for confirmed active breakouts / waterfalls.
     # Ranking is computed from: Setup Quality Score (Range hold, Open move, OI, Nifty)
     # + Price Expansion Momentum + RVOL 5m Expansion + Order Flow Conviction.
+    # Sort strictly by Percentage Change (Highest % gainers on top for Bullish, Largest % drop on top for Bearish)
     if side == "bullish":
-        def sort_key_bullish(item: Suggestion):
-            pct = item.percent_change if item.percent_change is not None else -9999.0
-            mf = float(item.money_flow_percentage or 0.0)
-            st = (item.five_min_status or "").lower()
-
-            # Tier 0 is STRICTLY for confirmed active breakouts.
-            # 'Near BO', coiling, or expired breaks MUST NOT enter Tier 0!
-            is_confirmed_bo = item.is_breakout and ("near" not in st and "coiling" not in st and "expired" not in st)
-            tier = 0 if is_confirmed_bo else (1 if item.is_cascade else (2 if ("near" in st or "coiling" in st) else 3))
-
-            # Breakout Conviction Engine (Pure Setup Math: Setup Score + Price Expansion + RVOL + Order Flow)
-            # ZERO boost for raw block crore turnover.
-            rally_score = float(item.one_side_rally_score or item.score or 0.0)
-            setup_conviction = (rally_score / 100.0) * 8.0
-            price_score = max(0.0, pct)
-            rvol = float(item.rvol_5m or 1.0)
-            rvol_boost = min(3.0, (rvol - 1.0) * 0.5) if rvol >= 1.5 else 0.0
-            mf_boost = (mf / 100.0) * 2.5
-
-            total_conviction = setup_conviction + price_score + rvol_boost + mf_boost
-            return (tier, -total_conviction)
-
-        suggestions.sort(key=sort_key_bullish)
+        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else -9999, reverse=True)
     else:
-        def sort_key_bearish(item: Suggestion):
-            pct = item.percent_change if item.percent_change is not None else 9999.0
-            mf = float(item.money_flow_percentage or 0.0)
-            st = (item.five_min_status or "").lower()
-
-            # Tier 0 is STRICTLY for confirmed active breakdowns / waterfalls.
-            # 'Near BD', coiling, or expired breaks MUST NOT enter Tier 0!
-            is_confirmed_bd = item.is_breakout and ("near" not in st and "coiling" not in st and "expired" not in st)
-            tier = 0 if is_confirmed_bd else (1 if item.is_cascade else (2 if ("near" in st or "coiling" in st) else 3))
-
-            # Breakout Conviction Engine (Pure Setup Math: Setup Score + Price Expansion + RVOL + Order Flow)
-            # ZERO boost for raw block crore turnover.
-            rally_score = float(item.one_side_rally_score or item.score or 0.0)
-            setup_conviction = (rally_score / 100.0) * 8.0
-            price_score = abs(pct)
-            rvol = float(item.rvol_5m or 1.0)
-            rvol_boost = min(3.0, (rvol - 1.0) * 0.5) if rvol >= 1.5 else 0.0
-            mf_boost = (mf / 100.0) * 2.5
-
-            total_conviction = setup_conviction + price_score + rvol_boost + mf_boost
-            return (tier, -total_conviction)
-
-        suggestions.sort(key=sort_key_bearish)
+        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else 9999)
 
     if audit is not None:
         for index, item in enumerate(suggestions, start=1):
@@ -3117,7 +3131,8 @@ def _process_candidate_lifecycle(
         alert_fired = bool(item.bell_rang)
         alert_count = 1 if alert_fired else 0
         event_id = f"evt_{item.symbol}_{side}_w1_{int(now_epoch)}" if alert_fired else None
-        created_at = market_clock_ist if alert_fired else None
+        current_ob_time = item.demand_fresh_time if side == "bullish" else item.supply_zone_time
+        created_at = (current_ob_time or market_clock_ist) if alert_fired else None
         is_top5 = (rank <= 5)
         consecutive_top5_scans = 1 if is_top5 else 0
         top5_streak_minutes = 5 if is_top5 else 0
@@ -3128,7 +3143,8 @@ def _process_candidate_lifecycle(
             "first_qualified_at": market_clock_ist if is_qualified else None,
             "first_top5_at": market_clock_ist if rank <= 5 else None,
             "first_rank1_at": market_clock_ist if rank == 1 else None,
-            "first_alerted_at": market_clock_ist if alert_fired else None,
+            "first_alerted_at": (current_ob_time or market_clock_ist) if alert_fired else None,
+            "last_ob_alert_time": current_ob_time if alert_fired else None,
             "consecutive_top5_scans": consecutive_top5_scans,
             "top5_streak_minutes": top5_streak_minutes,
             "alert_fired": alert_fired,
@@ -3266,18 +3282,20 @@ def _process_candidate_lifecycle(
             else:
                 new_structure = (breakout_level < old_level * 0.998) and is_confirmed_breakout
 
-            if cooldown_passed and new_structure:
-                # Genuinely new structure formed after cooldown!
+            if cooldown_passed and new_structure and item.bell_rang:
+                # Genuinely new structure formed after cooldown with fresh OB!
+                current_ob_time = item.demand_fresh_time if side == "bullish" else item.supply_zone_time
                 new_count = entry.get("alert_count", 1) + 1
                 entry["is_invalidated"] = False
                 entry["invalidated_at"] = None
                 entry["invalidation_reason"] = None
                 entry["last_breakout_level"] = breakout_level
                 entry["last_structure"] = item.chart_structure
+                entry["last_ob_alert_time"] = current_ob_time
                 entry["alert_count"] = new_count
                 entry["alert_fired"] = True
                 entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w{new_count}_{int(now_epoch)}"
-                entry["alert_created_at"] = market_clock_ist
+                entry["alert_created_at"] = current_ob_time or market_clock_ist
                 entry["alert_created_epoch"] = now_epoch
                 entry["alert_delivered_at"] = None
                 entry["alert_acknowledged_at"] = None
@@ -3286,16 +3304,21 @@ def _process_candidate_lifecycle(
                 entry["claimed_at"] = None
                 entry["claim_expires_at"] = None
         else:
-            # Active, valid setup
-            if not entry.get("alert_fired") and item.bell_rang:
-                # Rule 1: Alert ONLY ONCE when first qualified
-                entry["first_alerted_at"] = market_clock_ist
+            # Active, valid setup: Alert strictly when DEMAND FRESH / BEAR OB FRESH forms, or when a NEW base forms
+            current_ob_time = item.demand_fresh_time if side == "bullish" else item.supply_zone_time
+            last_ob_time = entry.get("last_ob_alert_time")
+            is_new_ob_time = bool(current_ob_time and current_ob_time != last_ob_time)
+
+            if item.bell_rang and (not entry.get("alert_fired") or is_new_ob_time):
+                new_count = (entry.get("alert_count", 0) + 1) if entry.get("alert_fired") else 1
+                entry["first_alerted_at"] = entry.get("first_alerted_at") or market_clock_ist
+                entry["last_ob_alert_time"] = current_ob_time
                 entry["alert_fired"] = True
-                entry["alert_count"] = 1
+                entry["alert_count"] = new_count
                 entry["last_breakout_level"] = breakout_level
                 entry["last_structure"] = item.chart_structure
-                entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w1_{int(now_epoch)}"
-                entry["alert_created_at"] = market_clock_ist
+                entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w{new_count}_{int(now_epoch)}"
+                entry["alert_created_at"] = current_ob_time or market_clock_ist
                 entry["alert_created_epoch"] = now_epoch
                 entry["alert_delivered_at"] = None
                 entry["alert_acknowledged_at"] = None
@@ -3680,6 +3703,12 @@ def compute_daily_top5(
                 "setup": item.setup,
                 "breakout_time": item.breakout_time,
                 "five_min_status": item.five_min_status,
+                "demand_fresh_time": item.demand_fresh_time,
+                "demand_base_age_minutes": item.demand_base_age_minutes,
+                "is_institutional_launchpad": item.is_institutional_launchpad,
+                "supply_zone_time": item.supply_zone_time,
+                "supply_base_age_minutes": item.supply_base_age_minutes,
+                "is_institutional_exhaustion": item.is_institutional_exhaustion,
                 "composite_score": breakdown["composite"],
                 "factors": breakdown["factors"],
             })

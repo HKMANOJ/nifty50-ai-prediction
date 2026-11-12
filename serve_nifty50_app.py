@@ -52,7 +52,7 @@ REFRESH_LOCK = threading.Lock()
 # Debounce: collapse a burst of refresh requests (many tabs, reconnects, button
 # spam) into at most one real scan per MIN_SCAN_INTERVAL. Between scans, callers
 # get the last result instead of queueing another subprocess.
-MIN_SCAN_INTERVAL_SECONDS = 45.0
+MIN_SCAN_INTERVAL_SECONDS = 30.0
 _SCAN_STATE: dict[str, Any] = {"ts": 0.0, "payload": None, "signature": None}
 
 
@@ -164,8 +164,8 @@ def _run_premarket_reset_if_due(now_ist: datetime) -> None:
         print(f"[PREMARKET-RESET ERROR] {exc}")
 
 
-def compute_seconds_until_next_5min_grid(interval_seconds: int = 300, buffer_seconds: int = 3) -> tuple[float, datetime]:
-    """Calculates sleep seconds to align exactly with the next wall-clock 5-minute grid (e.g. 09:20:03, 09:25:03).
+def compute_seconds_until_next_5min_grid(interval_seconds: int = 60, buffer_seconds: int = 3) -> tuple[float, datetime]:
+    """Calculates sleep seconds to align exactly with the next wall-clock grid (e.g. every 60s).
     Prevents cumulative scheduler drift from scan execution duration."""
     now_ist = get_ist_now()
     market_open = now_ist.replace(hour=9, minute=15, second=buffer_seconds, microsecond=0)
@@ -180,8 +180,8 @@ def compute_seconds_until_next_5min_grid(interval_seconds: int = 300, buffer_sec
     return sleep_secs, target_dt
 
 
-def start_background_auto_scanner(interval_seconds: int = 300) -> None:
-    """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 5 min during market hours."""
+def start_background_auto_scanner(interval_seconds: int = 60) -> None:
+    """Spawns an autonomous background daemon thread that rescans 200+ NSE stocks every 1 min during market hours."""
     def _loop() -> None:
         import scanner_trace
         scanner_trace.submit_health("scheduler_started", interval_seconds=interval_seconds,
@@ -198,7 +198,7 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                         scan_start = time.time()
                         attempt_id = scanner_trace.log.new_scan()
                         scanner_trace.submit_health("scheduled_scan_started", attempt_id=attempt_id)
-                        print(f"[{now_ist.strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Executing 5-minute background market scan...")
+                        print(f"[{now_ist.strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Executing 1-minute background market scan...")
                         try:
                             exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
                             res = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=120)
@@ -1467,8 +1467,8 @@ def main() -> None:
     except Exception as exc:
         print("[scanner-retention] worker_start_failed", file=sys.stderr)
     
-    # Launch autonomous 5-minute background auto-scanner
-    start_background_auto_scanner(interval_seconds=300)
+    # Launch autonomous 1-minute background auto-scanner
+    start_background_auto_scanner(interval_seconds=60)
 
     # Launch Real-Time WebSocket Push Server on port 8765
     try:

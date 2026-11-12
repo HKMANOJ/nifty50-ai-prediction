@@ -212,10 +212,10 @@ def detect_order_blocks_and_structure(
     ltp = float(candles[-1]["close"]) if candles else 100.0
     min_ob_height = max(atr * 0.15, ltp * 0.0004)
 
-    for i in range(1, n - 2):
+    for i in range(1, n - 1):
         c_prev = candles[i]
         c_curr = candles[i + 1]
-        c_next = candles[i + 2]
+        c_next = candles[i + 2] if (i + 2 < n) else None
 
         # Check for Strong Bullish Displacement (Demand Setup)
         # Origin candle: bearish or tight base at a pivot low
@@ -227,7 +227,7 @@ def detect_order_blocks_and_structure(
             curr_body_bull >= (atr * 0.6) and
             (
                 (c_curr["high"] - c_prev["low"]) >= (atr * 1.2) or
-                (c_next["close"] - c_prev["low"]) >= (atr * 1.5)
+                (c_next is not None and (c_next["close"] - c_prev["low"]) >= (atr * 1.5))
             )
         )
 
@@ -274,7 +274,7 @@ def detect_order_blocks_and_structure(
             curr_body_bear >= (atr * 0.6) and
             (
                 (c_prev["high"] - c_curr["low"]) >= (atr * 1.2) or
-                (c_prev["high"] - c_next["close"]) >= (atr * 1.5)
+                (c_next is not None and (c_prev["high"] - c_next["close"]) >= (atr * 1.5))
             )
         )
 
