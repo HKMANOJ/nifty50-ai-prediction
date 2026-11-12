@@ -16,43 +16,59 @@
     :root {
       --bg-main: #f4f6fa;
       --bg-card: #ffffff;
-      --border: #e2e8f0;
-      --border-subtle: #edf2f7;
+      --border: #cbd5e1;
+      --border-subtle: #e2e8f0;
       --text-dark: #0f172a;
-      --text-muted: #64748b;
-      --text-subtle: #94a3b8;
+      --text-muted: #475569;
+      --text-subtle: #64748b;
       --sidebar-bg: #0f172a;
       --sidebar-active: #2563eb;
       --sidebar-text: #94a3b8;
       --sidebar-hover: #1e293b;
-      --green: #10b981;
+      --green: #059669;
       --green-bg: #ecfdf5;
-      --green-border: #a7f3d0;
-      --red: #ef4444;
+      --green-border: #86efac;
+      --red: #dc2626;
       --red-bg: #fef2f2;
-      --red-border: #fecaca;
+      --red-border: #fca5a5;
       --blue: #2563eb;
       --blue-bg: #eff6ff;
-      --blue-border: #bfdbfe;
-      --amber: #f59e0b;
+      --blue-border: #93c5fd;
+      --amber: #d97706;
       --amber-bg: #fffbeb;
       --amber-border: #fde68a;
-      --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-      --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+      --font-main: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.07), 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Fast, zero-lag touch manipulation on all interactive elements across mobile & tablets */
+    button, a, input, select, tr, .tab-pill, .ticker-chip, .quick-filter-btn,
+    .overview-pill, .tf-btn, .ov-vol-pill, .sidebar-toggle-btn, .mobile-nav-toggle {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button, .tab-pill, .ticker-chip, .quick-filter-btn, .overview-pill, .tf-btn, .ov-vol-pill {
+      user-select: none;
+      -webkit-user-select: none;
     }
 
     html, body {
       max-width: 100%;
       overflow-x: hidden;
+      text-rendering: optimizeLegibility;
+      overscroll-behavior-y: contain;
     }
 
     body {
@@ -1237,23 +1253,184 @@
       opacity: 1;
     }
 
-    /* ── Universal Responsive Breakpoints (iPad Pro, iPad, Tablet, Mobile) ── */
-
-    /* Wide tables always scroll inside their own box, never widen the page. */
-    .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-
-    @media (max-width: 1400px) {
-      .metrics-row { grid-template-columns: repeat(4, 1fr); }
+    /* ── High-Conviction Demand Fresh Trade Playbook Bar (Ultra-Visible & Zero-Lag) ── */
+    .chart-playbook-banner {
+      margin: 4px 14px 8px;
+      padding: 8px 14px;
+      background: linear-gradient(90deg, #f0fdf4 0%, #ecfdf5 100%);
+      border: 1.5px solid #10b981;
+      border-radius: 8px;
+      font-size: 11px;
+      color: #065f46;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      box-shadow: 0 1px 3px rgba(16, 185, 129, 0.12);
+      transition: all 0.15s ease;
+      contain: layout style;
     }
 
-    @media (max-width: 1080px) {
-      .metrics-row { grid-template-columns: repeat(3, 1fr); }
-      .split-layout { grid-template-columns: 1fr; }
-      .list-panel { max-height: 420px; }
+    .playbook-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: #065f46;
     }
 
-    /* Tablets & iPad portrait (<= 991px) */
-    @media (max-width: 991px) {
+    .playbook-badge-grid {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      flex-wrap: wrap;
+    }
+
+    .playbook-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 5px;
+      white-space: nowrap;
+      letter-spacing: -0.01em;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      user-select: none;
+    }
+    .playbook-pill.entry { background: #dcfce7; color: #14532d; border: 1.5px solid #86efac; font-weight: 800; }
+    .playbook-pill.sl { background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5; font-weight: 800; }
+    .playbook-pill.be { background: #eff6ff; color: #1e40af; border: 1.5px solid #93c5fd; font-weight: 800; }
+    .playbook-pill.t1 { background: #ecfdf5; color: #065f46; border: 1.5px solid #6ee7b7; font-weight: 800; }
+    .playbook-pill.t2 { background: #d1fae5; color: #064e3b; border: 1.5px solid #34d399; font-weight: 800; }
+
+    /* ── Trade Levels Strip in Table Rows ── */
+    .trade-levels-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 5px;
+      font-size: 10px;
+      font-family: var(--font-mono);
+    }
+
+    .trade-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      white-space: nowrap;
+      letter-spacing: -0.01em;
+    }
+    .trade-badge.entry { background: #f0fdf4; color: #14532d; border: 1px solid #86efac; }
+    .trade-badge.sl { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+    .trade-badge.be { background: #eff6ff; color: #1e40af; border: 1px solid #93c5fd; font-weight: 800; }
+    .trade-badge.t1 { background: #ecfdf5; color: #065f46; border: 1px solid #6ee7b7; font-weight: 800; }
+
+    /* Hardware acceleration & zero-lag performance */
+    .dashboard-chart-wrapper, .ov-chart-wrapper {
+      will-change: transform;
+      transform: translateZ(0);
+    }
+
+    .stock-card-item, table.vc-table tbody tr {
+      contain: content;
+    }
+
+    .table-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      contain: layout paint;
+    }
+
+    table.vc-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: #f8fafc;
+      color: #1e293b;
+      border-bottom: 2px solid #cbd5e1;
+      white-space: nowrap;
+    }
+
+    /* ── Universal Responsive Breakpoints (Web, Tablet, iPad, Mobile) ── */
+
+    .table-wrapper {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      max-height: 540px;
+      overflow-y: auto;
+    }
+
+    /* Laptops & Standard Desktops (1100px - 1380px) */
+    @media (max-width: 1380px) {
+      .metrics-row {
+        grid-template-columns: repeat(6, 1fr);
+        gap: 8px;
+      }
+      .metrics-row > .summary-card:nth-child(1) { grid-column: span 3; }
+      .metrics-row > .summary-card:nth-child(2) { grid-column: span 3; }
+      .metrics-row > .summary-card:nth-child(3) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(4) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(5) { grid-column: span 2; }
+      .metrics-row > .summary-card:nth-child(6) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(7) { grid-column: span 1; }
+
+      .split-layout {
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 12px;
+      }
+      .list-panel {
+        max-height: 600px;
+      }
+    }
+
+    /* Tablet Landscape & Compact Laptops (881px - 1099px, iPad 10.2" landscape, Galaxy Tab) */
+    @media (max-width: 1099px) {
+      .sidebar {
+        width: 200px;
+      }
+      .metrics-row {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+      .metrics-row > .summary-card:nth-child(1) { grid-column: span 2; }
+      .metrics-row > .summary-card:nth-child(2) { grid-column: span 2; }
+      .metrics-row > .summary-card:nth-child(3) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(4) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(5) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(6) { grid-column: span 1; }
+      .metrics-row > .summary-card:nth-child(7) { grid-column: span 4; }
+
+      /* Keep side-by-side split layout on tablet landscape! */
+      .split-layout {
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 10px;
+      }
+      .list-panel {
+        min-height: 480px;
+        max-height: 520px;
+      }
+      .dashboard-chart-wrapper {
+        height: 440px !important;
+        min-height: 440px !important;
+      }
+      .ov-chart-wrapper {
+        height: 460px !important;
+        min-height: 460px !important;
+      }
+    }
+
+    /* Tablet Portrait & Mobile Webviews (<= 880px, iPad portrait, iPad Mini) */
+    @media (max-width: 880px) {
       .mobile-nav-toggle { display: flex; }
 
       .sidebar {
@@ -1263,8 +1440,8 @@
         bottom: 0;
         width: 250px;
         z-index: 100;
-        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.4);
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
       }
       .sidebar.mobile-open { transform: translateX(260px); }
       .sidebar.collapsed { width: 250px; }
@@ -1272,8 +1449,20 @@
       .sidebar.collapsed .menu-label,
       .sidebar.collapsed .sidebar-footer { display: flex; }
 
-      .top-navbar { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
-      .navbar-ticker { flex-wrap: wrap; gap: 8px 10px; }
+      .top-navbar {
+        flex-wrap: wrap;
+        padding: 8px 12px;
+        gap: 8px;
+      }
+      .navbar-ticker {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        max-width: 100%;
+        padding-bottom: 2px;
+      }
+      .navbar-ticker::-webkit-scrollbar { display: none; }
       .navbar-status {
         width: 100%;
         flex-wrap: wrap;
@@ -1281,57 +1470,97 @@
         justify-content: flex-start;
       }
 
-      .content-container { padding: 12px; gap: 12px; }
-      .metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-      /* the two rich cards (Session Leaders, System Top Pick) stay full width */
+      .content-container { padding: 10px; gap: 10px; }
+
+      .metrics-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
       .metrics-row > .summary-card:nth-child(1),
       .metrics-row > .summary-card:nth-child(2) { grid-column: 1 / -1; }
-      .chart-panel, .list-panel { max-height: none; }
-      .dashboard-chart-wrapper { height: 350px !important; min-height: 350px !important; }
-      .ov-chart-wrapper { height: 400px !important; min-height: 400px !important; }
-      #viewOverview { padding: 12px 14px !important; gap: 12px !important; }
+      .metrics-row > .summary-card:nth-child(7) { grid-column: 1 / -1; }
+
+      /* Split layout stacks in portrait */
+      .split-layout {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      /* Compact candidate list on portrait so chart is easily accessible without giant scrolling */
+      .list-panel {
+        min-height: auto;
+        max-height: 280px;
+      }
+      .dashboard-chart-wrapper {
+        height: 420px !important;
+        min-height: 420px !important;
+      }
+      .ov-chart-wrapper {
+        height: 440px !important;
+        min-height: 440px !important;
+      }
+
+      /* Playbook bar wraps cleanly */
+      .chart-playbook-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px 10px;
+      }
+      .playbook-badge-grid {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      /* Table section head wrap */
+      .table-section-head {
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .tab-pills {
+        flex-wrap: wrap;
+      }
+
+      table.vc-table {
+        min-width: 720px;
+      }
       #toastContainer { left: 8px; right: 8px; max-width: none; }
     }
 
-    /* Mobile phones (<= 640px) */
+    /* Mobile Phones (<= 640px) */
     @media (max-width: 640px) {
-      .ticker-chip { font-size: 11px; padding: 3px 7px; gap: 4px; }
+      .ticker-chip { font-size: 11px; padding: 3px 6px; gap: 4px; }
+      .navbar-status > * { font-size: 10px !important; padding: 3px 6px !important; }
+      .refresh-pill-btn { padding: 5px 8px; }
+      .summary-card { padding: 9px 10px; }
 
-      /* every navbar status pill/button shrinks uniformly */
-      .navbar-status > * {
-        font-size: 10px !important;
-        padding: 3px 7px !important;
+      .chart-panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
       }
-      .refresh-pill-btn { padding: 6px 10px; }
-      #marketClock { align-self: center; }
+      .chart-title-area { flex-wrap: wrap; gap: 8px; }
+      .chart-toolbar { width: 100%; justify-content: flex-end; }
 
-      .metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .summary-card { padding: 10px 11px; }
+      .list-panel { max-height: 240px; }
+      .dashboard-chart-wrapper { height: 340px !important; min-height: 340px !important; }
+      .ov-chart-wrapper { height: 350px !important; min-height: 350px !important; }
 
-      .chart-panel-header { flex-direction: column; align-items: flex-start; gap: 8px; }
-      .chart-title-area { flex-wrap: wrap; }
-      .dashboard-chart-wrapper { height: 290px !important; min-height: 290px !important; }
-      .ov-chart-wrapper { height: 330px !important; min-height: 330px !important; }
-      #viewOverview { padding: 8px 10px !important; gap: 10px !important; }
-      .overview-main-panel { padding: 10px !important; gap: 10px !important; }
       #ovSymbol { font-size: 18px !important; }
       #ovLtp { font-size: 17px !important; }
       #ovTradePlanBox { padding: 10px !important; gap: 8px !important; }
       .ov-plan-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
       .ov-cards-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
-      #fpLadder { font-size: 10px !important; }
 
-      /* the F&O scanner table: scroll horizontally instead of crushing columns */
-      table.vc-table { min-width: 720px; }
-
-      /* Sector Analysis view (padding is set inline -> needs override) */
-      #viewSectorAnalysis { padding: 12px !important; }
+      #viewSectorAnalysis { padding: 10px !important; }
       #sectorTilesGrid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     }
 
-    /* Very small phones */
-    @media (max-width: 340px) {
+    /* Ultra-Small Phones (<= 380px) */
+    @media (max-width: 380px) {
       .metrics-row { grid-template-columns: 1fr; }
+      .metrics-row > .summary-card { grid-column: 1 / -1 !important; }
+      .tab-pill { padding: 4px 8px; font-size: 10px; }
+    }
       .navbar-ticker .ticker-chip { flex: 1; }
     }
   </style>
@@ -1599,17 +1828,17 @@
           </div>
 
           <!-- High-Conviction Demand Fresh Trade Playbook Bar -->
-          <div id="chartDemandFreshBanner" style="display:none; margin: 4px 14px 6px; padding: 7px 12px; background: linear-gradient(90deg, #f0fdf4, #ecfdf5); border: 1px solid #34d399; border-radius: 6px; font-size: 11px; color: #065f46; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:14px;">🎯</span>
+          <div id="chartDemandFreshBanner" class="chart-playbook-banner" style="display:none;">
+            <div class="playbook-title-box">
+              <span style="font-size:15px;">🎯</span>
               <span><strong>TOP 10 DEMAND FRESH PLAYBOOK:</strong> <span id="dfZoneDesc">High-Conviction Institutional Zone</span></span>
             </div>
-            <div style="display:flex; align-items:center; gap:8px; font-weight:700; font-family:var(--font-mono); font-size:11px;">
-              <span id="dfEntry" style="background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; border:1px solid #86efac;">Entry: ₹--</span>
-              <span id="dfSl" style="background:#fee2e2; color:#b91c1c; padding:2px 6px; border-radius:4px; border:1px solid #fca5a5;">SL: ₹-- (-0.7%)</span>
-              <span id="dfBeLock" style="background:#eff6ff; color:#1d4ed8; padding:2px 6px; border-radius:4px; border:1px solid #bfdbfe;" title="When MFE reaches +0.80%, move SL to Cost (Breakeven)">🔒 BE Lock: ₹-- (+0.80%)</span>
-              <span id="dfT1" style="background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; border:1px solid #86efac;">Target 1: ₹-- (+1.50%)</span>
-              <span id="dfT2" style="background:#d1fae5; color:#047857; padding:2px 6px; border-radius:4px; border:1px solid #6ee7b7;">Target 2: ₹-- (+3.00%)</span>
+            <div class="playbook-badge-grid">
+              <span id="dfEntry" class="playbook-pill entry">Entry: ₹--</span>
+              <span id="dfSl" class="playbook-pill sl">SL: ₹-- (-0.7%)</span>
+              <span id="dfBeLock" class="playbook-pill be" title="When MFE reaches +0.80%, move SL to Cost (Breakeven)">🔒 BE Lock: ₹-- (+0.80%)</span>
+              <span id="dfT1" class="playbook-pill t1">Target 1: ₹-- (+1.50%)</span>
+              <span id="dfT2" class="playbook-pill t2">Target 2: ₹-- (+3.00%)</span>
             </div>
           </div>
 
@@ -2828,7 +3057,7 @@
     const h = parent.clientHeight;
     if (w <= 0 || h <= 0) return;
 
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const targetW = Math.round(w * dpr);
     const targetH = Math.round(h * dpr);
     if (canvas.width !== targetW || canvas.height !== targetH) {
@@ -3019,12 +3248,17 @@
     // Zero-delay chart drag & price scale synchronizer
     attachChartDragSync(container, renderDashboardSmcOverlay, _tvChart);
 
+    let _dashboardRoRaf = null;
     const ro = new ResizeObserver(entries => {
       if (!entries || !entries.length || !_tvChart) return;
       const cr = entries[0].contentRect;
       if (cr.width > 20 && cr.height > 20) {
-        _tvChart.applyOptions({ width: cr.width, height: cr.height });
-        requestAnimationFrame(renderDashboardSmcOverlay);
+        if (_dashboardRoRaf) cancelAnimationFrame(_dashboardRoRaf);
+        _dashboardRoRaf = requestAnimationFrame(() => {
+          _tvChart.applyOptions({ width: cr.width, height: cr.height });
+          renderDashboardSmcOverlay();
+          _dashboardRoRaf = null;
+        });
       }
     });
     ro.observe(container);
@@ -3921,11 +4155,11 @@
             t1Val = Number(row.target) || (entryVal * 0.985); // -1.50% Target 1
           }
           tradeLevelsBadge = `
-            <div class="trade-levels-strip" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; font-size:10px; font-family:var(--font-mono);">
-              <span style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; padding:1px 5px; border-radius:3px; font-weight:700;">🎯 Entry ₹${entryVal.toFixed(1)}</span>
-              <span style="background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; padding:1px 5px; border-radius:3px; font-weight:700;">🛑 SL ₹${slVal.toFixed(1)}</span>
-              <span style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:1px 5px; border-radius:3px; font-weight:700;" title="When MFE reaches 0.80%, move SL to Cost (Breakeven)">🔒 BE Lock ₹${beVal.toFixed(1)}</span>
-              <span style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; padding:1px 5px; border-radius:3px; font-weight:800;">🎯 T1 (1.5%) ₹${t1Val.toFixed(1)}</span>
+            <div class="trade-levels-strip">
+              <span class="trade-badge entry">🎯 Entry ₹${entryVal.toFixed(1)}</span>
+              <span class="trade-badge sl">🛑 SL ₹${slVal.toFixed(1)}</span>
+              <span class="trade-badge be" title="When MFE reaches 0.80%, move SL to Cost (Breakeven)">🔒 BE Lock ₹${beVal.toFixed(1)}</span>
+              <span class="trade-badge t1">🎯 T1 (1.5%) ₹${t1Val.toFixed(1)}</span>
             </div>
           `;
         }
@@ -5387,12 +5621,17 @@
     // Zero-delay chart drag & price scale synchronizer
     attachChartDragSync(container, renderVolumeProfileCanvas, _ovChart);
 
+    let _ovRoRaf = null;
     const ro = new ResizeObserver(entries => {
       if (!entries || !entries.length || !_ovChart) return;
       const cr = entries[0].contentRect;
       if (cr.width > 20 && cr.height > 20) {
-        _ovChart.applyOptions({ width: cr.width, height: cr.height });
-        requestAnimationFrame(renderVolumeProfileCanvas);
+        if (_ovRoRaf) cancelAnimationFrame(_ovRoRaf);
+        _ovRoRaf = requestAnimationFrame(() => {
+          _ovChart.applyOptions({ width: cr.width, height: cr.height });
+          renderVolumeProfileCanvas();
+          _ovRoRaf = null;
+        });
       }
     });
     ro.observe(container);
@@ -5604,11 +5843,16 @@
       }
     });
 
+    let _ovCvdRoRaf = null;
     const ro = new ResizeObserver(entries => {
       if (!entries || !entries.length || !_ovCvdChart) return;
       const cr = entries[0].contentRect;
       if (cr.width > 20 && cr.height > 20) {
-        _ovCvdChart.applyOptions({ width: cr.width, height: cr.height });
+        if (_ovCvdRoRaf) cancelAnimationFrame(_ovCvdRoRaf);
+        _ovCvdRoRaf = requestAnimationFrame(() => {
+          _ovCvdChart.applyOptions({ width: cr.width, height: cr.height });
+          _ovCvdRoRaf = null;
+        });
       }
     });
     ro.observe(container);
@@ -5951,7 +6195,7 @@
     const h = parent.clientHeight;
     if (w <= 0 || h <= 0) return;
 
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const targetW = Math.round(w * dpr);
     const targetH = Math.round(h * dpr);
     if (canvas.width !== targetW || canvas.height !== targetH) {
