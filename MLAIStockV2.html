@@ -1021,6 +1021,12 @@
       border-color: var(--blue-border);
     }
 
+    #tabFreshZones.active {
+      background: var(--green-bg);
+      color: #065f46;
+      border-color: var(--green);
+    }
+
     .table-wrapper {
       overflow-x: auto;
       overscroll-behavior-x: contain;
@@ -1634,10 +1640,10 @@
             <button class="tab-pill" type="button" data-scanner-side="bearish" aria-pressed="false">Top Losers</button>
           </div>
           <div class="list-filter-bar" role="group" aria-label="Candidate filters">
-            <button id="filterAll" class="quick-filter-btn active" onclick="setListFilter('all')">All (<span id="cntFilterAll">0</span>)</button>
-            <button id="filterFresh" class="quick-filter-btn early" onclick="setListFilter('fresh')"><span id="filterFreshLabel">🟢 Demand Fresh</span> (<span id="cntFilterFresh">0</span>)</button>
-            <button id="filterEarly" class="quick-filter-btn early" onclick="setListFilter('early')" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:800;" title="Sweet Spot Ignition: Day % between 1.5% and 2.8% with Long Buildup">🎯 Sweet Spot &lt;2.5% (<span id="cntFilterEarly">0</span>)</button>
-            <button id="filterExt" class="quick-filter-btn ext" onclick="setListFilter('extended')" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-weight:600;" title="Stocks already extended (> 4.5%)">⚠️ Extended (<span id="cntFilterExt">0</span>)</button>
+            <button id="filterAll" class="quick-filter-btn" type="button" data-scanner-filter="all" aria-pressed="false">Top Ranked (<span id="cntFilterAll">0</span>)</button>
+            <button id="filterFresh" class="quick-filter-btn early active" type="button" data-scanner-filter="fresh" aria-pressed="true"><span id="filterFreshLabel">🟢 Demand Fresh</span> (<span id="cntFilterFresh">0</span>)</button>
+            <button id="filterEarly" class="quick-filter-btn early" type="button" data-scanner-filter="early" aria-pressed="false" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:800;" title="Sweet Spot Ignition: Day % between 1.5% and 2.8% with Long Buildup">🎯 Sweet Spot &lt;2.5% (<span id="cntFilterEarly">0</span>)</button>
+            <button id="filterExt" class="quick-filter-btn ext" type="button" data-scanner-filter="extended" aria-pressed="false" style="background:#fffbeb; color:#92400e; border:1px solid #fde68a; font-weight:600;" title="Stocks already extended (> 4.5%)">⚠️ Extended (<span id="cntFilterExt">0</span>)</button>
           </div>
           <div class="stock-scroll-list" id="stockScrollList" tabindex="0" role="region" aria-label="Stock candidates">
             <div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">Loading breakout candidates...</div>
@@ -1706,8 +1712,9 @@
         <div class="table-section-head">
           <h2>Futures & Options Scanner | One-Side Rally & Breakout Desk</h2>
           <div class="tab-pills">
-            <button class="tab-pill active" id="tabGainers" type="button" data-scanner-side="bullish" aria-pressed="true">Top Gainers (Bullish)</button>
-            <button class="tab-pill" id="tabLosers" type="button" data-scanner-side="bearish" aria-pressed="false">Top Losers (Bearish)</button>
+            <button class="tab-pill active" id="tabFreshZones" type="button" data-scanner-filter="fresh" aria-pressed="true">Top 10 Demand Fresh</button>
+            <button class="tab-pill" id="tabGainers" type="button" data-scanner-side="bullish" data-scanner-filter="all" aria-pressed="false">Top Gainers (Bullish)</button>
+            <button class="tab-pill" id="tabLosers" type="button" data-scanner-side="bearish" data-scanner-filter="all" aria-pressed="false">Top Losers (Bearish)</button>
           </div>
         </div>
 
@@ -2217,6 +2224,7 @@
   
   let _currentBullish = [];
   let _currentBearish = [];
+  let _displayedScannerRows = [];
   let _activeTab = "bullish";
   let _userSwitchedTab = false;
   let _selectedSymbol = "";
@@ -2283,7 +2291,7 @@
   // Exploratory: still showing every qualifying stock (not capped to 6) so
   // the real, lot-size-filtered count is visible. Set back to 6 to restore
   // the top-6 view.
-  const MAX_DISPLAY_ROWS = 500;
+  const MAX_DISPLAY_ROWS = 10;
   // Any stock with a lot size above this is excluded - matches the server's
   // MAX_ALLOWED_LOT_SIZE so client and server agree on what "too big" means.
   const MAX_LOT_SIZE_DISPLAY = 650;
@@ -2544,33 +2552,30 @@
       return;
     }
 
-    for (const [rows, isBearish] of [[payload.bullish, false], [payload.bearish, true]]) {
-      for (const row of rows || []) {
-        if (row.lot_size && row.lot_size > MAX_LOT_SIZE_DISPLAY) continue;
-        if (row.ltp && (row.ltp > MAX_STOCK_PRICE_DISPLAY || row.ltp < MIN_STOCK_PRICE_DISPLAY)) continue;
-        const eventTime = freshZoneTime(row, isBearish);
-        if (!eventTime || row.is_stale_data || row.is_stale_fallback) continue;
-        if (!(row.should_alert ?? row.bell_rang)) continue;
+    const isBearish = _activeTab === "bearish";
+    for (const row of _displayedScannerRows) {
+      const eventTime = freshZoneTime(row, isBearish);
+      if (!eventTime || row.is_stale_data || row.is_stale_fallback) continue;
+      if (!(row.should_alert ?? row.bell_rang)) continue;
 
-        const alertKey = row.alert_event_id || `${payload.session_date}_${row.symbol}_${isBearish}_${eventTime}`;
-        if (_alertedBreakouts.has(alertKey) || _persistedSeenEventIds.has(alertKey)) continue;
-        _alertedBreakouts.add(alertKey);
-        if (row.alert_event_id) _savePersistedAlertId(row.alert_event_id);
-        if (!_hasEvaluatedInitialBell) continue;
+      const alertKey = row.alert_event_id || `${payload.session_date}_${row.symbol}_${isBearish}_${eventTime}`;
+      if (_alertedBreakouts.has(alertKey) || _persistedSeenEventIds.has(alertKey)) continue;
+      _alertedBreakouts.add(alertKey);
+      if (row.alert_event_id) _savePersistedAlertId(row.alert_event_id);
+      if (!_hasEvaluatedInitialBell) continue;
 
-        playBellRangSound();
-        showStickyToast(row, isBearish);
-        if (row.alert_event_id) {
-          fetch('/api/alerts/ack', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              alert_event_id: row.alert_event_id,
-              symbol: row.symbol,
-              client_id: _getClientId()
-            })
-          }).catch(err => console.warn('Alert ack error:', err));
-        }
+      playBellRangSound();
+      showStickyToast(row, isBearish);
+      if (row.alert_event_id) {
+        fetch('/api/alerts/ack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            alert_event_id: row.alert_event_id,
+            symbol: row.symbol,
+            client_id: _getClientId()
+          })
+        }).catch(err => console.warn('Alert ack error:', err));
       }
     }
     _hasEvaluatedInitialBell = true;
@@ -3689,7 +3694,7 @@
   }
 
   /* ── Early Ignition & Filter Helpers ── */
-  let _currentListFilter = "all";
+  let _currentListFilter = "fresh";
 
   function isEarlyIgnitionRow(r) {
     if (!r) return false;
@@ -3710,21 +3715,7 @@
     return Math.abs(r.percent_change || 0) >= 4.5;
   }
 
-  function setListFilter(type) {
-    _currentListFilter = type;
-    document.querySelectorAll(".quick-filter-btn").forEach(b => b.classList.remove("active"));
-    const buttonIds = { all: "filterAll", fresh: "filterFresh", early: "filterEarly", extended: "filterExt" };
-    const btn = document.getElementById(buttonIds[type]);
-    if (btn) btn.classList.add("active");
-    renderLeftList(_activeTab === "bullish" ? _currentBullish : _currentBearish);
-    document.getElementById("stockScrollList").scrollTop = 0;
-  }
-
-  /* ── Render Left Scroll List ── */
-  function renderLeftList(rows) {
-    const list = document.getElementById("stockScrollList");
-    const badge = document.getElementById("listBadge");
-    if (!list) return;
+  function renderScannerRows(rows) {
     const isBearish = _activeTab === "bearish";
     const hasFreshZone = row => Boolean(freshZoneTime(row, isBearish));
     const freshLabel = document.getElementById("filterFreshLabel");
@@ -3741,40 +3732,52 @@
       return true;
     });
 
-    const earlyCount = baseRows.filter(isEarlyIgnitionRow).length;
-    const extCount = baseRows.filter(isExtendedRow).length;
-
-    const cntAllEl = document.getElementById("cntFilterAll");
-    const cntFreshEl = document.getElementById("cntFilterFresh");
-    const cntEarlyEl = document.getElementById("cntFilterEarly");
-    const cntExtEl = document.getElementById("cntFilterExt");
-    if (cntAllEl) cntAllEl.textContent = String(baseRows.length);
-    const freshRows = baseRows.filter(hasFreshZone);
-    if (cntFreshEl) cntFreshEl.textContent = String(freshRows.length);
-    if (cntEarlyEl) cntEarlyEl.textContent = String(earlyCount);
-    if (cntExtEl) cntExtEl.textContent = String(extCount);
-
-    let displayRows = baseRows;
-    if (_currentListFilter === "fresh") {
-      displayRows = freshRows;
-    } else if (_currentListFilter === "early") {
-      displayRows = baseRows.filter(isEarlyIgnitionRow);
-    } else if (_currentListFilter === "extended") {
-      displayRows = baseRows.filter(isExtendedRow);
+    const groups = {
+      all: baseRows,
+      fresh: baseRows.filter(hasFreshZone),
+      early: baseRows.filter(isEarlyIgnitionRow),
+      extended: baseRows.filter(isExtendedRow),
+    };
+    const counts = {
+      cntFilterAll: groups.all.length,
+      cntFilterFresh: groups.fresh.length,
+      cntFilterEarly: groups.early.length,
+      cntFilterExt: groups.extended.length,
+    };
+    for (const [id, count] of Object.entries(counts)) {
+      const label = document.getElementById(id);
+      if (label) label.textContent = String(Math.min(count, MAX_DISPLAY_ROWS));
     }
-    displayRows = displayRows.slice(0, MAX_DISPLAY_ROWS);
+    const freshTab = document.getElementById("tabFreshZones");
+    if (freshTab) {
+      const zoneName = isBearish ? "Bear OB Fresh" : "Demand Fresh";
+      freshTab.textContent = `Top ${MAX_DISPLAY_ROWS} ${zoneName} (${Math.min(groups.fresh.length, MAX_DISPLAY_ROWS)})`;
+    }
+    const emptyMessages = {
+      all: "No qualifying candidates in this snapshot.",
+      fresh: isBearish ? "No fresh bearish order blocks in this scan." : "No fresh demand zones in this scan.",
+      early: "No candidates currently in the Early Ignition sweet spot.",
+      extended: "No extended candidates in this scan.",
+    };
+    const displayRows = groups[_currentListFilter].slice(0, MAX_DISPLAY_ROWS);
+    const emptyMessage = emptyMessages[_currentListFilter];
+    renderLeftList(displayRows, emptyMessage);
+    renderTable(displayRows, emptyMessage);
+    _displayedScannerRows = displayRows;
+    return displayRows;
+  }
 
-    if (!Array.isArray(displayRows) || displayRows.length === 0) {
-      const msg = _currentListFilter === "fresh" ? "No fresh order blocks on this side."
-        : _currentListFilter === "early"
-        ? "No candidates currently in the 1.5%–2.8% Early Ignition sweet spot."
-        : (_currentListFilter === "extended" ? "No extended candidates (>4.5%)." : "No breakout candidates right now.");
-      list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">${msg}</div>`;
-      if (badge) badge.textContent = "0";
+  /* ── Render Left Scroll List ── */
+  function renderLeftList(displayRows, emptyMessage) {
+    const list = document.getElementById("stockScrollList");
+    if (!list) return;
+    const badge = document.getElementById("listBadge");
+    if (badge) badge.textContent = String(displayRows.length);
+    if (displayRows.length === 0) {
+      list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">${emptyMessage}</div>`;
       return;
     }
-
-    if (badge) badge.textContent = String(displayRows.length);
+    const isBearish = _activeTab === "bearish";
 
     list.innerHTML = displayRows.map((row, idx) => {
       const isUp = (row.percent_change || 0) >= 0;
@@ -3782,8 +3785,9 @@
       const streakMin = row.top5_streak_minutes || 0;
       const isEarly = isEarlyIgnitionRow(row);
       const isExt = isExtendedRow(row);
-      const isDemand = !isBearish && hasFreshZone(row);
-      const isSupply = isBearish && hasFreshZone(row);
+      const hasFreshZone = Boolean(freshZoneTime(row, isBearish));
+      const isDemand = !isBearish && hasFreshZone;
+      const isSupply = isBearish && hasFreshZone;
 
       const streakBadge = (streakMin > 0 && idx < 5)
         ? `<span class="top5-streak-pill ${isUp ? 'green' : 'red'}" style="font-size:9px; padding:0 4px;" title="Continuous time in Top 5 (resets if dropped below rank 5)">⏱️ ${streakMin}m</span>`
@@ -3812,7 +3816,7 @@
       return `
         <div class="stock-card-item ${isSelected ? 'active' : ''} ${isEarly ? 'early-ignition-card' : ''}" data-sym="${row.symbol}" onclick="openDashboardChart('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${row.vc_ranking || 1}, setup:'${row.setup || ""}', is_early_ignition:${Boolean(isEarly)}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <div class="item-left">
-            <span class="item-rank">${row.rank ?? idx + 1}</span>
+            <span class="item-rank" title="Overall scanner rank #${row.rank ?? idx + 1}">${idx + 1}</span>
             <div class="item-names">
               <span class="item-symbol">${row.symbol} ${row.lot_size ? `<span style="font-size:9px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 4px; border-radius:3px; border:1px solid #cbd5e1; margin-left:3px;">Lot ${row.lot_size}</span>` : ""} ${row.is_block_surge ? `<span style="font-size:8px; font-weight:800; background:#f5f3ff; color:#6d28d9; border:1px solid #c4b5fd; padding:1px 4px; border-radius:3px; margin-left:3px;">⚡ BLOCK ${row.block_surge_turnover_cr ? '₹' + row.block_surge_turnover_cr.toFixed(0) + 'Cr' : ''}</span>` : ""}</span>
               <div style="display:flex; align-items:center; gap:4px; margin-top:2px; flex-wrap:wrap;">
@@ -3838,26 +3842,12 @@
   }
 
   /* ── Render Bottom Detail Table ── */
-  function renderTable(rows) {
+  function renderTable(rows, emptyMessage) {
     const body = document.getElementById("vcTableBody");
     if (!body) return;
 
-    rows = (rows || []).filter(r => {
-      if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
-      if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
-      const st = (r.five_min_status || "").toLowerCase();
-      const score = r.score || r.rally_score || 0;
-      // Anti-Disappear: Keep breakouts, near BO/BD, and high-conviction runners (score >= 70).
-      // Only drop low-conviction consolidating filler.
-      if (st === "consolidating" && score < 70 && !r.is_breakout && !r.breakout_time) return false;
-      return true;
-    }).slice(0, MAX_DISPLAY_ROWS);
-
-    if (!Array.isArray(rows) || rows.length === 0) {
-      const opposite = _activeTab === "bullish" ? _currentBearish : _currentBullish;
-      const label = _activeTab === "bullish" ? "bullish" : "bearish";
-      const hint = opposite.length ? ` Check Top ${_activeTab === "bullish" ? "Losers" : "Gainers"} (${opposite.length} candidates).` : "";
-      body.innerHTML = `<tr><td colspan="10" style="text-align:left; padding:16px; color:var(--text-muted);">No qualifying ${label} candidates in this snapshot.${hint}</td></tr>`;
+    if (rows.length === 0) {
+      body.innerHTML = `<tr><td colspan="10" style="text-align:left; padding:16px; color:var(--text-muted);">${emptyMessage}</td></tr>`;
       return;
     }
 
@@ -4456,11 +4446,10 @@
         _activeTab = "bullish";
       }
     }
-    syncScannerSideButtons();
+    syncScannerViewButtons();
 
     const currentRows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
-    renderLeftList(currentRows);
-    renderTable(currentRows);
+    const visibleRows = renderScannerRows(currentRows);
 
     // Evaluate Bell Alert (Only enabled when actual breakout called and all priority meets)
     checkAndTriggerBellAlerts(payload);
@@ -4470,7 +4459,7 @@
       const active = currentRows.find(x => x.symbol === _selectedSymbol);
       if (active) selectStock(active.symbol, active);
       else if (_selectedSymbol && previousSide === _activeTab) selectStock(_selectedSymbol, _selectedStockMeta);
-      else if (currentRows.length) selectStock(currentRows[0].symbol, currentRows[0]);
+      else if (visibleRows.length) selectStock(visibleRows[0].symbol, visibleRows[0]);
       else if (!_selectedSymbol) selectStock("NIFTY50");
     }
     _lastScannerPayload = payload;
@@ -4589,25 +4578,33 @@
   }
 
   /* ── Tab Switchers ── */
-  const scannerSideButtons = document.querySelectorAll("[data-scanner-side]");
-  function syncScannerSideButtons() {
-    scannerSideButtons.forEach(button => {
-      const active = button.dataset.scannerSide === _activeTab;
+  const scannerViewButtons = document.querySelectorAll("[data-scanner-side], [data-scanner-filter]");
+  function syncScannerViewButtons() {
+    scannerViewButtons.forEach(button => {
+      const { scannerSide, scannerFilter } = button.dataset;
+      const active = (!scannerSide || scannerSide === _activeTab)
+        && (!scannerFilter || scannerFilter === _currentListFilter);
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
   }
-  scannerSideButtons.forEach(button => {
+  scannerViewButtons.forEach(button => {
     button.addEventListener("click", () => {
-      _userSwitchedTab = true;
-      if (_activeTab === button.dataset.scannerSide) return;
-      _activeTab = button.dataset.scannerSide;
-      syncScannerSideButtons();
+      const { scannerSide, scannerFilter } = button.dataset;
+      const nextSide = scannerSide || _activeTab;
+      const nextFilter = scannerFilter || _currentListFilter;
+      if (scannerSide) _userSwitchedTab = true;
+      if (nextSide === _activeTab && nextFilter === _currentListFilter) return;
+      _activeTab = nextSide;
+      _currentListFilter = nextFilter;
+      syncScannerViewButtons();
       const rows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
-      renderLeftList(rows);
-      document.getElementById("stockScrollList").scrollTop = 0;
-      renderTable(rows);
-      if (rows.length) selectStock(rows[0].symbol, rows[0]);
+      const visibleRows = renderScannerRows(rows);
+      const list = document.getElementById("stockScrollList");
+      if (list) list.scrollTop = 0;
+      if (visibleRows.length && !visibleRows.some(row => row.symbol === _selectedSymbol)) {
+        selectStock(visibleRows[0].symbol, visibleRows[0]);
+      }
     });
   });
 
@@ -5114,8 +5111,8 @@
             }
 
             const isPE = item.side === "bearish";
-            const rows = isPE ? _currentBearish : _currentBullish;
-            const live = (rows || []).find(row => row.symbol === item.symbol);
+            if (isPE !== (_activeTab === "bearish")) return;
+            const live = _displayedScannerRows.find(row => row.symbol === item.symbol);
             const eventTime = freshZoneTime(item, isPE);
             if (!_hasEvaluatedInitialBell || !isMarketHours() || !eventTime || !live
                 || live.is_stale_data || live.is_stale_fallback
