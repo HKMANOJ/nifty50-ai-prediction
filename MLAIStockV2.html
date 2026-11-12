@@ -1688,6 +1688,21 @@
             </div>
           </div>
 
+          <!-- High-Conviction Demand Fresh Trade Playbook Bar -->
+          <div id="chartDemandFreshBanner" style="display:none; margin: 4px 14px 6px; padding: 7px 12px; background: linear-gradient(90deg, #f0fdf4, #ecfdf5); border: 1px solid #34d399; border-radius: 6px; font-size: 11px; color: #065f46; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:14px;">🎯</span>
+              <span><strong>TOP 10 DEMAND FRESH PLAYBOOK:</strong> <span id="dfZoneDesc">High-Conviction Institutional Zone</span></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; font-weight:700; font-family:var(--font-mono); font-size:11px;">
+              <span id="dfEntry" style="background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; border:1px solid #86efac;">Entry: ₹--</span>
+              <span id="dfSl" style="background:#fee2e2; color:#b91c1c; padding:2px 6px; border-radius:4px; border:1px solid #fca5a5;">SL: ₹-- (-0.7%)</span>
+              <span id="dfBeLock" style="background:#eff6ff; color:#1d4ed8; padding:2px 6px; border-radius:4px; border:1px solid #bfdbfe;" title="When MFE reaches +0.80%, move SL to Cost (Breakeven)">🔒 BE Lock: ₹-- (+0.80%)</span>
+              <span id="dfT1" style="background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; border:1px solid #86efac;">Target 1: ₹-- (+1.50%)</span>
+              <span id="dfT2" style="background:#d1fae5; color:#047857; padding:2px 6px; border-radius:4px; border:1px solid #6ee7b7;">Target 2: ₹-- (+3.00%)</span>
+            </div>
+          </div>
+
           <!-- TradingView Lightweight Chart Container with SMC Canvas Overlay -->
           <div id="tvCandleWrapper" class="dashboard-chart-wrapper">
             <canvas id="tvSmcCanvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10;"></canvas>
@@ -3170,8 +3185,45 @@
         ignitionChip.style.display = "none";
       }
     }
+
+    // High-Conviction Demand Fresh Trade Playbook Bar
+    const dfBanner = document.getElementById("chartDemandFreshBanner");
+    const allRowsForDF = [...(_currentBullish || []), ...(_currentBearish || [])];
+    const liveRowForDF = allRowsForDF.find(x => x.symbol === symbol) || meta;
+    const isBearish = _activeTab === "bearish";
+    const hasFreshDF = Boolean(freshZoneTime(liveRowForDF, isBearish) || liveRowForDF.is_demand_fresh || liveRowForDF.is_supply_zone);
+
+    if (dfBanner) {
+      if (hasFreshDF && liveRowForDF && (liveRowForDF.ltp || meta.ltp)) {
+        dfBanner.style.display = "flex";
+        const ltpVal = Number(liveRowForDF.ltp || meta.ltp);
+        const entryVal = Number(liveRowForDF.entry) || ltpVal;
+        const isUp = (liveRowForDF.percent_change ?? meta.percent_change ?? 0) >= 0;
+        const slVal = Number(liveRowForDF.stop_loss) || (isUp ? entryVal * 0.993 : entryVal * 1.007);
+        const beVal = isUp ? entryVal * 1.008 : entryVal * 0.992;
+        const t1Val = Number(liveRowForDF.target) || (isUp ? entryVal * 1.015 : entryVal * 0.985);
+        const t2Val = isUp ? entryVal * 1.030 : entryVal * 0.970;
+
+        const dfZoneDesc = document.getElementById("dfZoneDesc");
+        const dfEntry = document.getElementById("dfEntry");
+        const dfSl = document.getElementById("dfSl");
+        const dfBeLock = document.getElementById("dfBeLock");
+        const dfT1 = document.getElementById("dfT1");
+        const dfT2 = document.getElementById("dfT2");
+
+        if (dfZoneDesc) dfZoneDesc.textContent = isUp ? (liveRowForDF.demand_zone ? `Demand Zone ${liveRowForDF.demand_zone}` : "Institutional Base Defended") : (liveRowForDF.supply_zone ? `Bear OB ${liveRowForDF.supply_zone}` : "Supply Block Defended");
+        if (dfEntry) dfEntry.textContent = `Entry: ₹${entryVal.toFixed(1)}`;
+        if (dfSl) dfSl.textContent = `SL: ₹${slVal.toFixed(1)}`;
+        if (dfBeLock) dfBeLock.textContent = `🔒 BE Lock: ₹${beVal.toFixed(1)} (${isUp ? '+0.8%' : '-0.8%'})`;
+        if (dfT1) dfT1.textContent = `T1: ₹${t1Val.toFixed(1)} (${isUp ? '+1.5%' : '-1.5%'})`;
+        if (dfT2) dfT2.textContent = `T2: ₹${t2Val.toFixed(1)} (${isUp ? '+3.0%' : '-3.0%'})`;
+      } else {
+        dfBanner.style.display = "none";
+      }
+    }
+
     if (playbookBanner) {
-      if (isEarly && meta.ltp) {
+      if (!hasFreshDF && isEarly && meta.ltp) {
         playbookBanner.style.display = "flex";
         const ltpVal = Number(meta.ltp);
         const entryLow = (ltpVal * 0.997).toFixed(1);
@@ -3717,6 +3769,37 @@
     return Math.abs(r.percent_change || 0) >= 4.5;
   }
 
+  /* ── Anti-Flicker Session Trade Lock ── */
+  const _sessionQualifiedDemandFreshMap = new Map();
+
+  function getSessionLockedFreshRows(baseRows, isBearish) {
+    const hasFreshZone = row => Boolean(freshZoneTime(row, isBearish) || (isBearish ? row.is_supply_zone : row.is_demand_fresh));
+    for (const r of baseRows) {
+      if (hasFreshZone(r) && r.symbol) {
+        if (!_sessionQualifiedDemandFreshMap.has(r.symbol)) {
+          _sessionQualifiedDemandFreshMap.set(r.symbol, { ...r, sessionLockedAt: Date.now() });
+        }
+      }
+    }
+    const persistent = [];
+    for (const [sym, saved] of _sessionQualifiedDemandFreshMap.entries()) {
+      const live = baseRows.find(x => x.symbol === sym);
+      if (live) {
+        if (live.is_failed_trend) {
+          _sessionQualifiedDemandFreshMap.delete(sym);
+          continue;
+        }
+        persistent.push({ ...saved, ...live });
+      } else {
+        const savedSideIsBear = (saved.percent_change || 0) < 0 || saved.is_supply_zone;
+        if (savedSideIsBear === isBearish) {
+          persistent.push(saved);
+        }
+      }
+    }
+    return persistent.length ? persistent : baseRows.filter(hasFreshZone);
+  }
+
   function renderScannerRows(rows) {
     const isBearish = _activeTab === "bearish";
     const hasFreshZone = row => Boolean(freshZoneTime(row, isBearish));
@@ -3736,7 +3819,7 @@
 
     const groups = {
       all: baseRows,
-      fresh: baseRows.filter(hasFreshZone),
+      fresh: getSessionLockedFreshRows(baseRows, isBearish),
       early: baseRows.filter(isEarlyIgnitionRow),
       extended: baseRows.filter(isExtendedRow),
     };
@@ -3941,6 +4024,31 @@
         ? `<span class="top5-streak-pill ${isUp ? 'green' : 'red'}" title="Continuous time in Top 5 (resets if dropped below rank 5)">⏱️ ${streakMin}m</span>`
         : "";
 
+      // Instant Trade Levels Strip on Table: Displays Entry, SL, BE Lock (+0.80%), and T1 (+1.50%)
+      let tradeLevelsBadge = "";
+      const ltpVal = Number(row.ltp) || 0;
+      const entryVal = Number(row.entry) || ltpVal;
+      if (entryVal > 0) {
+        let slVal, beVal, t1Val;
+        if (isUp) {
+          slVal = Number(row.stop_loss) || (entryVal * 0.993);
+          beVal = entryVal * 1.008; // +0.80% Breakeven Lock
+          t1Val = Number(row.target) || (entryVal * 1.015); // +1.50% Target 1
+        } else {
+          slVal = Number(row.stop_loss) || (entryVal * 1.007);
+          beVal = entryVal * 0.992; // -0.80% Breakeven Lock
+          t1Val = Number(row.target) || (entryVal * 0.985); // -1.50% Target 1
+        }
+        tradeLevelsBadge = `
+          <div class="trade-levels-strip" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; font-size:10px; font-family:var(--font-mono);">
+            <span style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; padding:1px 5px; border-radius:3px; font-weight:700;">🎯 Entry ₹${entryVal.toFixed(1)}</span>
+            <span style="background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; padding:1px 5px; border-radius:3px; font-weight:700;">🛑 SL ₹${slVal.toFixed(1)}</span>
+            <span style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:1px 5px; border-radius:3px; font-weight:700;" title="When MFE reaches 0.80%, move SL to Cost (Breakeven)">🔒 BE Lock ₹${beVal.toFixed(1)}</span>
+            <span style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; padding:1px 5px; border-radius:3px; font-weight:800;">🎯 T1 (1.5%) ₹${t1Val.toFixed(1)}</span>
+          </div>
+        `;
+      }
+
       return `
         <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="openDashboardChart('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono);">${idx + 1}</td>
@@ -3948,6 +4056,7 @@
             <div class="stock-col">
               <span class="sym">${row.symbol} ${row.lot_size ? `<span style="font-size:10px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 5px; border-radius:3px; border:1px solid #cbd5e1; margin-left:5px;">Lot ${row.lot_size}</span>` : ""}</span>
               <span class="sub">${row.setup || "F&O Active"}${streakBadge}</span>
+              ${tradeLevelsBadge}
             </div>
           </td>
           <td style="font-weight:700; font-family:var(--font-mono); color:${(row.money_flow_percentage ?? 0) >= 70 ? 'var(--green)' : (row.money_flow_percentage ?? 0) >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${(row.money_flow_percentage ?? 0).toFixed(1)}%</td>
