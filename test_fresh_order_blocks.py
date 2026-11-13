@@ -132,6 +132,28 @@ class FreshOrderBlockTests(unittest.TestCase):
         self.assertEqual(result.alert_created_at, "10:15 AM")
         self.assertEqual(result.alert_count, 2)
 
+    def test_cached_index_fresh_ob_structure(self):
+        from serve_nifty50_app import _get_cached_index_fresh_ob, _attach_fresh_ob_to_index_context, _INDEX_OB_CACHE
+        _INDEX_OB_CACHE["ts"] = 0.0  # invalidate
+        bars = demand_candles()
+        with patch("stock_suggestion_index.fetch_5m_candles_pipeline", return_value={"completed_candles": bars}):
+            res = _get_cached_index_fresh_ob("NIFTY 50")
+            if res:
+                self.assertIn("type", res)
+                self.assertIn("status", res)
+                self.assertIn("formation_time_str", res)
+
+        mock_payload = {
+            "ok": True,
+            "index_context": {
+                "NIFTY 50": {"ltp": 25000.0},
+                "SENSEX": {"ltp": 81000.0}
+            }
+        }
+        _attach_fresh_ob_to_index_context(mock_payload)
+        self.assertIn("fresh_ob", mock_payload["index_context"]["NIFTY 50"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

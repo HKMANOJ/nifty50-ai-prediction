@@ -314,6 +314,7 @@
     }
 
     .clickable-index-chip {
+      position: relative;
       cursor: pointer;
       transition: all 0.15s ease-in-out;
       user-select: none;
@@ -1173,6 +1174,73 @@
       to { transform: translateX(0); opacity: 1; }
     }
 
+    /* ── Distinctive Sticky Note Popup for Major Index Alerts (NIFTY 50 & SENSEX) ── */
+    .toast.index-toast {
+      max-width: 360px;
+      border-radius: 10px;
+      padding: 13px 16px;
+      box-shadow: 0 12px 24px -4px rgba(30, 58, 138, 0.16), 0 4px 8px -2px rgba(30, 58, 138, 0.08);
+      position: relative;
+    }
+    .toast.index-toast.bullish {
+      background: linear-gradient(135deg, #ecfdf5 0%, #e0e7ff 100%);
+      border: 1.5px solid #3b82f6;
+      border-left: 6px solid #059669;
+    }
+    .toast.index-toast.bearish {
+      background: linear-gradient(135deg, #fef2f2 0%, #fae8ff 100%);
+      border: 1.5px solid #8b5cf6;
+      border-left: 6px solid #dc2626;
+    }
+    .toast-index-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-bottom: 5px;
+    }
+    .toast.index-toast.bullish .toast-index-badge {
+      background: #1e3a8a;
+      color: #ffffff;
+    }
+    .toast.index-toast.bearish .toast-index-badge {
+      background: #581c87;
+      color: #ffffff;
+    }
+
+    /* Pulsing red dot for NIFTY / SENSEX unread setup alerts */
+    .index-alert-dot {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 0 1px #dc2626, 0 0 8px rgba(239, 68, 68, 0.9);
+      animation: indexDotPulse 1.1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      pointer-events: none;
+      z-index: 10;
+    }
+    @keyframes indexDotPulse {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+        box-shadow: 0 0 0 1px #dc2626, 0 0 8px rgba(239, 68, 68, 0.9);
+      }
+      50% {
+        transform: scale(1.35);
+        opacity: 0.75;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4), 0 0 12px rgba(239, 68, 68, 1);
+      }
+    }
+
     /* Nav-item unread dot for Top 5 Eligible - stays lit (and pulsing) from
        any tab until the user actually opens that view, so a new addition
        isn't missed just because you're looking at the Dashboard instead. */
@@ -1807,6 +1875,7 @@
         </button>
         <div class="navbar-ticker">
           <div class="ticker-chip up clickable-index-chip" id="niftyTickerChip" onclick="openStockInOverview('NIFTY50')" title="Click to open interactive 5m SMC chart for NIFTY 50 in Stock Overview">
+            <span class="index-alert-dot" id="niftyAlertDot" style="display:none;" title="Fresh Institutional Setup! Click to view chart"></span>
             <span style="display:inline-flex; align-items:center; gap:4px;">📊 NIFTY 50</span>
             <span class="val" id="niftyVal">--</span>
           </div>
@@ -1815,6 +1884,7 @@
             <span class="val" id="bankVal">--</span>
           </div>
           <div class="ticker-chip up clickable-index-chip" id="sensexTickerChip" onclick="openStockInOverview('SENSEX')" title="Click to open interactive 5m SMC chart for SENSEX in Stock Overview">
+            <span class="index-alert-dot" id="sensexAlertDot" style="display:none;" title="Fresh Institutional Setup! Click to view chart"></span>
             <span style="display:inline-flex; align-items:center; gap:4px;">📈 SENSEX</span>
             <span class="val" id="sensexVal">--</span>
           </div>
@@ -2899,6 +2969,173 @@
         };
       } catch(e) {}
     }
+  }
+
+  // ── Institutional Setup Alerts & Persistent Red Dots for Major Indices (NIFTY & SENSEX) ──
+  let _hasEvaluatedInitialIndex = false;
+  const _alertedIndexBases = new Set();
+  const _unreadIndexAlerts = { NIFTY: false, SENSEX: false };
+
+  function setIndexAlertDot(idxKey) {
+    const k = String(idxKey || "").toUpperCase();
+    if (k.includes("NIFTY")) {
+      _unreadIndexAlerts.NIFTY = true;
+      const dot = document.getElementById("niftyAlertDot");
+      if (dot) dot.style.display = "inline-block";
+    }
+    if (k.includes("SENSEX") || k.includes("BSESN")) {
+      _unreadIndexAlerts.SENSEX = true;
+      const dot = document.getElementById("sensexAlertDot");
+      if (dot) dot.style.display = "inline-block";
+    }
+  }
+
+  function clearIndexAlertDot(idxKey) {
+    const k = String(idxKey || "").toUpperCase();
+    if (k.includes("NIFTY")) {
+      _unreadIndexAlerts.NIFTY = false;
+      const dot = document.getElementById("niftyAlertDot");
+      if (dot) dot.style.display = "none";
+    }
+    if (k.includes("SENSEX") || k.includes("BSESN")) {
+      _unreadIndexAlerts.SENSEX = false;
+      const dot = document.getElementById("sensexAlertDot");
+      if (dot) dot.style.display = "none";
+    }
+  }
+
+  function showIndexStickyToast(indexName, ob, ltp, force = false) {
+    const container = document.getElementById("toastContainer");
+    if (!container || !indexName || !ob) return;
+
+    const norm = String(indexName).toUpperCase();
+    const isNifty = norm.includes("NIFTY");
+    const symCode = isNifty ? "NIFTY50" : "SENSEX";
+    const displayName = isNifty ? "NIFTY 50" : "SENSEX";
+
+    const isBull = (ob.type || "").toUpperCase() === "BULLISH" || (ob.label || "").toUpperCase().includes("DEMAND");
+    const toastType = isBull ? "bullish" : "bearish";
+    const timeDisplay = ob.formation_time_str || "";
+
+    const existing = container.querySelector(`.toast[data-index="${symCode}"]`);
+    if (existing) existing.remove();
+
+    const toast = document.createElement("div");
+    toast.className = `toast index-toast ${toastType}`;
+    toast.setAttribute("data-index", symCode);
+    toast.style.cursor = "pointer";
+
+    const statusTitle = isBull ? `🟢 DEMAND · FRESH ${timeDisplay}` : `🔴 BEAR OB · FRESH ${timeDisplay}`;
+    const badgeText = `🏛️ MAJOR BENCHMARK · ${displayName}`;
+    const zoneStr = (ob.bottom != null && ob.top != null) ? `₹${n(ob.bottom)} - ₹${n(ob.top)}` : "";
+    const ltpStr = ltp ? `₹${n(ltp)}` : "--";
+
+    toast.innerHTML = `
+      <div style="flex:1;">
+        <div class="toast-index-badge">${badgeText}</div>
+        <div class="toast-title ${toastType}" style="font-size:13.5px; font-weight:800; margin-bottom:3px;">
+          🔔 ${displayName} - ${statusTitle}
+        </div>
+        <div style="font-size:10px; font-weight:800; color:${isBull ? '#065f46' : '#991b1b'}; background:${isBull ? '#d1fae5' : '#fee2e2'}; border:1px solid ${isBull ? '#6ee7b7' : '#fca5a5'}; border-radius:4px; padding:2px 6px; margin:2px 0; display:inline-block;">
+          ${isBull ? '🛡️ DEMAND FRESH BASE DEFENDED · LOW-RISK INDEX REVERSAL' : '⚡ INSTITUTIONAL BEAR OB REJECTION · INDEX SUPPLY CEILING'}
+        </div>
+        <div class="toast-desc" style="font-size:11px; margin-top:3px; color:#334155;">
+          ${zoneStr ? `<b>Base Zone: ${zoneStr}</b><br/>` : ''}
+          LTP: <b>${ltpStr}</b> · Formation: <b>${timeDisplay || '--'}</b><br/>
+          <span style="color:#2563eb; font-weight:700;">👉 Click to open interactive 5m SMC chart</span>
+        </div>
+      </div>
+      <button class="toast-close" title="Dismiss">✖</button>
+    `;
+
+    toast.addEventListener("click", (evt) => {
+      if (evt.target && evt.target.classList.contains("toast-close")) {
+        toast.remove();
+      } else {
+        clearIndexAlertDot(symCode);
+        if (typeof openStockInOverview === "function") {
+          openStockInOverview(symCode);
+        }
+      }
+    });
+
+    container.appendChild(toast);
+
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        const notif = new Notification(`${statusTitle}: ${displayName}`, {
+          body: `LTP: ${ltpStr} | Zone: ${zoneStr}\nMajor benchmark setup on 5m chart. Click to open.`,
+          icon: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
+          tag: `index_${symCode}`
+        });
+        notif.onclick = () => {
+          window.focus();
+          clearIndexAlertDot(symCode);
+          if (typeof openStockInOverview === "function") openStockInOverview(symCode);
+        };
+      } catch(e) {}
+    }
+  }
+
+  function checkAndTriggerIndexAlerts(indexContext, force = false) {
+    if (!indexContext) return;
+    const isMarket = typeof isMarketHours === "function" ? isMarketHours() : true;
+    if (!force && !isMarket) {
+      _hasEvaluatedInitialIndex = true;
+      return;
+    }
+
+    const targets = [
+      { name: "NIFTY 50", code: "NIFTY50", key: "NIFTY" },
+      { name: "SENSEX", code: "SENSEX", key: "SENSEX" }
+    ];
+
+    targets.forEach(({ name, code, key }) => {
+      const data = indexContext[name] || (key === "SENSEX" ? indexContext["BSE SENSEX"] : null);
+      if (!data || !data.fresh_ob) return;
+      const ob = data.fresh_ob;
+      if (ob.status !== "Fresh") return;
+
+      const timeStr = ob.formation_time_str || "";
+      const baseKey = `${key}_${ob.label || ob.type}_${timeStr}_${ob.time || ''}`;
+
+      if (!force) {
+        // STRICT 60-SECOND REAL-TIME TIMELINE LOCK:
+        // Index alert MUST only ring within <= 60 seconds of candle formation.
+        const ageSec = getEventAgeSeconds(timeStr, _lastScannerPayload);
+        if (ageSec < 0 || ageSec > 60) {
+          _alertedIndexBases.add(baseKey);
+          return;
+        }
+
+        // Avoid firing alerts repeatedly for the same base
+        if (_alertedIndexBases.has(baseKey)) return;
+
+        // If this is the initial load, record historical bases and do not fire
+        if (!_hasEvaluatedInitialIndex) {
+          _alertedIndexBases.add(baseKey);
+          return;
+        }
+      }
+
+      _alertedIndexBases.add(baseKey);
+
+      // 1. Play identical bell rang sound
+      playBellRangSound();
+
+      // 2. Show distinct color index sticky note popup
+      showIndexStickyToast(name, ob, data.ltp, force);
+
+      // 3. Put persistent red dot on index navbar chip until opened
+      setIndexAlertDot(key);
+
+      // 4. Voice announcement
+      const isBull = (ob.type || "").toUpperCase() === "BULLISH" || (ob.label || "").toUpperCase().includes("DEMAND");
+      const vocalType = isBull ? "Demand Fresh" : "Bear OB Fresh";
+      speakVoiceAlert(`${name} ${vocalType} formed at ${timeStr}`);
+    });
+
+    _hasEvaluatedInitialIndex = true;
   }
 
   function checkAndTriggerBellAlerts(payload) {
@@ -5379,7 +5616,7 @@
     }
 
     const testBellBtn = document.getElementById("testBellBtn");
-    let _testTogglePE = false;
+    let _testCycleStep = 0;
     if (testBellBtn) {
       testBellBtn.addEventListener("click", () => {
         unlockAudio();
@@ -5387,35 +5624,78 @@
           try { Notification.requestPermission(); } catch(e) {}
         }
         playBellRangSound();
-        _testTogglePE = !_testTogglePE;
-        const testSym = _testTogglePE ? "DIXON" : "ATHERENERG";
-        const testLtp = _testTogglePE ? 14100.0 : 1845.0;
-        showStickyToast({
-          symbol: testSym,
-          breakout_time: _testTogglePE ? "10:05 AM" : "10:20 AM",
-          demand_fresh_time: "02:05 PM",
-          supply_zone_time: "01:45 PM",
-          score: 100,
-          one_side_rally_score: 100,
-          status: "Priority Rally",
-          lot_size: _testTogglePE ? 50 : 375,
-          entry: testLtp,
-          ltp: testLtp,
-          stop_loss: _testTogglePE ? 14350.0 : 1828.0,
-          target: _testTogglePE ? 13650.0 : 1920.0,
-          vc_ranking: _testTogglePE ? 3.8 : 6.0,
-          range_position_percent: _testTogglePE ? 14.0 : 83.0,
-          is_breakout: true,
-          is_demand_fresh: !_testTogglePE,
-          demand_zone: "₹1840.0-₹1846.0",
-          is_supply_zone: _testTogglePE,
-          supply_zone: "₹14150.0-₹14200.0"
-        }, _testTogglePE, true);
+        _testCycleStep = (_testCycleStep + 1) % 4;
 
-        if (!_testTogglePE) {
+        if (_testCycleStep === 1) {
+          // Test 1: Stock Bullish Demand Fresh
+          const testSym = "ATHERENERG";
+          const testLtp = 1845.0;
+          showStickyToast({
+            symbol: testSym,
+            breakout_time: "10:20 AM",
+            demand_fresh_time: "02:05 PM",
+            score: 100,
+            one_side_rally_score: 100,
+            status: "Priority Rally",
+            lot_size: 375,
+            entry: testLtp,
+            ltp: testLtp,
+            stop_loss: 1828.0,
+            target: 1920.0,
+            vc_ranking: 6.0,
+            range_position_percent: 83.0,
+            is_breakout: true,
+            is_demand_fresh: true,
+            demand_zone: "₹1840.0-₹1846.0"
+          }, false, true);
           speakVoiceAlert(`Demand Fresh on ${testSym} at 02:05 PM at ${Math.round(testLtp)}`);
-        } else {
+        } else if (_testCycleStep === 2) {
+          // Test 2: Stock Bearish Bear OB Fresh
+          const testSym = "DIXON";
+          const testLtp = 14100.0;
+          showStickyToast({
+            symbol: testSym,
+            breakout_time: "10:05 AM",
+            supply_zone_time: "01:45 PM",
+            score: 100,
+            one_side_rally_score: 100,
+            status: "Priority Rally",
+            lot_size: 50,
+            entry: testLtp,
+            ltp: testLtp,
+            stop_loss: 14350.0,
+            target: 13650.0,
+            vc_ranking: 3.8,
+            range_position_percent: 14.0,
+            is_breakout: true,
+            is_supply_zone: true,
+            supply_zone: "₹14150.0-₹14200.0"
+          }, true, true);
           speakVoiceAlert(`Bear OB Fresh on ${testSym} at 01:45 PM at ${Math.round(testLtp)}`);
+        } else if (_testCycleStep === 3) {
+          // Test 3: Major Benchmark NIFTY 50 Alert with Red Dot
+          showIndexStickyToast("NIFTY 50", {
+            type: "BULLISH",
+            label: "DEMAND",
+            top: 25112.0,
+            bottom: 25097.1,
+            status: "Fresh",
+            formation_time_str: "11:20 AM"
+          }, 25144.3, true);
+          setIndexAlertDot("NIFTY");
+          speakVoiceAlert("NIFTY 50 Demand Fresh formed at 11:20 AM");
+        } else {
+          // Test 4: Major Benchmark SENSEX Alert with Red Dot
+          showIndexStickyToast("SENSEX", {
+            type: "BEARISH",
+            label: "BEAR OB",
+            top: 81879.51,
+            bottom: 81822.68,
+            status: "Fresh",
+            formation_time_str: "10:50 AM"
+          }, 81592.45, true);
+          setIndexAlertDot("SENSEX");
+          speakVoiceAlert("SENSEX Bear OB Fresh formed at 10:50 AM");
         }
       });
     }
@@ -5644,6 +5924,9 @@
       if (_sectorPayload) {
         _sectorPayload.index_context = d.index_context;
       }
+      if (typeof checkAndTriggerIndexAlerts === "function") {
+        checkAndTriggerIndexAlerts(d.index_context, false);
+      }
     } catch(e) { /* silent fail — stale value stays */ }
   }
 
@@ -5865,6 +6148,9 @@
             snxEl.textContent = `${ltpStr}(${pct(snx.percent_change)})`;
             snxEl.style.color = (snx.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
           }
+          if (typeof checkAndTriggerIndexAlerts === "function") {
+            checkAndTriggerIndexAlerts(msg.index_context, false);
+          }
         }
       } catch (err) {
         console.warn("[WS message parse error]", err);
@@ -6007,6 +6293,9 @@
   function openStockInOverview(symbol) {
     if (!symbol) symbol = _selectedSymbol || "BRITANNIA";
     _overviewSymbol = symbol.toUpperCase().trim();
+    if (typeof clearIndexAlertDot === "function") {
+      clearIndexAlertDot(_overviewSymbol);
+    }
     switchView("overview");
   }
 
@@ -6852,6 +7141,9 @@
   async function loadStockOverview(symbol, options = {}) {
     if (!symbol) return;
     _overviewSymbol = symbol.toUpperCase().trim();
+    if (typeof clearIndexAlertDot === "function") {
+      clearIndexAlertDot(_overviewSymbol);
+    }
     initOverviewChart();
 
     // Subscribe WebSocket to this symbol so live ticks and candles stream immediately

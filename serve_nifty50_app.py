@@ -62,6 +62,68 @@ _SCAN_STATE: dict[str, Any] = {"ts": 0.0, "payload": None, "signature": None}
 _CLOSED_SESSION_RECOVERY_LOCK = threading.Lock()
 _INDEX_QUOTE_LOCK = threading.Lock()
 _INDEX_QUOTES: dict[str, Any] = {"ts": 0.0, "quotes": {}}
+_INDEX_OB_CACHE: dict[str, Any] = {"ts": 0.0, "obs": {}}
+
+
+def _get_cached_index_fresh_ob(symbol: str) -> dict[str, Any] | None:
+    """Computes and caches real-time active Fresh Order Blocks for NIFTY 50 and SENSEX."""
+    now_m = time.monotonic()
+    if now_m - _INDEX_OB_CACHE["ts"] > 15:
+        from stock_suggestion_index import fetch_5m_candles_pipeline, INDIA_TZ
+        from smc_volume_profile_engine import detect_order_blocks_and_structure
+        new_obs: dict[str, Any] = {}
+        for sym_key, sym_code in [("NIFTY 50", "NIFTY50"), ("SENSEX", "SENSEX")]:
+            try:
+                res = fetch_5m_candles_pipeline(sym_code, full_range=True)
+                candles = res.get("completed_candles") or []
+                if not candles:
+                    continue
+                all_days = [datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() for c in candles]
+                last_day = max(all_days) if all_days else None
+                today_completed = [
+                    c for c in candles
+                    if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == last_day
+                ] or candles
+                ob_res = detect_order_blocks_and_structure(today_completed)
+                raw_obs = ob_res.get("order_blocks", [])
+                today_fresh = [
+                    ob for ob in raw_obs
+                    if ob.get("status") == "Fresh" and not ob.get("mitigated")
+                    and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == last_day
+                ]
+                if today_fresh:
+                    latest = today_fresh[-1]
+                    f_time = latest.get("formation_time") or latest.get("time")
+                    dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
+                    new_obs[sym_key] = {
+                        "type": latest.get("type"),
+                        "label": latest.get("label"),
+                        "top": latest.get("top"),
+                        "bottom": latest.get("bottom"),
+                        "status": latest.get("status"),
+                        "time": latest.get("time"),
+                        "formation_time": f_time,
+                        "formation_time_str": dt.strftime("%I:%M %p"),
+                    }
+            except Exception:
+                pass
+        _INDEX_OB_CACHE["obs"] = new_obs
+        _INDEX_OB_CACHE["ts"] = now_m
+
+    return _INDEX_OB_CACHE["obs"].get(symbol)
+
+
+def _attach_fresh_ob_to_index_context(payload: dict[str, Any]) -> None:
+    """Attaches active Fresh Order Blocks for NIFTY 50 and SENSEX into payload index_context."""
+    if not isinstance(payload, dict):
+        return
+    idx_ctx = payload.get("index_context")
+    if isinstance(idx_ctx, dict):
+        for name in ("NIFTY 50", "SENSEX"):
+            if name in idx_ctx and isinstance(idx_ctx[name], dict):
+                idx_ctx[name] = dict(idx_ctx[name])
+                idx_ctx[name]["fresh_ob"] = _get_cached_index_fresh_ob(name)
+
 
 
 def _payload_has_signal(payload: Any) -> bool:
@@ -561,7 +623,14 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     **current,
                 }
                 _INDEX_QUOTES["ts"] = time.monotonic()
-            quotes = _INDEX_QUOTES["quotes"]
+            quotes = dict(_INDEX_QUOTES["quotes"])
+
+        # Attach real-time Fresh SMC Order Blocks (Demand Fresh / Bear OB Fresh) for NIFTY 50 and SENSEX
+        for name in ("NIFTY 50", "SENSEX"):
+            if name in quotes and isinstance(quotes[name], dict):
+                quotes[name] = dict(quotes[name])
+                quotes[name]["fresh_ob"] = _get_cached_index_fresh_ob(name)
+
         self._send_json(HTTPStatus.OK, {"ok": True, "index_context": quotes})
 
 
@@ -872,6 +941,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             }
 
             if _payload_has_signal(payload) and not payload.get("_stale_kept"):
+                _attach_fresh_ob_to_index_context(payload)
                 _SCAN_STATE["payload"] = payload
                 signature = _payload_signature(payload)
                 # Only push to open tabs when the scan actually has data AND
@@ -889,6 +959,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             # fall back to the last good result if we have one.
             cached = self._cached_or_snapshot()
             if _payload_has_signal(cached):
+                _attach_fresh_ob_to_index_context(cached)
                 cached["_refresh"] = {"ok": False, "kept_last_good": True,
                                       "scan_error": payload.get("message") or payload.get("error")}
                 return HTTPStatus.OK, cached
