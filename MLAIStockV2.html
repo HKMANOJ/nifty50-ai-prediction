@@ -3012,6 +3012,10 @@
   let _dashboardShowSmc = true;
   let _dashboardObData = [];
   let _dashboardFvgData = [];
+  let _dashboardCandleData = [];
+  let _dashboardIsBullish = true;
+  let _ovCandleData = [];
+  let _ovIsBullish = true;
 
   function drawPillRect(ctx, x, y, width, height, radius) {
     if (typeof ctx.roundRect === "function") {
@@ -3042,36 +3046,62 @@
       }
     } catch(e) {}
 
-    // Active session date is the date of the latest candle on the chart
+    // Active session date is the date of the latest candle on the chart (default to today IST)
     let sessionDateStr = "";
-    if (Array.isArray(_candleData) && _candleData.length > 0) {
-      const lastCandle = _candleData[_candleData.length - 1];
-      const lastCandleMs = typeof lastCandle.time === "number" ? (lastCandle.time > 1e11 ? lastCandle.time : lastCandle.time * 1000) : lastCandle.time;
-      sessionDateStr = new Date(lastCandleMs).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const candleList = options.candles || window._dashboardCandleData || [];
+    if (Array.isArray(candleList) && candleList.length > 0) {
+      const lastCandle = candleList[candleList.length - 1];
+      if (lastCandle && lastCandle.time) {
+        const lastCandleMs = typeof lastCandle.time === "number" ? (lastCandle.time > 1e11 ? lastCandle.time : lastCandle.time * 1000) : lastCandle.time;
+        sessionDateStr = new Date(lastCandleMs).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      }
+    }
+    if (!sessionDateStr) {
+      sessionDateStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     }
 
     // 1. Draw Order Blocks (DEMAND and BEAR OB)
-    // STRICT INTRADAY RULE: ONLY TODAY'S FRESH ZONES!
+    // STRICT INTRADAY RULE: ONLY TODAY'S ACTIVE FRESH / TESTED ZONES!
     // Never show previous-day mapping or old mitigated zones that confuse the trader.
     if (showOb && Array.isArray(obs) && obs.length) {
-      obs.forEach(ob => {
-        // Enforce: ONLY Fresh zones (ignore old/mitigated clutter)
-        if (ob.status !== "Fresh") return;
-        // Enforce: ONLY Today's session zones (ignore yesterday / previous days)
+      // Step A: Filter out mitigated (broken) zones and previous day historical zones
+      let activeObs = obs.filter(ob => {
+        if (ob.mitigated) return false; // Skip broken / mitigated clutter
         if (sessionDateStr) {
           const rawTime = ob.formation_time || ob.time;
           if (rawTime) {
             const zMs = typeof rawTime === "number" ? (rawTime > 1e11 ? rawTime : rawTime * 1000) : rawTime;
             const zDateStr = new Date(zMs).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-            if (zDateStr !== sessionDateStr) return; // Skip previous day mapping!
+            if (zDateStr !== sessionDateStr) return false; // Skip previous day mapping!
           }
         }
+        return true;
+      });
 
+      // Step B: Directional alignment - match trade side if specified
+      if (options.isBullish !== undefined) {
+        if (options.isBullish) {
+          const bullObs = activeObs.filter(ob => (ob.type || "").toUpperCase() === "BULLISH");
+          if (bullObs.length > 0) activeObs = bullObs;
+        } else {
+          const bearObs = activeObs.filter(ob => (ob.type || "").toUpperCase() === "BEARISH");
+          if (bearObs.length > 0) activeObs = bearObs;
+        }
+      }
+
+      // Step C: Anti-clutter preference - prefer Fresh morning zones over tested historical noise
+      const freshObs = activeObs.filter(ob => ob.status === "Fresh");
+      const targetObs = freshObs.length > 0 ? freshObs : activeObs;
+
+      targetObs.forEach(ob => {
         const yTop = series.priceToCoordinate(ob.top);
         const yBot = series.priceToCoordinate(ob.bottom);
         if (yTop === null || yBot === null) return;
 
         let xStart = chart.timeScale().timeToCoordinate(ob.time);
+        if (xStart === null && ob.formation_time) {
+          xStart = chart.timeScale().timeToCoordinate(ob.formation_time);
+        }
         if (xStart === null && visRange && visRange.from) {
           if (ob.time < visRange.from) xStart = -100;
         }
@@ -3099,16 +3129,13 @@
         // DEMAND: emerald green with solid border
         // BEAR OB: golden amber with solid border
         const fillColor = isBull 
-          ? (isFresh ? "rgba(16, 185, 129, 0.16)" : "rgba(16, 185, 129, 0.10)")
-          : (isFresh ? "rgba(245, 158, 11, 0.16)" : "rgba(245, 158, 11, 0.10)");
+          ? (isFresh ? "rgba(16, 185, 129, 0.18)" : "rgba(16, 185, 129, 0.12)")
+          : (isFresh ? "rgba(245, 158, 11, 0.18)" : "rgba(245, 158, 11, 0.12)");
         const strokeColor = isBull ? "#10b981" : "#f59e0b";
         const textColor = isBull ? "#065f46" : "#92400e";
         const tagText = isBull ? "DEMAND" : "BEAR OB";
 
         ctx.save();
-        if (ob.mitigated) {
-          ctx.globalAlpha = 0.45;
-        }
         ctx.fillStyle = fillColor;
         ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
 
@@ -3161,14 +3188,27 @@
     // 2. Draw Fair Value Gaps (FVG+ and FVG-) with 50% Consequent Encroachment (CE)
     // STRICT INTRADAY RULE: ONLY TODAY'S UNFILLED / FRESH GAPS!
     if (showFvg && Array.isArray(fvgs) && fvgs.length) {
-      fvgs.forEach(fvg => {
-        if (fvg.mitigated) return; // Skip filled/mitigated gaps
+      let activeFvgs = fvgs.filter(fvg => {
+        if (fvg.mitigated) return false; // Skip filled/mitigated gaps
         if (sessionDateStr && fvg.time) {
           const zMs = typeof fvg.time === "number" ? (fvg.time > 1e11 ? fvg.time : fvg.time * 1000) : fvg.time;
           const zDateStr = new Date(zMs).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-          if (zDateStr !== sessionDateStr) return; // Skip previous day mapping!
+          if (zDateStr !== sessionDateStr) return false; // Skip previous day mapping!
         }
+        return true;
+      });
 
+      // Directional alignment for FVG
+      if (options.isBullish !== undefined) {
+        if (options.isBullish) {
+          activeFvgs = activeFvgs.filter(fvg => (fvg.type || "").toLowerCase().includes("bull"));
+        } else {
+          activeFvgs = activeFvgs.filter(fvg => (fvg.type || "").toLowerCase().includes("bear"));
+        }
+      }
+
+      // Limit FVG to at most 2 most recent active gaps to prevent visual clutter
+      activeFvgs.slice(-2).forEach(fvg => {
         const yTop = series.priceToCoordinate(fvg.top);
         const yBot = series.priceToCoordinate(fvg.bottom);
         if (yTop === null || yBot === null) return;
@@ -3186,7 +3226,7 @@
         if (fvg.mitigated && fvg.filled_time) {
           let xFill = chart.timeScale().timeToCoordinate(fvg.filled_time);
           if (xFill === null && visRange && visRange.from && fvg.filled_time < visRange.from) {
-            return; // Filled completely before visible range
+            return;
           }
           if (xFill !== null) xEnd = Math.max(xStart + 35, xFill);
         }
@@ -3205,10 +3245,6 @@
         const tagText = isBull ? "FVG+" : "FVG-";
 
         ctx.save();
-        if (fvg.mitigated) {
-          ctx.globalAlpha = 0.45;
-        }
-        // Translucent background
         ctx.fillStyle = fillColor;
         ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
 
@@ -3286,6 +3322,8 @@
       drawSmcZones(ctx, _tvChart, _candleSeries, w, h, _dashboardObData, _dashboardFvgData, {
         showOb: true,
         showFvg: true,
+        candles: _dashboardCandleData,
+        isBullish: _dashboardIsBullish,
       });
     }
     ctx.restore();
@@ -3793,6 +3831,8 @@
         // Store and render SMC overlay (FVG with 50% CE & Order Blocks) on dashboard chart
         _dashboardFvgData = data.fvg || [];
         _dashboardObData = data.order_blocks || [];
+        _dashboardCandleData = data.candles || [];
+        _dashboardIsBullish = (meta && (meta.percent_change !== undefined ? meta.percent_change >= 0 : meta.side === 'GAINER')) || !!meta.demand_zone;
         requestAnimationFrame(renderDashboardSmcOverlay);
 
         setTimeout(() => {
@@ -6669,6 +6709,8 @@
     drawSmcZones(ctx, _ovChart, _ovCandleSeries, w, h, _ovObData, _ovFvgData, {
       showOb: _ovShowOb,
       showFvg: _ovShowFvg,
+      candles: _ovCandlesData,
+      isBullish: _ovIsBullish,
     });
 
     // 3. Draw On-Chart Footprint Focus Indicator (Inspected Candle Only - Keeps Main Chart Clean)
@@ -6864,6 +6906,7 @@
         _ovCandleSeries.priceScale().applyOptions({ autoScale: true });
         _ovCandleSeries.setData(data.candles);
         _ovCandlesData = data.candles;
+        _ovIsBullish = (data.percent_change !== undefined ? data.percent_change >= 0 : data.side === 'GAINER') || !!data.demand_zone;
       }
       if (_ovVolumeSeries && data.volumes && data.volumes.length) {
         _ovVolumeSeries.setData(data.volumes);
