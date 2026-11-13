@@ -265,13 +265,16 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
+      height: 100dvh;
       overflow-y: auto;
       overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
     }
 
     /* ── Top Header Bar ── */
     .top-navbar {
       background: var(--bg-card);
+      background-color: #ffffff;
       border-bottom: 1px solid var(--border);
       padding: 8px 16px;
       display: flex;
@@ -279,10 +282,13 @@
       justify-content: space-between;
       position: sticky;
       top: 0;
-      z-index: 40;
+      z-index: 50;
       gap: 8px 12px;
       flex-wrap: wrap;
       min-height: 48px;
+      flex-shrink: 0;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
     }
 
     .navbar-ticker {
@@ -1464,36 +1470,97 @@
       .sidebar.collapsed .menu-label,
       .sidebar.collapsed .sidebar-footer { display: flex; }
 
+      /* Top Navbar: Clean Non-Collapsing 2-Row Layout with Horizontal Scrolling */
       .top-navbar {
-        flex-wrap: wrap;
-        padding: 8px 12px;
-        gap: 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 6px 12px;
+        gap: 5px;
+        background: #ffffff !important;
+        background-color: #ffffff !important;
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+        min-height: auto;
       }
+
+      .navbar-brand-group {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        gap: 8px;
+        min-width: 0;
+      }
+
       .navbar-ticker {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         flex-wrap: nowrap;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
-        max-width: 100%;
-        padding-bottom: 2px;
+        flex: 1 1 auto;
+        min-width: 0;
       }
       .navbar-ticker::-webkit-scrollbar { display: none; }
-      .navbar-status {
-        width: 100%;
-        flex-wrap: wrap;
-        gap: 6px;
-        justify-content: flex-start;
+
+      .ticker-chip {
+        font-size: 11px;
+        padding: 3px 6px;
+        flex-shrink: 0;
+        white-space: nowrap;
       }
 
-      .content-container { padding: 10px; gap: 10px; }
+      /* Secondary Status Strip: Sleek single-line horizontal swipe (NEVER WRAPS!) */
+      .navbar-status {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        justify-content: flex-start;
+        padding: 1px 0 2px;
+      }
+      .navbar-status::-webkit-scrollbar { display: none; }
+
+      .navbar-status > * {
+        font-size: 10px;
+        padding: 3px 6px;
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+
+      .refresh-pill-btn {
+        font-size: 10.5px;
+        padding: 3px 8px;
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+
+      .content-container { padding: 8px 10px; gap: 10px; }
 
       .metrics-row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
+        gap: 6px;
       }
       .metrics-row > .summary-card:nth-child(1),
       .metrics-row > .summary-card:nth-child(2) { grid-column: 1 / -1; }
       .metrics-row > .summary-card:nth-child(7) { grid-column: 1 / -1; }
+
+      .summary-card { padding: 8px 10px; }
+
+      #topPickCard { padding: 8px 10px; }
+      #topPickCriteria { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+      #topPickCriteria > span { font-size: 8.5px !important; padding: 2px 4px !important; }
 
       /* Split layout stacks in portrait */
       .split-layout {
@@ -1506,24 +1573,39 @@
         max-height: 280px;
       }
       .dashboard-chart-wrapper {
-        height: 420px !important;
-        min-height: 420px !important;
+        height: 380px !important;
+        min-height: 380px !important;
       }
       .ov-chart-wrapper {
-        height: 440px !important;
-        min-height: 440px !important;
+        height: 400px !important;
+        min-height: 400px !important;
       }
 
-      /* Playbook bar wraps cleanly */
+      /* Playbook bar: Compact responsive 3-col grid */
       .chart-playbook-banner {
+        margin: 4px 8px 6px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        display: flex;
         flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
-        padding: 8px 10px;
+        gap: 4px;
+      }
+      .playbook-title-box {
+        font-size: 11px;
+        gap: 6px;
       }
       .playbook-badge-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px;
         width: 100%;
-        justify-content: flex-start;
+      }
+      .playbook-pill {
+        font-size: 10px;
+        padding: 3px 5px;
+        justify-content: center;
+        text-align: center;
+        white-space: nowrap;
       }
 
       /* Table section head wrap */
@@ -1543,18 +1625,66 @@
 
     /* Mobile Phones (<= 640px) */
     @media (max-width: 640px) {
-      .ticker-chip { font-size: 11px; padding: 3px 6px; gap: 4px; }
-      .navbar-status > * { font-size: 10px !important; padding: 3px 6px !important; }
-      .refresh-pill-btn { padding: 5px 8px; }
-      .summary-card { padding: 9px 10px; }
+      .ticker-chip { font-size: 10.5px; padding: 2.5px 5px; gap: 4px; }
+      .navbar-status > * { font-size: 9.5px !important; padding: 2.5px 5px !important; }
+      .refresh-pill-btn { padding: 3px 7px; font-size: 10px; }
+      .summary-card { padding: 8px 9px; }
 
+      /* Chart Header & Controls: Single-Line Horizontal Strips */
       .chart-panel-header {
+        display: flex;
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
         gap: 6px;
+        padding: 8px 10px;
       }
-      .chart-title-area { flex-wrap: wrap; gap: 8px; }
-      .chart-toolbar { width: 100%; justify-content: flex-end; }
+      .chart-title-area {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        width: 100%;
+      }
+      .chart-title-area::-webkit-scrollbar { display: none; }
+
+      .chart-active-symbol { font-size: 15px !important; flex-shrink: 0; }
+      .chart-active-ltp { font-size: 14px !important; flex-shrink: 0; }
+      .chart-active-chg { font-size: 10.5px !important; padding: 2px 5px !important; flex-shrink: 0; }
+      .chart-stat-chip { font-size: 10px !important; padding: 2px 6px !important; flex-shrink: 0; white-space: nowrap; }
+
+      .chart-toolbar {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        justify-content: flex-start;
+        padding-bottom: 2px;
+      }
+      .chart-toolbar::-webkit-scrollbar { display: none; }
+
+      .chart-toolbar .tf-btn {
+        flex-shrink: 0;
+        white-space: nowrap;
+        font-size: 10.5px;
+        padding: 3px 7px;
+      }
+
+      /* Playbook bar: 2-3 col grid on small screens */
+      .playbook-badge-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px;
+      }
+      .playbook-pill {
+        font-size: 9.5px;
+        padding: 2.5px 4px;
+      }
 
       .list-panel { max-height: 240px; }
       .dashboard-chart-wrapper { height: 340px !important; min-height: 340px !important; }
@@ -1593,6 +1723,7 @@
       .metrics-row > .summary-card { grid-column: 1 / -1 !important; }
       .tab-pill { padding: 4px 8px; font-size: 10px; }
       .navbar-ticker .ticker-chip { flex: 1; }
+      .playbook-badge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
 </head>
@@ -1664,7 +1795,7 @@
   <main class="main-canvas">
     <!-- Top Navbar Bar -->
     <header class="top-navbar">
-      <div style="display:flex; align-items:center; gap:12px;">
+      <div class="navbar-brand-group" style="display:flex; align-items:center; gap:12px;">
         <button class="mobile-nav-toggle" id="mobileNavToggle" title="Open Menu">
           <span class="bar"></span>
           <span class="bar"></span>
