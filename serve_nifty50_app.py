@@ -994,13 +994,27 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 })
 
             # Detect Institutional SMC zones (FVG with 50% CE & Order Blocks) for clean overlay mapping
+            # STRICT INTRADAY ONLY: Only detect and map TODAY'S session zones (09:15 AM onwards today).
+            # Filters out all confusing historical/previous-day zones so the trader only sees today's active setup.
             fvg_data = []
             order_blocks = []
             try:
                 from smc_volume_profile_engine import detect_fair_value_gaps, detect_order_blocks_and_structure
-                fvg_data = detect_fair_value_gaps(all_display_candles)
-                ob_structure = detect_order_blocks_and_structure(candles)
-                order_blocks = ob_structure.get("order_blocks", [])
+                today_completed = [
+                    c for c in candles
+                    if datetime.fromtimestamp(c["timestamp"], tz=_ist).date() == last_day
+                ] or candles
+                raw_fvg = detect_fair_value_gaps(today_candles)
+                fvg_data = [
+                    fvg for fvg in raw_fvg
+                    if datetime.fromtimestamp(fvg.get("time", 0), tz=_ist).date() == last_day
+                ]
+                ob_structure = detect_order_blocks_and_structure(today_completed)
+                raw_obs = ob_structure.get("order_blocks", [])
+                order_blocks = [
+                    ob for ob in raw_obs
+                    if datetime.fromtimestamp(ob.get("time", 0), tz=_ist).date() == last_day
+                ]
             except Exception:
                 pass
 

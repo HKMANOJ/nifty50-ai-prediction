@@ -3042,9 +3042,31 @@
       }
     } catch(e) {}
 
+    // Active session date is the date of the latest candle on the chart
+    let sessionDateStr = "";
+    if (Array.isArray(_candleData) && _candleData.length > 0) {
+      const lastCandle = _candleData[_candleData.length - 1];
+      const lastCandleMs = typeof lastCandle.time === "number" ? (lastCandle.time > 1e11 ? lastCandle.time : lastCandle.time * 1000) : lastCandle.time;
+      sessionDateStr = new Date(lastCandleMs).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    }
+
     // 1. Draw Order Blocks (DEMAND and BEAR OB)
+    // STRICT INTRADAY RULE: ONLY TODAY'S FRESH ZONES!
+    // Never show previous-day mapping or old mitigated zones that confuse the trader.
     if (showOb && Array.isArray(obs) && obs.length) {
       obs.forEach(ob => {
+        // Enforce: ONLY Fresh zones (ignore old/mitigated clutter)
+        if (ob.status !== "Fresh") return;
+        // Enforce: ONLY Today's session zones (ignore yesterday / previous days)
+        if (sessionDateStr) {
+          const rawTime = ob.formation_time || ob.time;
+          if (rawTime) {
+            const zMs = typeof rawTime === "number" ? (rawTime > 1e11 ? rawTime : rawTime * 1000) : rawTime;
+            const zDateStr = new Date(zMs).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+            if (zDateStr !== sessionDateStr) return; // Skip previous day mapping!
+          }
+        }
+
         const yTop = series.priceToCoordinate(ob.top);
         const yBot = series.priceToCoordinate(ob.bottom);
         if (yTop === null || yBot === null) return;
@@ -3137,8 +3159,16 @@
     }
 
     // 2. Draw Fair Value Gaps (FVG+ and FVG-) with 50% Consequent Encroachment (CE)
+    // STRICT INTRADAY RULE: ONLY TODAY'S UNFILLED / FRESH GAPS!
     if (showFvg && Array.isArray(fvgs) && fvgs.length) {
       fvgs.forEach(fvg => {
+        if (fvg.mitigated) return; // Skip filled/mitigated gaps
+        if (sessionDateStr && fvg.time) {
+          const zMs = typeof fvg.time === "number" ? (fvg.time > 1e11 ? fvg.time : fvg.time * 1000) : fvg.time;
+          const zDateStr = new Date(zMs).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+          if (zDateStr !== sessionDateStr) return; // Skip previous day mapping!
+        }
+
         const yTop = series.priceToCoordinate(fvg.top);
         const yBot = series.priceToCoordinate(fvg.bottom);
         if (yTop === null || yBot === null) return;
@@ -4301,6 +4331,7 @@
 
   /* ── Hard Rules for Top 10 High-Conviction Demand Fresh Filter ── */
   const INDEX_ANCHORS_SET = new Set(["HDFCBANK", "RELIANCE", "TCS", "INFY"]);
+  let _currentSessionDate = null;
   const _sessionQualifiedDemandFreshMap = new Map(); // Anti-Flicker: Keeps entered trades persistent throughout the session
 
   function isTop10DemandFreshQualified(row) {
@@ -4621,6 +4652,14 @@
     }
     if (hasRows) _lastGoodRenderAt = Date.now();
     window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
+
+    // Auto-wipe previous-day memory on new session date (prevents yesterday's mapping carryover)
+    if (payload.session_date && payload.session_date !== _currentSessionDate) {
+      _currentSessionDate = payload.session_date;
+      _sessionQualifiedDemandFreshMap.clear();
+      _sessionReadOnlyBullish = [];
+      _sessionReadOnlyBearish = [];
+    }
 
     updateGlobalSectorStats(payload);
 
