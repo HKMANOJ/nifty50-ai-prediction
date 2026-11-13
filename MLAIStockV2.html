@@ -2646,6 +2646,37 @@
     return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0");
   }
 
+  // STRICT 60-SECOND REAL-TIME FRESHNESS CHECK
+  // Computes difference in seconds between current live IST market clock and an event time (e.g. "11:20 AM" or "11:20:00")
+  function getEventAgeSeconds(eventTimeStr, payload) {
+    if (!eventTimeStr) return 999999;
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i.exec(String(eventTimeStr).trim());
+    if (!m) return 999999;
+    let h = +m[1];
+    const mins = +m[2];
+    const secs = m[3] ? +m[3] : 0;
+    const ap = (m[4] || "").toUpperCase();
+    if (ap === "PM" && h !== 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    const eventTotalSec = h * 3600 + mins * 60 + secs;
+
+    let clk = (payload && payload.market_clock_ist) || "";
+    let cm = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(clk);
+    let curTotalSec;
+    if (cm) {
+      curTotalSec = (+cm[1]) * 3600 + (+cm[2]) * 60 + (cm[3] ? +cm[3] : 0);
+    } else {
+      const d = new Date();
+      const istUtcMs = d.getTime() + (d.getTimezoneOffset() * 60000) + (5.5 * 3600000);
+      const istDate = new Date(istUtcMs);
+      curTotalSec = istDate.getHours() * 3600 + istDate.getMinutes() * 60 + istDate.getSeconds();
+    }
+
+    let diffSec = curTotalSec - eventTotalSec;
+    if (diffSec < -43200) diffSec += 86400; // handle midnight rollover
+    return diffSec;
+  }
+
   function getAudioContext() {
     if (!_globalAudioCtx) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -2782,6 +2813,14 @@
       if (typeof isMarketHours === "function" && !isMarketHours()) return;
       const nowMin = (typeof istNowMinutes === "function" && _lastScannerPayload) ? istNowMinutes(_lastScannerPayload) : 0;
       if (nowMin > BLOCK_SURGE_CUTOFF_MIN) return;
+
+      // STRICT 60-SECOND REAL-TIME TIMELINE LOCK (Non-forced alerts):
+      // An alert that formed at 11:20 AM must ONLY pop up between 11:20:00 and 11:21:00 AM.
+      // Never pop up at 12:00 PM or on an uneven timeline!
+      const ageSec = getEventAgeSeconds(timeDisplay, _lastScannerPayload);
+      if (ageSec < 0 || ageSec > 60) {
+        return; // Guard: Discard stale toast older than 60s
+      }
     }
 
     // Do NOT display empty/broken placeholder toasts if core price data is missing
@@ -2926,6 +2965,17 @@
       const alertKey = `${row.symbol}_${sideKey}_${eventTime}`;
       if (_alertedBreakouts.has(alertKey)) return;   // already alerted for this base
       if (row.alert_event_id && _persistedSeenEventIds.has(row.alert_event_id)) return; // already chimed in this browser
+
+      // STRICT 60-SECOND REAL-TIME TIMELINE LOCK:
+      // If a Demand Fresh / Bear OB formed at 11:20 AM, the bell and toast must ONLY fire
+      // within 60 seconds (by 11:21:00 AM). Never ring bell at 12:00 PM or on an uneven timeline!
+      const ageSec = getEventAgeSeconds(eventTime, payload);
+      if (ageSec < 0 || ageSec > 60) {
+        // Mark as seen so it silently passes without late chiming
+        _alertedBreakouts.add(alertKey);
+        if (row.alert_event_id) _savePersistedAlertId(row.alert_event_id);
+        return;
+      }
 
       _alertedBreakouts.add(alertKey);
 
@@ -5780,6 +5830,11 @@
 
             const obTime = isDemand ? (enriched.demand_fresh_time || enriched.alert_created_at) : (enriched.supply_zone_time || enriched.alert_created_at);
             if (!obTime) return;
+
+            // STRICT 60-SECOND REAL-TIME TIMELINE LOCK:
+            // Never ring bell or show sticky toast if missed alert formed >60s ago
+            const ageSec = getEventAgeSeconds(obTime, _lastScannerPayload);
+            if (ageSec < 0 || ageSec > 60) return;
 
             if (_hasEvaluatedInitialBell) {
               playBellRangSound();
