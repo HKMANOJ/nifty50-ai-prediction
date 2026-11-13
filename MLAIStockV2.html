@@ -1614,7 +1614,11 @@
         gap: 8px;
       }
       .tab-pills {
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 4px;
+        max-width: 100%;
       }
 
       table.vc-table {
@@ -1941,7 +1945,7 @@
         <div class="list-panel">
           <div class="list-panel-header">
             <div class="list-panel-title">
-              <span>High RS Breakout Stocks</span>
+              <span id="listPanelTitle">Top 10 Demand Fresh</span>
               <span class="count-badge" id="listBadge">0</span>
             </div>
             <span style="font-size:11px; color:var(--text-muted); font-weight:600;">5m Wave</span>
@@ -2029,8 +2033,9 @@
           <h2>Futures & Options Scanner | One-Side Rally & Breakout Desk</h2>
           <div class="tab-pills">
             <button class="tab-pill active" id="tabDemandFresh" style="border:1px solid #10b981; color:#059669; font-weight:800; background:rgba(16,185,129,0.08);">🎯 Top 10 Demand Fresh (<span id="demandFreshPillCount">0</span>)</button>
-            <button class="tab-pill" id="tabGainers">Top Gainers (Bullish)</button>
-            <button class="tab-pill" id="tabLosers">Top Losers (Bearish)</button>
+            <button class="tab-pill" id="tabGainers">Top 5 Gainers (Bullish)</button>
+            <button class="tab-pill" id="tabLosers">Top 5 Losers (Bearish)</button>
+            <button class="tab-pill" id="btnReadOnlyMode" style="border:1.5px solid #6366f1; color:#4338ca; font-weight:800; background:rgba(99,102,241,0.08); display:inline-flex; align-items:center; gap:5px;" title="Session Read-Only Mode: Locks morning leaders so they never disappear or get replaced by late-day noise">🔒 Read-Only Focus: OFF</button>
           </div>
         </div>
 
@@ -4096,21 +4101,154 @@
     bearBody.innerHTML = renderSide(top5.bearish);
   }
 
+  /* ── Dynamic Sector Engine & Alignment Helpers ── */
+  let _globalSectorStats = {};
+
+  function updateGlobalSectorStats(payload) {
+    if (!payload) return;
+    const allStocks = (payload.market_universe && payload.market_universe.length)
+      ? payload.market_universe
+      : [...(payload.bullish || []), ...(payload.bearish || [])];
+    const stats = {};
+    for (const s of allStocks) {
+      const sec = s.sector || SECTOR_MAP[s.symbol] || "Other";
+      if (!stats[sec]) stats[sec] = { count: 0, totalPct: 0, bullCount: 0 };
+      stats[sec].count++;
+      stats[sec].totalPct += (s.percent_change || 0);
+      if ((s.percent_change || 0) > 0) stats[sec].bullCount++;
+    }
+    for (const [sec, d] of Object.entries(stats)) {
+      const avg = d.count > 0 ? d.totalPct / d.count : 0;
+      const breadthPct = d.count > 0 ? (d.bullCount / d.count) * 100 : 50;
+      let tailwind = "Neutral";
+      if (avg >= 1.0) tailwind = "Strong Tailwind";
+      else if (avg >= 0.2) tailwind = "Moderate Tailwind";
+      else if (avg <= -1.0) tailwind = "Strong Headwind";
+      else if (avg <= -0.2) tailwind = "Mild Headwind";
+      _globalSectorStats[sec] = { avgPct: avg, breadthPct, tailwind, count: d.count };
+    }
+  }
+
+  function getSectorBadgeData(symbol, isUp) {
+    const sec = SECTOR_MAP[symbol] || "Other";
+    const icon = SECTOR_ICONS[sec] || "🏢";
+    const st = _globalSectorStats[sec];
+    if (!st) {
+      return { sector: sec, icon, tailwind: "", isAligned: true, avgPct: 0 };
+    }
+    const isAligned = isUp ? (st.avgPct >= 0 || st.breadthPct >= 50) : (st.avgPct <= 0 || st.breadthPct <= 50);
+    const tailwindText = st.tailwind !== "Neutral" ? st.tailwind : (st.avgPct >= 0 ? `+${st.avgPct.toFixed(1)}%` : `${st.avgPct.toFixed(1)}%`);
+    return { sector: sec, icon, tailwind: tailwindText, isAligned, avgPct: st.avgPct };
+  }
+
+  /* ── Read-Only Focus Mode (Morning Leaders Locked Against Mid-day Noise) ── */
+  let _readOnlyMode = false;
+  let _sessionReadOnlyBullish = [];
+  let _sessionReadOnlyBearish = [];
+
+  function updateReadOnlyLists(payload) {
+    const all = [...(payload?.bullish || []), ...(payload?.bearish || []), ...(payload?.market_universe || [])];
+    if (_sessionReadOnlyBullish.length === 0 && _currentBullish.length > 0) {
+      _sessionReadOnlyBullish = _currentBullish.slice(0, 5).map(x => ({ ...x, lockedAt: Date.now() }));
+    }
+    if (_sessionReadOnlyBearish.length === 0 && _currentBearish.length > 0) {
+      _sessionReadOnlyBearish = _currentBearish.slice(0, 5).map(x => ({ ...x, lockedAt: Date.now() }));
+    }
+
+    if (_sessionReadOnlyBullish.length > 0) {
+      _sessionReadOnlyBullish = _sessionReadOnlyBullish.map(saved => {
+        const live = all.find(x => x.symbol === saved.symbol);
+        return live ? { ...saved, ...live } : saved;
+      });
+    }
+    if (_sessionReadOnlyBearish.length > 0) {
+      _sessionReadOnlyBearish = _sessionReadOnlyBearish.map(saved => {
+        const live = all.find(x => x.symbol === saved.symbol);
+        return live ? { ...saved, ...live } : saved;
+      });
+    }
+  }
+
+  function getReadOnlyBullishRows() {
+    if (_sessionReadOnlyBullish.length === 0 && _currentBullish.length > 0) {
+      _sessionReadOnlyBullish = _currentBullish.slice(0, 5).map(x => ({ ...x, lockedAt: Date.now() }));
+    }
+    return _sessionReadOnlyBullish.slice(0, 5);
+  }
+
+  function getReadOnlyBearishRows() {
+    if (_sessionReadOnlyBearish.length === 0 && _currentBearish.length > 0) {
+      _sessionReadOnlyBearish = _currentBearish.slice(0, 5).map(x => ({ ...x, lockedAt: Date.now() }));
+    }
+    return _sessionReadOnlyBearish.slice(0, 5);
+  }
+
+  function toggleReadOnlyMode() {
+    _readOnlyMode = !_readOnlyMode;
+    const btn = document.getElementById("btnReadOnlyMode");
+    if (btn) {
+      if (_readOnlyMode) {
+        if (_currentBullish.length > 0) _sessionReadOnlyBullish = _currentBullish.slice(0, 5).map(x => ({ ...x, lockedAt: Date.now() }));
+        if (_currentBearish.length > 0) _sessionReadOnlyBearish = _currentBearish.slice(0, 5).map(x => ({ ...x, lockedAt: Date.now() }));
+        btn.innerHTML = "🔒 Read-Only Focus: ON";
+        btn.style.background = "#4f46e5";
+        btn.style.color = "#ffffff";
+        btn.style.borderColor = "#4338ca";
+        btn.style.boxShadow = "0 0 0 2px rgba(99,102,241,0.3)";
+      } else {
+        btn.innerHTML = "🔒 Read-Only Focus: OFF";
+        btn.style.background = "rgba(99,102,241,0.08)";
+        btn.style.color = "#4338ca";
+        btn.style.borderColor = "#6366f1";
+        btn.style.boxShadow = "none";
+      }
+    }
+    updateListTitle();
+    const rows = getActiveDisplayRows();
+    renderLeftList(rows);
+    renderTable(rows);
+    if (rows.length > 0) selectStock(rows[0].symbol, rows[0]);
+  }
+
+  function getActiveDisplayRows() {
+    if (_activeTab === "demand_fresh") {
+      return getTop10DemandFreshQualifiedRows();
+    }
+    if (_readOnlyMode) {
+      return _activeTab === "bullish" ? getReadOnlyBullishRows() : getReadOnlyBearishRows();
+    }
+    return _activeTab === "bullish" ? (_currentBullish || []).slice(0, 5) : (_currentBearish || []).slice(0, 5);
+  }
+
+  function updateListTitle() {
+    const titleEl = document.getElementById("listPanelTitle");
+    if (!titleEl) return;
+    if (_activeTab === "demand_fresh") {
+      titleEl.textContent = "Top 10 Demand Fresh";
+    } else if (_activeTab === "bullish") {
+      titleEl.textContent = _readOnlyMode ? "Top 5 Bullish (Locked)" : "Top 5 Gainers (Bullish)";
+    } else if (_activeTab === "bearish") {
+      titleEl.textContent = _readOnlyMode ? "Top 5 Bearish (Locked)" : "Top 5 Losers (Bearish)";
+    }
+  }
+
   /* ── Render Left Scroll List ── */
   function renderLeftList(rows) {
     const list = document.getElementById("stockScrollList");
     const badge = document.getElementById("listBadge");
     if (!list) return;
 
-    if (!Array.isArray(rows) || rows.length === 0) {
+    const displayRows = (_activeTab === "demand_fresh") ? (rows || []).slice(0, 10) : (rows || []).slice(0, 5);
+
+    if (!Array.isArray(displayRows) || displayRows.length === 0) {
       list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">No breakout candidates right now.</div>`;
       if (badge) badge.textContent = "0";
       return;
     }
 
-    if (badge) badge.textContent = String(rows.length);
+    if (badge) badge.textContent = String(displayRows.length);
 
-    list.innerHTML = rows.map((row, idx) => {
+    list.innerHTML = displayRows.map((row, idx) => {
       const isUp = (row.percent_change || 0) >= 0;
       const isSelected = row.symbol === _selectedSymbol;
       const qTags = row.quality_tags || [];
@@ -4134,13 +4272,21 @@
         zoneBadge = `<span style="background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; margin-top:2px; display:inline-flex; align-items:center; gap:2px; width:fit-content;">Bear OB · Fresh${tStr ? ` ${tStr}` : ''}</span>`;
       }
 
+      const secInfo = getSectorBadgeData(row.symbol, isUp);
+
       return `
         <div class="stock-card-item ${isSelected ? 'active' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${row.vc_ranking || 1}, setup:'${row.setup || ""}', chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <div class="item-left">
             <span class="item-rank">${idx + 1}</span>
             <div class="item-names">
               <span class="item-symbol">${row.symbol}${row.lot_size ? ` <span style="font-size:9px; color:var(--text-muted); font-weight:700;">Lot ${row.lot_size}</span>` : ''}</span>
-              <span class="item-setup-tag">${row.setup || "Long buildup"}</span>
+              <span class="item-setup-tag">${row.setup || (isUp ? "Long buildup" : "Short buildup")}</span>
+              <div style="display:flex; align-items:center; gap:3px; margin-top:2px; flex-wrap:wrap;">
+                <span style="font-size:9px; font-weight:700; color:#334155; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">
+                  ${secInfo.icon} ${secInfo.sector}
+                </span>
+                ${secInfo.isAligned ? `<span style="font-size:8.5px; font-weight:800; color:#15803d; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:3px; padding:1px 4px;">🟢 Sector Aligned</span>` : ''}
+              </div>
               ${zoneBadge}
             </div>
           </div>
@@ -4222,16 +4368,12 @@
     const body = document.getElementById("vcTableBody");
     if (!body) return;
 
-    if (_activeTab !== "demand_fresh") {
-      rows = (rows || []).filter(r => {
-        if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
-        if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
-        const st = (r.five_min_status || "").toLowerCase();
-        const score = r.score || r.rally_score || 0;
-        if (st === "consolidating" && score < 70 && !r.is_breakout && !r.breakout_time) return false;
-        return true;
-      }).slice(0, MAX_DISPLAY_ROWS);
-    }
+    const maxRows = (_activeTab === "demand_fresh") ? 10 : 5;
+    rows = (rows || []).filter(r => {
+      if (r.lot_size && r.lot_size > MAX_LOT_SIZE_DISPLAY) return false;
+      if (r.ltp && (r.ltp > MAX_STOCK_PRICE_DISPLAY || r.ltp < MIN_STOCK_PRICE_DISPLAY)) return false;
+      return true;
+    }).slice(0, maxRows);
 
     if (!Array.isArray(rows) || rows.length === 0) {
       if (_activeTab === "demand_fresh") {
@@ -4240,7 +4382,7 @@
       }
       const opposite = _activeTab === "bullish" ? _currentBearish : _currentBullish;
       const label = _activeTab === "bullish" ? "bullish" : "bearish";
-      const hint = opposite.length ? ` Check Top ${_activeTab === "bullish" ? "Losers" : "Gainers"} (${opposite.length} candidates).` : "";
+      const hint = opposite.length ? ` Check Top ${_activeTab === "bullish" ? "Losers" : "Gainers"} (${opposite.slice(0, 5).length} candidates).` : "";
       body.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:20px; color:var(--text-muted); font-weight:600;">No qualifying ${label} candidates in this snapshot.${hint} <button onclick="loadData({refresh:true})" style="margin-left:8px; background:#0f172a; color:#fff; border:none; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer;">Retry</button></td></tr>`;
       return;
     }
@@ -4372,13 +4514,20 @@
         }
       }
 
+      const secInfo = getSectorBadgeData(row.symbol, isUp);
+
       return `
         <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <td style="font-weight:800; color:var(--text-muted); font-family:var(--font-mono); text-align:center;">${idx + 1}</td>
           <td style="text-align:left;">
             <div class="stock-col">
               <span class="sym">${row.symbol} ${row.lot_size ? `<span style="font-size:10px; font-weight:700; background:#f1f5f9; color:#475569; padding:1px 5px; border-radius:3px; border:1px solid #cbd5e1; margin-left:5px;">Lot ${row.lot_size}</span>` : ""}</span>
-              <span class="sub">${row.setup || "F&O Active"}${streakBadge}</span>
+              <div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-top:2px;">
+                <span class="sub">${row.setup || (isUp ? "Long buildup" : "Short buildup")}${streakBadge}</span>
+                <span style="font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:3px; background:${secInfo.isAligned ? '#ecfdf5' : '#f8fafc'}; color:${secInfo.isAligned ? '#166534' : '#475569'}; border:1px solid ${secInfo.isAligned ? '#a7f3d0' : '#e2e8f0'}; display:inline-flex; align-items:center; gap:3px;">
+                  ${secInfo.icon} ${secInfo.sector}${secInfo.tailwind ? ` · ${secInfo.tailwind}` : ''}
+                </span>
+              </div>
               ${tradeLevelsBadge}
             </div>
           </td>
@@ -4473,8 +4622,22 @@
     if (hasRows) _lastGoodRenderAt = Date.now();
     window.ScannerDisplayTelemetry?.configure(payload, API_BASE);
 
-    _currentBullish = (payload.bullish || []).slice().sort((a, b) => (b.percent_change ?? 0) - (a.percent_change ?? 0));
-    _currentBearish = (payload.bearish || []).slice().sort((a, b) => (a.percent_change ?? 0) - (b.percent_change ?? 0));
+    updateGlobalSectorStats(payload);
+
+    _currentBullish = (payload.bullish || []).slice().sort((a, b) => {
+      const secA = getSectorBadgeData(a.symbol, true);
+      const secB = getSectorBadgeData(b.symbol, true);
+      const biasA = secA.isAligned ? 0.35 : -0.35;
+      const biasB = secB.isAligned ? 0.35 : -0.35;
+      return ((b.percent_change ?? 0) + biasB) - ((a.percent_change ?? 0) + biasA);
+    });
+    _currentBearish = (payload.bearish || []).slice().sort((a, b) => {
+      const secA = getSectorBadgeData(a.symbol, false);
+      const secB = getSectorBadgeData(b.symbol, false);
+      const biasA = secA.isAligned ? -0.35 : 0.35;
+      const biasB = secB.isAligned ? -0.35 : 0.35;
+      return ((a.percent_change ?? 0) + biasA) - ((b.percent_change ?? 0) + biasB);
+    });
 
     // Re-assign ranks 1..N based on sorted percentage
     _currentBullish.forEach((r, idx) => { r.rank = idx + 1; });
@@ -4866,12 +5029,10 @@
     const dfPillCountEl = document.getElementById("demandFreshPillCount");
     if (dfPillCountEl) dfPillCountEl.textContent = String(dfQualified.length);
 
-    let currentRows;
-    if (_activeTab === "demand_fresh") {
-      currentRows = dfQualified;
-    } else {
-      currentRows = _activeTab === "bullish" ? _currentBullish : _currentBearish;
-    }
+    updateReadOnlyLists(payload);
+    updateListTitle();
+
+    const currentRows = getActiveDisplayRows();
     renderLeftList(currentRows);
     renderTable(currentRows);
 
@@ -4972,9 +5133,11 @@
     document.getElementById("tabGainers").classList.add("active");
     document.getElementById("tabLosers").classList.remove("active");
     document.getElementById("tabDemandFresh")?.classList.remove("active");
-    renderLeftList(_currentBullish);
-    renderTable(_currentBullish);
-    if (_currentBullish.length > 0) selectStock(_currentBullish[0].symbol, _currentBullish[0]);
+    updateListTitle();
+    const rows = getActiveDisplayRows();
+    renderLeftList(rows);
+    renderTable(rows);
+    if (rows.length > 0) selectStock(rows[0].symbol, rows[0]);
   });
 
   document.getElementById("tabLosers")?.addEventListener("click", () => {
@@ -4983,9 +5146,11 @@
     document.getElementById("tabLosers").classList.add("active");
     document.getElementById("tabGainers").classList.remove("active");
     document.getElementById("tabDemandFresh")?.classList.remove("active");
-    renderLeftList(_currentBearish);
-    renderTable(_currentBearish);
-    if (_currentBearish.length > 0) selectStock(_currentBearish[0].symbol, _currentBearish[0]);
+    updateListTitle();
+    const rows = getActiveDisplayRows();
+    renderLeftList(rows);
+    renderTable(rows);
+    if (rows.length > 0) selectStock(rows[0].symbol, rows[0]);
   });
 
   document.getElementById("tabDemandFresh")?.addEventListener("click", () => {
@@ -4993,12 +5158,15 @@
     _activeTab = "demand_fresh";
     document.getElementById("tabDemandFresh").classList.add("active");
     document.getElementById("tabGainers")?.classList.remove("active");
-    document.getElementById("tabLosers")?.classList.remove("active");
-    const dfRows = getTop10DemandFreshQualifiedRows();
-    renderLeftList(dfRows);
-    renderTable(dfRows);
-    if (dfRows.length > 0) selectStock(dfRows[0].symbol, dfRows[0]);
+    document.getElementById("tabLosers").classList.remove("active");
+    updateListTitle();
+    const rows = getActiveDisplayRows();
+    renderLeftList(rows);
+    renderTable(rows);
+    if (rows.length > 0) selectStock(rows[0].symbol, rows[0]);
   });
+
+  document.getElementById("btnReadOnlyMode")?.addEventListener("click", toggleReadOnlyMode);
 
   refreshBtn?.addEventListener("click", () => {
     loadData({ refresh: true });
@@ -6877,6 +7045,8 @@
     GODREJPROP:"Infra", PRESTIGE:"Infra", PHOENIXLTD:"Infra",
     ULTRACEMCO:"Infra", AMBUJACEM:"Infra", SHREECEM:"Infra",
     SIEMENS:"Capital Goods", ABB:"Capital Goods", BHEL:"Capital Goods",
+    CUMMINSIND:"Capital Goods", ENRIN:"Capital Goods", "GVT&D":"Capital Goods",
+    CGPOWER:"Capital Goods", POWERINDIA:"Capital Goods", SOLARINDS:"Capital Goods",
     AEQUITAS:"Capital Goods",
     // Telecom / Media
     BHARTIARTL:"Telecom", IDEA:"Telecom", INDUSTOWER:"Telecom",
@@ -6891,6 +7061,7 @@
     CESC:"Power", ADANIPOWER:"Power",
     // Chemicals
     ATUL:"Chemicals", PIDILITIND:"Chemicals", NAVINFLUOR:"Chemicals",
+    COROMANDEL:"Chemicals", PIIND:"Chemicals", SRF:"Chemicals", UPL:"Chemicals",
     // Defence
     HAL:"Defence", BEL:"Defence", DRDO:"Defence", BHEL:"Defence",
     // Others

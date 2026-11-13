@@ -137,7 +137,7 @@ SECTOR_MAP: dict[str, str] = {
     "GRASIM": "Infra", "ADANIENT": "Infra",
     # Capital Goods, Power Equipment & Defence
     "SIEMENS": "Capital Goods", "ABB": "Capital Goods", "BHEL": "Capital Goods",
-    "CGPOWER": "Capital Goods", "CUMMINSIND": "Capital Goods",
+    "CGPOWER": "Capital Goods", "CUMMINSIND": "Capital Goods", "ENRIN": "Capital Goods", "GVT&D": "Capital Goods",
     "POWERINDIA": "Capital Goods", "SOLARINDS": "Capital Goods",
     "HAL": "Defence", "BEL": "Defence", "BDL": "Defence", "COCHINSHIP": "Defence", "MAZDOCK": "Defence",
     # Power & Green Energy
@@ -146,7 +146,7 @@ SECTOR_MAP: dict[str, str] = {
     "NHPC": "Power", "PREMIERENE": "Power", "SUZLON": "Power", "WAAREEENER": "Power",
     # Chemicals & Agrochemicals
     "ATUL": "Chemicals", "PIDILITIND": "Chemicals", "NAVINFLUOR": "Chemicals",
-    "PIIND": "Chemicals", "SRF": "Chemicals", "UPL": "Chemicals",
+    "PIIND": "Chemicals", "SRF": "Chemicals", "UPL": "Chemicals", "COROMANDEL": "Chemicals",
     # Telecom & Media
     "BHARTIARTL": "Telecom", "IDEA": "Telecom", "INDUSTOWER": "Telecom",
     "ZEEL": "Media", "PVRINOX": "Media",
@@ -347,6 +347,8 @@ class Suggestion:
     prev_rank: int | None = None
     rank_velocity: str = "STABLE"
     rank_progression: str = ""
+    sector: str = ""
+    sector_alignment: float = 50.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -354,6 +356,8 @@ class Suggestion:
             "side": self.side,
             "rank": self.rank,
             "setup": self.setup,
+            "sector": self.sector or get_sector(self.symbol),
+            "sector_alignment": self.sector_alignment,
             "trade_plan": self.trade_plan,
             "ltp": self.ltp,
             "percent_change": self.percent_change,
@@ -2643,6 +2647,8 @@ def build_suggestions(
                 is_supply_zone=is_supply_zone,
                 supply_zone=supply_zone_str,
                 supply_zone_time=supply_zone_time,
+                sector=get_sector(symbol),
+                sector_alignment=round(float(stock_sector_align if stock_sector_align is not None else 50.0), 1),
             )
         )
 
