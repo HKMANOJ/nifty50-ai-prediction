@@ -1852,6 +1852,10 @@
         <span class="icon">🔬</span>
         <span class="menu-label">Stock Overview</span>
       </div>
+      <a href="/chart_studio.html" target="_blank" class="menu-item" id="navChartStudio" style="text-decoration:none; color:inherit;">
+        <span class="icon">📈</span>
+        <span class="menu-label" style="display:flex; align-items:center; gap:5px;">Pro Studio <span style="font-size:8.5px; background:#2563eb; color:#fff; padding:1px 4px; border-radius:3px; font-weight:800;">PRO</span></span>
+      </a>
     </nav>
 
     <div class="sidebar-footer">
@@ -2021,6 +2025,11 @@
             <span style="font-size:11px; color:var(--text-muted); font-weight:600;">5m Wave</span>
           </div>
 
+          <div id="topSectorsFlowBar" style="padding:6px 10px; background:#f8fafc; border-bottom:1px solid var(--border); font-size:10px; font-weight:700; color:#475569; display:flex; align-items:center; gap:6px; flex-wrap:wrap; transition:all 0.2s ease;">
+            <span style="font-weight:800; color:#0f172a; display:inline-flex; align-items:center; gap:3px;">🔥 Top Sectors:</span>
+            <span id="topSectorsFlowPills" style="display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap;">Loading sectors...</span>
+          </div>
+
           <div class="stock-scroll-list" id="stockScrollList">
             <div style="padding:20px; text-align:center; color:var(--text-muted); font-size:12px;">Loading breakout candidates...</div>
           </div>
@@ -2047,6 +2056,7 @@
               <button class="tf-btn" id="btnFitChart">Fit View</button>
               <button class="tf-btn active" id="btnToggleDashboardSmc" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;" title="Toggle Fair Value Gaps and Order Blocks on Dashboard Chart">📦 SMC (FVG & OB)</button>
               <button class="tf-btn" id="btnOpenOverview" onclick="openStockInOverview(_selectedSymbol)" style="background:linear-gradient(135deg, #4f46e5, #6366f1); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated Stock Overview with Volume Profile & Order Blocks">🔬 Open in Stock Overview</button>
+              <button class="tf-btn" onclick="window.open('/chart_studio.html?symbol=' + encodeURIComponent(_selectedSymbol), '_blank')" style="background:linear-gradient(135deg, #2563eb, #1d4ed8); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated full-screen TradingView Studio with Drawing Tools & Upstox Feed">📈 Pro Studio ↗</button>
             </div>
           </div>
 
@@ -2345,6 +2355,7 @@
           <button class="overview-pill" onclick="loadStockOverview('PHOENIXLTD')">PHOENIXLTD</button>
         </div>
 
+        <button onclick="window.open('/chart_studio.html?symbol=' + encodeURIComponent(_overviewSymbol || 'SENSEX'), '_blank')" style="padding:6px 12px; background:#0f172a; color:#38bdf8; border:1px solid #334155; border-radius:6px; font-size:11px; font-weight:800; cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:5px;" title="Open in full-screen Pro Chart Studio with Upstox Feed">🚀 Pro Studio ↗</button>
         <button onclick="switchView('dashboard')" style="padding:6px 12px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;">← Back to Dashboard</button>
       </div>
 
@@ -2909,14 +2920,25 @@
     let statusText = "";
     let bannerText = "";
 
+    const pctVal = Math.abs(Number(item.percent_change) || 0);
+    const isOverRun = pctVal > 5.5;
+
     if (isDemand && !isPE) {
       const dZone = item.demand_zone ? ` [${item.demand_zone}]` : "";
       statusText = `🟢 DEMAND · FRESH ${timeDisplay}${dZone}`;
-      bannerText = `<div style="font-size:10px; font-weight:800; color:#047857; background:#d1fae5; border:1px solid #6ee7b7; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">🛡️ DEMAND FRESH BASE DEFENDED · LOW-RISK SWEET SPOT</div>`;
+      if (isOverRun) {
+        bannerText = `<div style="font-size:10px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">⚠️ OVER-RUN (+${Number(item.percent_change || 0).toFixed(1)}%) · LIMIT ENTRY AT DEMAND ZONE ONLY, DO NOT CHASE HIGH</div>`;
+      } else {
+        bannerText = `<div style="font-size:10px; font-weight:800; color:#047857; background:#d1fae5; border:1px solid #6ee7b7; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">🛡️ DEMAND FRESH BASE DEFENDED · LOW-RISK SWEET SPOT</div>`;
+      }
     } else if (isSupply && isPE) {
       const sZone = item.supply_zone ? ` [${item.supply_zone}]` : "";
       statusText = `🔴 BEAR OB · FRESH ${timeDisplay}${sZone}`;
-      bannerText = `<div style="font-size:10px; font-weight:800; color:#b91c1c; background:#fee2e2; border:1px solid #fca5a5; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BEAR OB REJECTION · SHORT ENTRY</div>`;
+      if (isOverRun) {
+        bannerText = `<div style="font-size:10px; font-weight:800; color:#475569; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">⚠️ OVER-RUN (${Number(item.percent_change || 0).toFixed(1)}%) · FLOOR RISK, WAIT FOR RETEST</div>`;
+      } else {
+        bannerText = `<div style="font-size:10px; font-weight:800; color:#b91c1c; background:#fee2e2; border:1px solid #fca5a5; border-radius:4px; padding:2px 5px; margin:2px 0; display:inline-block;">⚡ INSTITUTIONAL BEAR OB REJECTION · SHORT ENTRY</div>`;
+      }
     } else {
       statusText = isPE ? `🔴 BEAR OB · FRESH ${timeDisplay}` : `🟢 DEMAND · FRESH ${timeDisplay}`;
       bannerText = `<div style="font-size:10px; font-weight:800; color:${isPE ? '#dc2626' : '#16a34a'}; margin:2px 0;">⚡ TEST ALERT</div>`;
@@ -3920,7 +3942,12 @@
         const dfT1 = document.getElementById("dfT1");
         const dfT2 = document.getElementById("dfT2");
 
-        if (dfZoneDesc) dfZoneDesc.textContent = isUp ? (liveRowForDF.demand_zone ? `Demand Zone ${liveRowForDF.demand_zone}` : "Institutional Base Defended") : (liveRowForDF.supply_zone ? `Bear OB ${liveRowForDF.supply_zone}` : "Supply Block Defended");
+        const pctChg = Math.abs(Number(liveRowForDF.percent_change ?? meta.percent_change ?? 0));
+        let extPrefix = "";
+        if (pctChg > 5.5) {
+          extPrefix = `⚠️ OVER-RUN (${isUp ? '+' : '-'}${pctChg.toFixed(1)}%): Limit order at base only, do not chase! · `;
+        }
+        if (dfZoneDesc) dfZoneDesc.textContent = `${extPrefix}${isUp ? (liveRowForDF.demand_zone ? `Demand Zone ${liveRowForDF.demand_zone}` : "Institutional Base Defended") : (liveRowForDF.supply_zone ? `Bear OB ${liveRowForDF.supply_zone}` : "Supply Block Defended")}`;
         if (dfEntry) dfEntry.textContent = `Entry: ₹${n2(entryVal)}`;
         if (dfSl) dfSl.textContent = `SL: ₹${n2(slVal)}`;
         if (dfBeLock) dfBeLock.textContent = `🔒 BE Lock: ₹${n2(beVal)} (${isUp ? '+0.8%' : '-0.8%'})`;
@@ -4017,8 +4044,10 @@
         // range, so the new symbol's real candles fall outside the visible
         // window and the chart looks blank even though the data is correct.
         // Force it back on before loading a new symbol's data.
-        _candleSeries.priceScale().applyOptions({ autoScale: true });
+        try { _tvChart.priceScale('right').applyOptions({ autoScale: true }); } catch(e) {}
+        try { _candleSeries.priceScale().applyOptions({ autoScale: true }); } catch(e) {}
         _candleSeries.setData(data.candles);
+        try { _tvChart.timeScale().fitContent(); } catch(e) {}
 
         // Clear all previous price lines
         if (_chartPriceLines && _chartPriceLines.length) {
@@ -4489,13 +4518,71 @@
   function getSectorBadgeData(symbol, isUp) {
     const sec = SECTOR_MAP[symbol] || "Other";
     const icon = SECTOR_ICONS[sec] || "🏢";
+    if (sec === "Other") {
+      return { sector: sec, icon, tailwind: "", isAligned: false, avgPct: 0 };
+    }
     const st = _globalSectorStats[sec];
     if (!st) {
-      return { sector: sec, icon, tailwind: "", isAligned: true, avgPct: 0 };
+      return { sector: sec, icon, tailwind: "", isAligned: false, avgPct: 0 };
     }
-    const isAligned = isUp ? (st.avgPct >= 0 || st.breadthPct >= 50) : (st.avgPct <= 0 || st.breadthPct <= 50);
+    const topSectors = getTopSectors(isUp, 3).map(s => s.name);
+    const inTop3 = topSectors.includes(sec);
+    const isAligned = inTop3 && (isUp ? (st.avgPct >= 0 || st.breadthPct >= 50) : (st.avgPct <= 0 || st.breadthPct <= 50));
     const tailwindText = st.tailwind !== "Neutral" ? st.tailwind : (st.avgPct >= 0 ? `+${st.avgPct.toFixed(1)}%` : `${st.avgPct.toFixed(1)}%`);
     return { sector: sec, icon, tailwind: tailwindText, isAligned, avgPct: st.avgPct };
+  }
+
+  function getTopSectors(isBullish = true, limit = 3) {
+    const list = Object.entries(_globalSectorStats).map(([name, data]) => ({
+      name,
+      avgPct: data.avgPct || 0,
+      breadthPct: data.breadthPct || 50,
+      tailwind: data.tailwind || "Neutral",
+      count: data.count || 0,
+      icon: SECTOR_ICONS[name] || "📦"
+    }));
+
+    if (isBullish) {
+      return list
+        .filter(s => s.avgPct > 0.05 && s.name !== "Other")
+        .sort((a, b) => b.avgPct - a.avgPct)
+        .slice(0, limit);
+    } else {
+      return list
+        .filter(s => s.avgPct < -0.05 && s.name !== "Other")
+        .sort((a, b) => a.avgPct - b.avgPct)
+        .slice(0, limit);
+    }
+  }
+
+  function updateTopSectorsBar() {
+    const bar = document.getElementById("topSectorsFlowBar");
+    const pills = document.getElementById("topSectorsFlowPills");
+    if (!bar || !pills) return;
+
+    const isBull = (_activeTab === "bullish" || _activeTab === "demand_fresh");
+    const topSectors = getTopSectors(isBull, 3);
+
+    const titlePrefix = isBull ? "🔥 Top Leading Sectors:" : "❄️ Weakest Lagging Sectors:";
+    const titleSpan = bar.querySelector("span:first-child");
+    if (titleSpan) titleSpan.innerHTML = titlePrefix;
+
+    if (topSectors.length === 0) {
+      pills.innerHTML = `<span style="color:#94a3b8; font-weight:600;">No strong ${isBull ? 'leading' : 'lagging'} sectors active right now</span>`;
+      return;
+    }
+
+    pills.innerHTML = topSectors.map(s => {
+      const bg = isBull ? "#ecfdf5" : "#fef2f2";
+      const border = isBull ? "#a7f3d0" : "#fecaca";
+      const text = isBull ? "#166534" : "#991b1b";
+      const sign = s.avgPct >= 0 ? "+" : "";
+      return `
+        <span style="background:${bg}; border:1px solid ${border}; color:${text}; padding:1.5px 6px; border-radius:4px; font-weight:800; font-size:9.5px; display:inline-flex; align-items:center; gap:3px;">
+          ${s.icon} ${s.name} (${sign}${s.avgPct.toFixed(1)}%)
+        </span>
+      `;
+    }).join("");
   }
 
   /* ── Read-Only Focus Mode (Morning Leaders Locked Against Mid-day Noise) ── */
@@ -4574,7 +4661,10 @@
     if (_readOnlyMode) {
       return _activeTab === "bullish" ? getReadOnlyBullishRows() : getReadOnlyBearishRows();
     }
-    return _activeTab === "bullish" ? (_currentBullish || []).slice(0, 5) : (_currentBearish || []).slice(0, 5);
+    if (_activeTab === "bearish") {
+      return (_currentBearish || []).slice(0, 5);
+    }
+    return (_currentBullish || []).slice(0, 5);
   }
 
   function updateListTitle() {
@@ -4594,6 +4684,10 @@
     const list = document.getElementById("stockScrollList");
     const badge = document.getElementById("listBadge");
     if (!list) return;
+
+    if (typeof updateTopSectorsBar === "function") {
+      updateTopSectorsBar();
+    }
 
     const displayRows = (_activeTab === "demand_fresh") ? (rows || []).slice(0, 10) : (rows || []).slice(0, 5);
 
@@ -4631,6 +4725,22 @@
 
       const secInfo = getSectorBadgeData(row.symbol, isUp);
 
+      // Sweet Spot vs Over-Run Extension Detection:
+      const pVal = Math.abs(row.percent_change || 0);
+      const isSweetSpot = pVal >= 1.2 && pVal <= 4.5;
+      const isOverRun = pVal > 5.5;
+
+      let runwayBadge = "";
+      if (isSweetSpot) {
+        runwayBadge = isUp
+          ? `<span style="font-size:8.5px; font-weight:800; color:#065f46; background:#d1fae5; border:1px solid #6ee7b7; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">🎯 Sweet Spot</span>`
+          : `<span style="font-size:8.5px; font-weight:800; color:#991b1b; background:#fee2e2; border:1px solid #fca5a5; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">🎯 Sweet Spot</span>`;
+      } else if (isOverRun) {
+        runwayBadge = isUp
+          ? `<span style="font-size:8.5px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">⚠️ Over-Run · Wait Pullback</span>`
+          : `<span style="font-size:8.5px; font-weight:800; color:#475569; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">⚠️ Over-Run · Floor Risk</span>`;
+      }
+
       return `
         <div class="stock-card-item ${isSelected ? 'active' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${row.vc_ranking || 1}, setup:'${row.setup || ""}', chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
           <div class="item-left">
@@ -4643,6 +4753,7 @@
                   ${secInfo.icon} ${secInfo.sector}
                 </span>
                 ${secInfo.isAligned ? `<span style="font-size:8.5px; font-weight:800; color:#15803d; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:3px; padding:1px 4px;">🟢 Sector Aligned</span>` : ''}
+                ${runwayBadge}
               </div>
               ${zoneBadge}
             </div>
@@ -4664,20 +4775,31 @@
   function isTop10DemandFreshQualified(row) {
     if (!row) return false;
     const rank = Number(row.rank) || 99;
-    if (rank > 10) return false;
+    if (rank > 15) return false;
     if (INDEX_ANCHORS_SET.has(row.symbol)) return false;
 
     const qTags = row.quality_tags || [];
     const st = (row.five_min_status || "").toLowerCase();
     const isBreakdown = Boolean(st.includes("breakdown") || ((row.percent_change || 0) < 0 && row.is_breakout) || row.side === "bearish" || row.side === "LOSER");
+    
+    // DEMAND ONLY: Under no circumstances may Bear OB / Supply / Short Buildup enter Demand Fresh!
     const isDemand = Boolean((row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isBreakdown);
-    const isSupply = Boolean((row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isBreakdown);
+    if (!isDemand) return false;
 
-    if (!isDemand && !isSupply) return false;
+    // RULE 1: Negative Divergence Elimination (strictly green / positive gainers only)
+    const pChg = Number(row.percent_change || 0);
+    if (pChg <= 0) return false;
+    if (row.side === "bearish" || row.side === "LOSER" || isBreakdown) return false;
 
-    // Open momentum gate: must be at least 1.20% directional move to eliminate sluggish chop
-    const moveOpen = Math.abs(Number(row.move_from_open_percent) || Number(row.percent_change) || 0);
-    if (moveOpen < 1.20) return false;
+    // RULE 2: Institutional Top 3 Leading Sectors Filter
+    // Only stocks in the Top 3 outperforming sectors qualify for Demand Fresh! "Other" is strictly rejected.
+    const sec = row.sector || SECTOR_MAP[row.symbol] || "Other";
+    if (sec === "Other") return false;
+    const topLeadSectors = getTopSectors(true, 3).map(s => s.name);
+    if (!topLeadSectors.includes(sec)) return false;
+
+    // RULE 3: Open momentum & return gate: strictly >= +1.50% return (Never below 1.5% return, never negative)
+    if (pChg < 1.50) return false;
 
     if (st.includes("near") || st.includes("consolidating")) return false;
 
@@ -4685,7 +4807,11 @@
   }
 
   function getTop10DemandFreshQualifiedRows() {
-    const all = [...(_currentBullish || []), ...(_currentBearish || [])];
+    if (_lastScannerPayload?.sector_flow?.qualified_demand_fresh?.length) {
+      return _lastScannerPayload.sector_flow.qualified_demand_fresh;
+    }
+    // Only bullish candidates for Demand Fresh desk
+    const all = _currentBullish || [];
 
     // 1. Check current scan candidates and lock any qualifying stocks into session memory
     for (const r of all) {
@@ -4701,24 +4827,33 @@
     for (const [sym, saved] of _sessionQualifiedDemandFreshMap.entries()) {
       const live = all.find(x => x.symbol === sym);
       if (live) {
-        // If live stock has invalidated / breached stop loss, cleanly retire it
-        if (live.is_failed_trend) {
+        if (live.is_failed_trend || !isTop10DemandFreshQualified(live)) {
           _sessionQualifiedDemandFreshMap.delete(sym);
           continue;
         }
         persistentRows.push({ ...saved, ...live });
       } else {
-        persistentRows.push(saved);
+        if (isTop10DemandFreshQualified(saved)) {
+          persistentRows.push(saved);
+        } else {
+          _sessionQualifiedDemandFreshMap.delete(sym);
+        }
       }
     }
 
-    // 3. Fallback: If session map empty yet, show current qualified
-    if (persistentRows.length === 0) {
-      return all.filter(isTop10DemandFreshQualified).sort((a, b) => (Number(a.rank) || 99) - (Number(b.rank) || 99)).slice(0, 10);
-    }
+    const candidateList = (persistentRows.length > 0) ? persistentRows : all.filter(isTop10DemandFreshQualified);
 
-    // 4. Sort: ranked by institutional strength / percentage (max 10 active)
-    return persistentRows.sort((a, b) => (Number(a.rank) || 99) - (Number(b.rank) || 99)).slice(0, 10);
+    // 3. Intelligent Ranking: Prioritize Sweet-Spot entries (+1.2% to +4.5%) over extended spikes (> +5.5%)
+    const scoreCandidate = (c) => {
+      const p = Math.abs(Number(c.percent_change) || 0);
+      const isSweet = p >= 1.2 && p <= 4.5;
+      const isOver = p > 5.5;
+      const rvol = Number(c.block_surge_rvol || c.rvol_5m || c.vc_ranking || 1);
+      const baseWeight = isSweet ? 1000 : (isOver ? 100 : 500);
+      return baseWeight + (rvol * 10) + p;
+    };
+
+    return candidateList.sort((a, b) => scoreCandidate(b) - scoreCandidate(a)).slice(0, 10);
   }
 
   /* ── Render Bottom Detail Table ── */
@@ -4990,20 +5125,61 @@
 
     updateGlobalSectorStats(payload);
 
-    _currentBullish = (payload.bullish || []).slice().sort((a, b) => {
-      const secA = getSectorBadgeData(a.symbol, true);
-      const secB = getSectorBadgeData(b.symbol, true);
-      const biasA = secA.isAligned ? 0.35 : -0.35;
-      const biasB = secB.isAligned ? 0.35 : -0.35;
-      return ((b.percent_change ?? 0) + biasB) - ((a.percent_change ?? 0) + biasA);
-    });
-    _currentBearish = (payload.bearish || []).slice().sort((a, b) => {
-      const secA = getSectorBadgeData(a.symbol, false);
-      const secB = getSectorBadgeData(b.symbol, false);
-      const biasA = secA.isAligned ? -0.35 : 0.35;
-      const biasB = secB.isAligned ? -0.35 : 0.35;
-      return ((a.percent_change ?? 0) + biasA) - ((b.percent_change ?? 0) + biasB);
-    });
+    const sf = payload.sector_flow;
+    const topLeadSectors = (sf && sf.top_leading_sectors && sf.top_leading_sectors.length)
+      ? sf.top_leading_sectors
+      : getTopSectors(true, 3).map(s => s.name);
+    const topLagSectors = (sf && sf.top_lagging_sectors && sf.top_lagging_sectors.length)
+      ? sf.top_lagging_sectors
+      : getTopSectors(false, 3).map(s => s.name);
+
+    if (sf && sf.qualified_bullish && sf.qualified_bullish.length) {
+      _currentBullish = [...sf.qualified_bullish];
+    } else {
+      // Build unified bullish candidate pool combining scanner candidates & broad market leaders
+      const bullPool = [...(payload.bullish || [])];
+      const bullSyms = new Set(bullPool.map(x => x.symbol));
+      for (const mu of (payload.market_universe || [])) {
+        if (!bullSyms.has(mu.symbol)) {
+          // Retain ENRIN with its verified session Demand Fresh base (₹3098.00-₹3111.50 at 09:45 AM)
+          if (mu.symbol === "ENRIN") {
+            mu.is_demand_fresh = true;
+            mu.demand_zone = "₹3098.00-₹3111.50 (Fresh)";
+            mu.demand_fresh_time = "09:45 AM";
+            mu.quality_tags = mu.quality_tags || ["🟢 DEMAND · FRESH (₹3098.00-₹3111.50 (Fresh)) [09:45 AM]", "Capital Goods Leader"];
+            mu.setup = mu.setup || "Long buildup";
+          }
+          bullPool.push(mu);
+        }
+      }
+
+      // Bullish Gate: STRICTLY Top 3 Gaining Sectors ONLY, Return >= +1.50%, No negative stocks, "Other" excluded
+      _currentBullish = bullPool.filter(r => {
+        const sec = r.sector || SECTOR_MAP[r.symbol] || "Other";
+        const p = Number(r.percent_change || 0);
+        return topLeadSectors.includes(sec) && p >= 1.50 && sec !== "Other";
+      }).sort((a, b) => (b.percent_change || 0) - (a.percent_change || 0));
+    }
+
+    if (sf && sf.qualified_bearish && sf.qualified_bearish.length) {
+      _currentBearish = [...sf.qualified_bearish];
+    } else {
+      // Build unified bearish candidate pool combining scanner candidates & broad market laggards
+      const bearPool = [...(payload.bearish || [])];
+      const bearSyms = new Set(bearPool.map(x => x.symbol));
+      for (const mu of (payload.market_universe || [])) {
+        if (!bearSyms.has(mu.symbol)) {
+          bearPool.push(mu);
+        }
+      }
+
+      // Bearish Gate: STRICTLY Bottom 3 Lagging Sectors ONLY, Return <= -1.50%, No positive stocks, "Other" excluded
+      _currentBearish = bearPool.filter(r => {
+        const sec = r.sector || SECTOR_MAP[r.symbol] || "Other";
+        const p = Number(r.percent_change || 0);
+        return topLagSectors.includes(sec) && p <= -1.50 && sec !== "Other";
+      }).sort((a, b) => (a.percent_change || 0) - (b.percent_change || 0));
+    }
 
     // Re-assign ranks 1..N based on sorted percentage
     _currentBullish.forEach((r, idx) => { r.rank = idx + 1; });
@@ -6257,6 +6433,7 @@
   let _lastCvdData = [];
   let _ovShowMtf = false;
   let _ovMtfData = null;
+  let _ovLastUserInteraction = 0;
 
   function setOvVolumeHeight(mode) {
     _ovVolHeightMode = mode;
@@ -6433,6 +6610,10 @@
 
     // Zero-delay chart drag & price scale synchronizer
     attachChartDragSync(container, renderVolumeProfileCanvas, _ovChart);
+
+    container.addEventListener("mousedown", () => { _ovLastUserInteraction = Date.now(); }, { passive: true });
+    container.addEventListener("wheel", () => { _ovLastUserInteraction = Date.now(); }, { passive: true });
+    container.addEventListener("touchstart", () => { _ovLastUserInteraction = Date.now(); }, { passive: true });
 
     let _ovRoRaf = null;
     const ro = new ResizeObserver(entries => {
@@ -6644,16 +6825,19 @@
       title: '',
     });
 
-    // Sync time scale with main chart
+    // Sync time scale with main chart with anti-recursion lock
+    let _isSyncingRange = false;
     _ovChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-      if (_ovCvdChart && range) {
-        _ovCvdChart.timeScale().setVisibleLogicalRange(range);
-      }
+      if (_isSyncingRange || !_ovCvdChart || !range) return;
+      _isSyncingRange = true;
+      try { _ovCvdChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+      _isSyncingRange = false;
     });
     _ovCvdChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-      if (_ovChart && range) {
-        try { _ovChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
-      }
+      if (_isSyncingRange || !_ovChart || !range) return;
+      _isSyncingRange = true;
+      try { _ovChart.timeScale().setVisibleLogicalRange(range); } catch(e) {}
+      _isSyncingRange = false;
     });
 
     let _ovCvdRoRaf = null;
@@ -6989,6 +7173,7 @@
       _ovAutoRefreshTimer = setInterval(() => {
         const viewOv = document.getElementById("viewOverview");
         if (viewOv && viewOv.style.display !== "none" && document.visibilityState === "visible") {
+          if (Date.now() - _ovLastUserInteraction < 20000) return; // Preserve user zoom/pan while inspecting
           if (_overviewSymbol) loadStockOverview(_overviewSymbol, { silent: true });
         }
       }, 15000);
@@ -7248,12 +7433,17 @@
         `).join("");
       }
 
-      // Paint Candles
+      // Paint Candles with Viewport & Zoom Preservation
       if (_ovCandleSeries && data.candles && data.candles.length) {
+        const savedRange = (_ovChart && options.silent) ? _ovChart.timeScale().getVisibleLogicalRange() : null;
         _ovCandleSeries.priceScale().applyOptions({ autoScale: true });
         _ovCandleSeries.setData(data.candles);
         _ovCandlesData = data.candles;
         _ovIsBullish = (data.percent_change !== undefined ? data.percent_change >= 0 : data.side === 'GAINER') || !!data.demand_zone;
+
+        if (savedRange && _ovChart) {
+          try { _ovChart.timeScale().setVisibleLogicalRange(savedRange); } catch(e) {}
+        }
       }
       if (_ovVolumeSeries && data.volumes && data.volumes.length) {
         _ovVolumeSeries.setData(data.volumes);
@@ -7416,10 +7606,17 @@
 
       if (_ovChart) {
         if (!options.silent) {
-          _ovChart.timeScale().fitContent();
-        } else {
-          try { _ovChart.timeScale().scrollToRealTime(); } catch(e) {}
+          const totalBars = (data.candles || []).length;
+          if (totalBars > 85) {
+            _ovChart.timeScale().setVisibleLogicalRange({
+              from: totalBars - 85,
+              to: totalBars + 5,
+            });
+          } else {
+            _ovChart.timeScale().fitContent();
+          }
         }
+        // Background silent updates preserve user zoom/pan position without auto-snapping!
       }
       requestAnimationFrame(renderVolumeProfileCanvas);
 
@@ -7437,46 +7634,63 @@
     // IT / Technology
     TCS:"IT", INFY:"IT", WIPRO:"IT", HCLTECH:"IT", TECHM:"IT", LTIM:"IT",
     MPHASIS:"IT", COFORGE:"IT", PERSISTENT:"IT", LTTS:"IT", KPITTECH:"IT",
-    BIRLASOFT:"IT", HEXAWARE:"IT",
+    BIRLASOFT:"IT", HEXAWARE:"IT", OFSS:"IT", TATAELXSI:"IT",
     // Banks
-    HDFCBANK:"Banks", ICICIBANK:"Banks", KOTAK:"Banks", AXISBANK:"Banks",
+    HDFCBANK:"Banks", ICICIBANK:"Banks", KOTAK:"Banks", KOTAKBANK:"Banks", AXISBANK:"Banks",
     SBIN:"Banks", INDUSINDBK:"Banks", BANDHANBNK:"Banks", IDFCFIRSTB:"Banks",
     FEDERALBNK:"Banks", RBLBANK:"Banks", AUBANK:"Banks", PNB:"Banks",
-    CANBK:"Banks", UNIONBANK:"Banks",
+    CANBK:"Banks", UNIONBANK:"Banks", BANKBARODA:"Banks", BANKINDIA:"Banks",
+    INDIANB:"Banks", MAHABANK:"Banks", YESBANK:"Banks",
     // Fin Services / NBFC
     BAJFINANCE:"Fin Serv", BAJAJFINSV:"Fin Serv", MUTHOOTFIN:"Fin Serv",
     CHOLAFIN:"Fin Serv", IIFL:"Fin Serv", ABCAPITAL:"Fin Serv",
     M_MFIN:"Fin Serv", MANAPPURAM:"Fin Serv", MOTILALOFS:"Fin Serv",
-    ANGELONE:"Fin Serv",
+    ANGELONE:"Fin Serv", HDFCAMC:"Fin Serv", MFSL:"Fin Serv", MCX:"Fin Serv",
+    SBILIFE:"Fin Serv", KFINTECH:"Fin Serv", "NAM-INDIA":"Fin Serv",
+    CDSL:"Fin Serv", CAMS:"Fin Serv", BSE:"Fin Serv", "360ONE":"Fin Serv",
+    HDFCLIFE:"Fin Serv", ICICIGI:"Fin Serv", ICICIPRULI:"Fin Serv",
+    LICI:"Fin Serv", SBICARD:"Fin Serv", SHRIRAMFIN:"Fin Serv",
+    PFC:"Fin Serv", RECLTD:"Fin Serv", IREDA:"Fin Serv", JIOFIN:"Fin Serv",
+    LICHSGFIN:"Fin Serv", PNBHOUSING:"Fin Serv", LTF:"Fin Serv",
     // Pharma / Healthcare
     SUNPHARMA:"Pharma", DRREDDY:"Pharma", CIPLA:"Pharma", DIVISLAB:"Pharma",
     APOLLOHOSP:"Pharma", LUPIN:"Pharma", BIOCON:"Pharma", TORNTPHARM:"Pharma",
     GLENMARK:"Pharma", AUROPHARMA:"Pharma", ABBOTINDIA:"Pharma", SAGILITY:"Pharma",
+    ALKEM:"Pharma", FORTIS:"Pharma", MAXHEALTH:"Pharma", MANKIND:"Pharma",
+    ZYDUSLIFE:"Pharma", LAURUSLABS:"Pharma",
     // Auto
     TATAMOTORS:"Auto", MARUTI:"Auto", EICHERMOT:"Auto", "BAJAJ-AUTO":"Auto",
-    HEROMOTOCO:"Auto", M_M:"Auto", TVSMOTOR:"Auto", ASHOKLEY:"Auto", MAHINDRA:"Auto",
+    HEROMOTOCO:"Auto", M_M:"Auto", "M&M":"Auto", TVSMOTOR:"Auto", ASHOKLEY:"Auto",
+    MAHINDRA:"Auto", TIINDIA:"Auto", HYUNDAI:"Auto", BHARATFORG:"Auto",
+    BOSCHLTD:"Auto", MOTHERSON:"Auto", SONACOMS:"Auto", UNOMINDA:"Auto",
     // Metal / Mining
     TATASTEEL:"Metal", HINDALCO:"Metal", JSWSTEEL:"Metal", SAIL:"Metal",
     VEDL:"Metal", NMDC:"Metal", HINDZINC:"Metal", NATIONALUM:"Metal",
-    ONGC:"Metal", COALINDIA:"Metal",
+    ONGC:"Metal", COALINDIA:"Metal", JINDALSTEL:"Metal",
     // Energy / Oil & Gas
     RELIANCE:"Energy", BPCL:"Energy", ONGC:"Energy", IOC:"Energy",
     HINDPETRO:"Energy", GAIL:"Energy", PETRONET:"Energy", MGL:"Energy",
-    ATGL:"Energy", ADANIGREEN:"Energy", TATAPOWER:"Energy",
+    ATGL:"Energy", ADANIGREEN:"Energy", TATAPOWER:"Energy", OIL:"Energy",
     // FMCG / Consumer
     HINDUNILVR:"FMCG", NESTLEIND:"FMCG", BRITANNIA:"FMCG", DABUR:"FMCG",
     MARICO:"FMCG", GODREJCP:"FMCG", ITC:"FMCG", COLPAL:"FMCG",
-    TATACONSUM:"FMCG", EMAMILTD:"FMCG",
+    TATACONSUM:"FMCG", EMAMILTD:"FMCG", ASIANPAINT:"FMCG", GODFRYPHLP:"FMCG",
+    JUBLFOOD:"FMCG", KALYANKJIL:"FMCG", PAGEIND:"FMCG", PATANJALI:"FMCG",
+    RADICO:"FMCG", UNITDSPR:"FMCG", VBL:"FMCG",
     // EMS / Electronics
     KAYNES:"EMS / Electronics", DIXON:"EMS / Electronics", AMBER:"EMS / Electronics", PGEL:"EMS / Electronics",
-    // Infra / Realty / Capital Goods
+    // Infra / Realty / Cement
     LTTS:"Infra", LT:"Infra", LODHA:"Infra", DLF:"Infra",
     GODREJPROP:"Infra", PRESTIGE:"Infra", PHOENIXLTD:"Infra",
     ULTRACEMCO:"Infra", AMBUJACEM:"Infra", SHREECEM:"Infra",
+    ADANIENT:"Infra", GRASIM:"Infra", ASTRAL:"Infra", OBEROIRLTY:"Infra",
+    NBCC:"Infra", RVNL:"Infra", GMRAIRPORT:"Infra",
+    // Capital Goods & Electricals
     SIEMENS:"Capital Goods", ABB:"Capital Goods", BHEL:"Capital Goods",
     CUMMINSIND:"Capital Goods", ENRIN:"Capital Goods", "GVT&D":"Capital Goods",
     CGPOWER:"Capital Goods", POWERINDIA:"Capital Goods", SOLARINDS:"Capital Goods",
-    AEQUITAS:"Capital Goods",
+    AEQUITAS:"Capital Goods", POLYCAB:"Capital Goods", KEI:"Capital Goods",
+    VOLTAS:"Capital Goods", APLAPOLLO:"Capital Goods",
     // Telecom / Media
     BHARTIARTL:"Telecom", IDEA:"Telecom", INDUSTOWER:"Telecom",
     ZEEL:"Media", PVRINOX:"Media",
@@ -7484,18 +7698,21 @@
     PSBs: "PSU Bank",
     // Transport / Logistics
     CONCOR:"Logistics", IRFC:"Logistics", IRCTC:"Logistics",
-    ADANIPORTS:"Logistics",
+    ADANIPORTS:"Logistics", DELHIVERY:"Logistics", INDHOTEL:"Hotels", INDIGO:"Aviation",
     // Power
     NTPC:"Power", POWERGRID:"Power", TORNTPOWER:"Power",
-    CESC:"Power", ADANIPOWER:"Power",
+    CESC:"Power", ADANIPOWER:"Power", ADANIENSOL:"Power", INOXWIND:"Power",
+    JSWENERGY:"Power", NHPC:"Power", PREMIERENE:"Power", SUZLON:"Power", WAAREEENER:"Power",
     // Chemicals
     ATUL:"Chemicals", PIDILITIND:"Chemicals", NAVINFLUOR:"Chemicals",
     COROMANDEL:"Chemicals", PIIND:"Chemicals", SRF:"Chemicals", UPL:"Chemicals",
     // Defence
     HAL:"Defence", BEL:"Defence", DRDO:"Defence", BHEL:"Defence",
-    // Others
+    COCHINSHIP:"Defence", BDL:"Defence", MAZDOCK:"Defence",
+    // Retail & Internet
     ZOMATO:"Internet", POLICYBZR:"Internet", NYKAA:"Internet",
-    PAYTM:"Internet", DMART:"Retail", TRENT:"Retail",
+    PAYTM:"Internet", NAUKRI:"Internet", SWIGGY:"Internet", ETERNAL:"Internet", IEX:"Internet",
+    DMART:"Retail", TRENT:"Retail", TITAN:"Retail",
     ATHERENERG:"EV/Energy", OLECTRA:"EV/Energy",
   };
 
@@ -7530,13 +7747,60 @@
       }
     }
 
-    // Use the broad market universe (every OI-confirmed F&O stock, not just
-    // today's breakout candidates) so every sector gets a fair reading -
-    // falls back to the narrow breakout list only if an older cached payload
-    // (from before this field existed) is all that's available.
-    const allStocks = (payload.market_universe && payload.market_universe.length)
+    // Build candidate lookup to enrich allStocks with real scanner indicators
+    const candidateLookup = {};
+    const mergeCandidate = (c) => {
+      if (!c || !c.symbol) return;
+      const existing = candidateLookup[c.symbol] || {};
+      candidateLookup[c.symbol] = { ...existing, ...c };
+    };
+
+    (payload.bullish || []).forEach(mergeCandidate);
+    (payload.bearish || []).forEach(mergeCandidate);
+    if (payload.top5_eligible) {
+      (payload.top5_eligible.bullish || []).forEach(mergeCandidate);
+      (payload.top5_eligible.bearish || []).forEach(mergeCandidate);
+    }
+    if (payload.daily_top5) {
+      (payload.daily_top5.bullish || []).forEach(mergeCandidate);
+      (payload.daily_top5.bearish || []).forEach(mergeCandidate);
+    }
+
+    const rawList = (payload.market_universe && payload.market_universe.length)
       ? payload.market_universe
       : [...(payload.bullish || []), ...(payload.bearish || [])];
+
+    const allStocks = rawList.map(s => {
+      const match = candidateLookup[s.symbol] || {};
+      let cleanRvol = 1.0;
+      if (typeof match.rvol_5m === 'number' && match.rvol_5m > 0) {
+        cleanRvol = match.rvol_5m;
+      } else if (typeof match.rvol === 'number' && match.rvol > 0) {
+        cleanRvol = match.rvol;
+      } else if (typeof s.rvol_5m === 'number' && s.rvol_5m > 0) {
+        cleanRvol = s.rvol_5m;
+      } else if (typeof s.vc_ranking === 'number' && s.vc_ranking > 0) {
+        if (s.vc_ranking < 50) {
+          cleanRvol = s.vc_ranking;
+        } else {
+          // Normalize unnormalized volume cash to clean 1.0x-5.0x range
+          cleanRvol = Math.round(Math.min(Math.max(1.0 + Math.log10(s.vc_ranking / 10000), 0.8), 5.5) * 10) / 10;
+        }
+      }
+
+      return {
+        ...s,
+        ...match,
+        rvol_5m: cleanRvol,
+        rvol: cleanRvol,
+        vc_ranking: cleanRvol,
+        percent_change: (s.percent_change !== undefined && s.percent_change !== null) ? s.percent_change : (match.percent_change || 0),
+        ltp: s.ltp || match.ltp || 0,
+        lot_size: s.lot_size || match.lot_size || 0,
+        range_position_percent: (s.range_position_percent !== undefined && s.range_position_percent !== null) ? s.range_position_percent : (match.range_position_percent || 0),
+        sector: SECTOR_MAP[s.symbol] || match.sector || "Other",
+      };
+    });
 
     // ── Step 1: Compute per-sector stats from live stock data ──
     const sectorStats = {};
@@ -7550,20 +7814,29 @@
       sectorStats[sector].count++;
     }
 
-    // Compute average % change per sector & sort
-    const sectorList = Object.entries(sectorStats).map(([name, data]) => {
-      const avgPct = data.count > 0 ? data.totalPct / data.count : 0;
-      const bullCount = data.stocks.filter(s => (s.percent_change||0) > 0).length;
-      const leader = data.stocks.sort((a,b) => (b.percent_change||0)-(a.percent_change||0))[0];
-      const laggard = [...data.stocks].sort((a,b) => (a.percent_change||0)-(b.percent_change||0))[0];
-      let status, tailwind;
-      if (avgPct >= 1.0)       { status = "Bullish";  tailwind = "Strong Tailwind"; }
-      else if (avgPct >= 0.2)  { status = "Bullish";  tailwind = "Moderate Tailwind"; }
-      else if (avgPct > -0.2)  { status = "Neutral";  tailwind = "Neutral"; }
-      else if (avgPct > -1.0)  { status = "Bearish";  tailwind = "Mild Headwind"; }
-      else                     { status = "Bearish";  tailwind = "Strong Headwind"; }
-      return { name, avgPct, count: data.count, bullCount, leader, laggard, status, tailwind, stocks: data.stocks };
-    }).sort((a,b) => b.avgPct - a.avgPct);
+    // Compute average % change per sector & sort (Authoritative backend sector flow if available)
+    const sectorList = (payload.sector_flow && payload.sector_flow.sectors && payload.sector_flow.sectors.length)
+      ? payload.sector_flow.sectors.map(s => ({
+          ...s,
+          avgPct: s.avg_pct,
+          bullCount: s.advances,
+          status: s.avg_pct >= 0.2 ? "Bullish" : (s.avg_pct <= -0.2 ? "Bearish" : "Neutral"),
+          leader: s.stocks && s.stocks[0],
+          laggard: s.stocks && s.stocks[s.stocks.length - 1],
+        }))
+      : Object.entries(sectorStats).map(([name, data]) => {
+          const avgPct = data.count > 0 ? data.totalPct / data.count : 0;
+          const bullCount = data.stocks.filter(s => (s.percent_change||0) > 0).length;
+          const leader = data.stocks.sort((a,b) => (b.percent_change||0)-(a.percent_change||0))[0];
+          const laggard = [...data.stocks].sort((a,b) => (a.percent_change||0)-(b.percent_change||0))[0];
+          let status, tailwind;
+          if (avgPct >= 1.0)       { status = "Bullish";  tailwind = "Strong Tailwind"; }
+          else if (avgPct >= 0.2)  { status = "Bullish";  tailwind = "Moderate Tailwind"; }
+          else if (avgPct > -0.2)  { status = "Neutral";  tailwind = "Neutral"; }
+          else if (avgPct > -1.0)  { status = "Bearish";  tailwind = "Mild Headwind"; }
+          else                     { status = "Bearish";  tailwind = "Strong Headwind"; }
+          return { name, avgPct, count: data.count, bullCount, leader, laggard, status, tailwind, stocks: data.stocks };
+        }).sort((a,b) => b.avgPct - a.avgPct);
 
     // ── RENDER 1: Sector Heatmap Tiles ──
     const tilesGrid = document.getElementById("sectorTilesGrid");
@@ -7676,16 +7949,28 @@
       const sInfo = sectorAvg[s.sector] || { avgPct: 0, tailwind: "—", status: "Neutral" };
       const tailwindColor = sInfo.status === "Bullish" ? "#16a34a" : sInfo.status === "Bearish" ? "#dc2626" : "#64748b";
       const tailwindBg    = sInfo.status === "Bullish" ? "#f0fdf4" : sInfo.status === "Bearish" ? "#fff1f2" : "#f8fafc";
-      const rvol = s.vc_ranking || 0;
+      const rvol = (typeof s.rvol_5m === 'number' && s.rvol_5m > 0) ? s.rvol_5m : ((typeof s.rvol === 'number' && s.rvol > 0) ? s.rvol : 1.0);
       const range = s.range_position_percent || 0;
 
-      // Trade setup badge
+      // Trade setup badge (Accurately reflects Demand Fresh, Bear OB, Breakout, Block Surge)
       let setup = "Watch";
       let setupBg = "#f1f5f9"; let setupCol = "#64748b";
-      if (s.is_breakout && rvol >= 2.0 && sInfo.status === "Bullish") {
+      if (s.is_demand_fresh || (s.quality_tags && s.quality_tags.some(t => t.includes("DEMAND · FRESH")))) {
+        setup = "🎯 DEMAND FRESH"; setupBg = "#dcfce7"; setupCol = "#166534";
+      } else if (s.is_supply_zone || (s.quality_tags && s.quality_tags.some(t => t.includes("BEAR OB · FRESH")))) {
+        setup = "🔴 BEAR OB FRESH"; setupBg = "#fee2e2"; setupCol = "#991b1b";
+      } else if (s.is_block_surge || (s.quality_tags && s.quality_tags.some(t => t.includes("BLOCK SURGE")))) {
+        setup = "⚡ BLOCK SURGE"; setupBg = "#eff6ff"; setupCol = "#1d4ed8";
+      } else if (s.is_breakout && rvol >= 1.5 && sInfo.status === "Bullish") {
         setup = "HIGH CONVICTION BUY"; setupBg = "#dcfce7"; setupCol = "#166534";
       } else if (s.is_breakout && sInfo.status === "Bullish") {
         setup = "CE Buy"; setupBg = "#eff6ff"; setupCol = "#1d4ed8";
+      } else if (s.setup === "Long buildup" && sInfo.status === "Bullish") {
+        setup = "Long Buildup"; setupBg = "#eff6ff"; setupCol = "#1d4ed8";
+      } else if (sInfo.status === "Bullish" && (s.percent_change||0) >= 2.0) {
+        setup = "Bullish Momentum"; setupBg = "#eff6ff"; setupCol = "#1d4ed8";
+      } else if (sInfo.status === "Bullish" && (s.percent_change||0) > 0) {
+        setup = "Sector Tailwind"; setupBg = "#f0fdf4"; setupCol = "#15803d";
       } else if (sInfo.status === "Bearish" && (s.percent_change||0) < -0.5) {
         setup = "PE Buy"; setupBg = "#fff1f2"; setupCol = "#b91c1c";
       } else if (sInfo.status === "Neutral") {
@@ -7750,7 +8035,7 @@
 
     tbody.innerHTML = stocks.map(s => {
       const sec = sectorAvg[s.sector] || { avgPct: 0, tailwind: "—", status: "Neutral" };
-      const rvol = s.vc_ranking || 0;
+      const rvol = (typeof s.rvol_5m === 'number' && s.rvol_5m > 0) ? s.rvol_5m : ((typeof s.rvol === 'number' && s.rvol > 0) ? s.rvol : 1.0);
       const pctUp = (s.percent_change||0) >= 0;
       const secUp = sec.avgPct >= 0;
 

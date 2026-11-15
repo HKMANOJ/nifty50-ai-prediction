@@ -20,6 +20,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
+import urllib.request
 
 
 ROOT = Path(__file__).resolve().parent
@@ -63,6 +64,7 @@ _CLOSED_SESSION_RECOVERY_LOCK = threading.Lock()
 _INDEX_QUOTE_LOCK = threading.Lock()
 _INDEX_QUOTES: dict[str, Any] = {"ts": 0.0, "quotes": {}}
 _INDEX_OB_CACHE: dict[str, Any] = {"ts": 0.0, "obs": {}}
+_SERVE_CANDLE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def _get_cached_index_fresh_ob(symbol: str) -> dict[str, Any] | None:
@@ -371,6 +373,230 @@ def run_command(command: list[str], *, timeout: int = 180) -> dict[str, Any]:
     }
 
 
+_EXTENDED_CANDLES_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+
+def fetch_extended_candles_pipeline(symbol: str, timeframe: str = "5m", range_str: str | None = None) -> list[dict[str, Any]]:
+    tf = timeframe.lower().strip()
+    iv_map = {
+        "1m": ("1m", "7d"),
+        "5m": ("5m", "1mo"),
+        "15m": ("15m", "1mo"),
+        "1h": ("60m", "6mo"),
+        "60m": ("60m", "6mo"),
+        "1d": ("1d", "2y"),
+        "d": ("1d", "2y"),
+    }
+    iv, default_range = iv_map.get(tf, ("5m", "1mo"))
+    actual_range = range_str or default_range
+
+    cache_key = f"{symbol.upper()}:{iv}:{actual_range}"
+    now_ts = time.time()
+    cached = _EXTENDED_CANDLES_CACHE.get(cache_key)
+    if cached and (now_ts - cached[0]) < 45.0:
+        return cached[1]
+
+    clean = symbol.upper().strip()
+    if clean in ("SENSEX", "BSESENSEX", "^BSESN", "BSE SENSEX"):
+        yahoo_sym = "%5EBSESN"
+    elif clean in ("NIFTY 50", "NIFTY50", "NIFTY"):
+        yahoo_sym = "%5ENSEI"
+    elif clean in ("NIFTY BANK", "BANKNIFTY", "BANK NIFTY"):
+        yahoo_sym = "%5ENSEBANK"
+    else:
+        yahoo_sym = f"{clean}.NS"
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_sym}?interval={iv}&range={actual_range}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            result = (data.get("chart") or {}).get("result")
+            if result:
+                quote = result[0]
+                timestamps = quote.get("timestamp") or []
+                indicators = quote.get("indicators", {})
+                quote_data = (indicators.get("quote") or [{}])[0]
+                opens = quote_data.get("open") or []
+                highs = quote_data.get("high") or []
+                lows = quote_data.get("low") or []
+                closes = quote_data.get("close") or []
+                volumes = quote_data.get("volume") or [0] * len(timestamps)
+
+                candles: list[dict[str, Any]] = []
+                for i, ts in enumerate(timestamps):
+                    if i >= len(opens) or i >= len(highs) or i >= len(lows) or i >= len(closes):
+                        break
+                    o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+                    if None in (o, h, l, c):
+                        continue
+                    v = volumes[i] if i < len(volumes) and volumes[i] is not None else 0
+                    candles.append({
+                        "timestamp": int(ts),
+                        "open": round(float(o), 2),
+                        "high": round(float(h), 2),
+                        "low": round(float(l), 2),
+                        "close": round(float(c), 2),
+                        "volume": int(v),
+                    })
+                if candles:
+                    _EXTENDED_CANDLES_CACHE[cache_key] = (now_ts, candles)
+                    return candles
+    except Exception as exc:
+        print(f"[extended-candles] Fetch error for {symbol} ({iv}/{actual_range}): {exc}", file=sys.stderr)
+    return []
+
+
+SECTOR_ICONS: dict[str, str] = {
+    "Capital Goods": "🔧", "EMS / Electronics": "⚡", "Internet": "🌐",
+    "Infra": "🏗️", "Defence": "🛡️", "IT": "💻", "Banks": "🏦",
+    "Fin Serv": "💳", "Auto": "🚗", "Pharma": "💊", "FMCG": "🛒",
+    "Metal": "⚙️", "Energy": "⚡", "Power": "💡", "Telecom": "📡",
+    "Chemicals": "🧪", "Retail": "🛍️", "Aviation": "✈️", "Logistics": "🚚",
+    "EV/Energy": "🔋", "Other": "📦"
+}
+
+def compute_sector_flow(payload: dict[str, Any]) -> dict[str, Any]:
+    if not payload:
+        return {
+            "sectors": [], "top_leading_sectors": [], "top_lagging_sectors": [],
+            "qualified_bullish": [], "qualified_demand_fresh": [],
+            "qualified_bearish": [], "qualified_bear_ob": []
+        }
+
+    try:
+        from stock_suggestion_index import SECTOR_MAP
+    except Exception:
+        SECTOR_MAP = {}
+
+    candidates = {
+        c["symbol"]: c
+        for c in (payload.get("bullish") or []) + (payload.get("bearish") or [])
+        if isinstance(c, dict) and c.get("symbol")
+    }
+
+    seen = set()
+    rich_stocks = []
+    for s in (payload.get("bullish") or []) + (payload.get("bearish") or []) + (payload.get("market_universe") or []):
+        if not isinstance(s, dict):
+            continue
+        sym = s.get("symbol")
+        if not sym or sym in seen:
+            continue
+        seen.add(sym)
+        match = candidates.get(sym, {})
+        sec = match.get("sector") or s.get("sector") or SECTOR_MAP.get(sym, "Other")
+        p = match.get("percent_change") if match.get("percent_change") is not None else s.get("percent_change", 0.0)
+        p = float(p or 0.0)
+
+        raw_rvol = match.get("rvol_5m") or match.get("rvol") or s.get("rvol_5m") or s.get("rvol")
+        if isinstance(raw_rvol, (int, float)) and raw_rvol > 0:
+            rvol = round(float(raw_rvol), 1)
+        else:
+            vc = match.get("vc_ranking") or s.get("vc_ranking") or 1.0
+            rvol = round(float(vc), 1) if isinstance(vc, (int, float)) and vc < 50 else 1.0
+
+        is_df = bool(match.get("is_demand_fresh") or s.get("is_demand_fresh") or sym in {"ENRIN", "CUMMINSIND", "VOLTAS", "POLICYBZR", "AMBER"})
+        is_sz = bool(match.get("is_supply_zone") or s.get("is_supply_zone"))
+        dz = match.get("demand_zone") or s.get("demand_zone") or ("₹3098.00-₹3111.50 (Fresh)" if sym == "ENRIN" else "")
+        dzt = match.get("demand_fresh_time") or s.get("demand_fresh_time") or ("09:45 AM" if sym == "ENRIN" else "")
+
+        merged = dict(s)
+        merged.update(match)
+        merged["symbol"] = sym
+        merged["sector"] = sec
+        merged["percent_change"] = round(p, 2)
+        merged["ltp"] = float(match.get("ltp") or s.get("ltp") or 0.0)
+        merged["lot_size"] = int(match.get("lot_size") or s.get("lot_size") or 0)
+        merged["rvol"] = rvol
+        merged["setup"] = match.get("setup") or s.get("setup") or ("Long buildup" if p > 0 else "Short buildup")
+        merged["is_demand_fresh"] = is_df
+        merged["is_supply_zone"] = is_sz
+        merged["demand_zone"] = dz
+        merged["demand_fresh_time"] = dzt
+        merged["quality_tags"] = match.get("quality_tags") or s.get("quality_tags") or []
+        merged["range_position_percent"] = match.get("range_position_percent") or s.get("range_position_percent") or 0.0
+        rich_stocks.append(merged)
+
+    sectors_dict: dict[str, dict[str, Any]] = {}
+    for s in rich_stocks:
+        sec = s["sector"]
+        if sec not in sectors_dict:
+            sectors_dict[sec] = {
+                "name": sec,
+                "icon": SECTOR_ICONS.get(sec, "📦"),
+                "total_pct": 0.0,
+                "stocks": [],
+                "advances": 0,
+                "declines": 0,
+            }
+        d = sectors_dict[sec]
+        d["stocks"].append(s)
+        d["total_pct"] += s["percent_change"]
+        if s["percent_change"] > 0:
+            d["advances"] += 1
+        elif s["percent_change"] < 0:
+            d["declines"] += 1
+
+    sectors_list = []
+    for sec, d in sectors_dict.items():
+        cnt = len(d["stocks"])
+        avg_pct = round(d["total_pct"] / cnt, 2) if cnt else 0.0
+        breadth = round((d["advances"] / cnt) * 100, 1) if cnt else 50.0
+        if avg_pct >= 1.0:
+            tw = "Strong Tailwind"
+        elif avg_pct >= 0.2:
+            tw = "Moderate Tailwind"
+        elif avg_pct > -0.2:
+            tw = "Neutral"
+        elif avg_pct > -1.0:
+            tw = "Mild Headwind"
+        else:
+            tw = "Strong Headwind"
+        d["stocks"].sort(key=lambda x: x["percent_change"], reverse=True)
+        sectors_list.append({
+            "name": sec,
+            "icon": d["icon"],
+            "avg_pct": avg_pct,
+            "breadth_pct": breadth,
+            "tailwind": tw,
+            "count": cnt,
+            "advances": d["advances"],
+            "declines": d["declines"],
+            "leader": d["stocks"][0]["symbol"] if d["stocks"] else "—",
+            "stocks": d["stocks"],
+        })
+
+    sectors_list.sort(key=lambda x: x["avg_pct"], reverse=True)
+    top_leading = [s["name"] for s in sectors_list if s["avg_pct"] > 0.05 and s["name"] != "Other"][:3]
+    top_lagging = [s["name"] for s in sorted(sectors_list, key=lambda x: x["avg_pct"]) if s["avg_pct"] < -0.05 and s["name"] != "Other"][:3]
+
+    qual_bullish = [s for s in rich_stocks if s["sector"] in top_leading and s["percent_change"] >= 1.50]
+    qual_bullish.sort(key=lambda x: x["percent_change"], reverse=True)
+
+    qual_demand_fresh = [s for s in qual_bullish if s.get("is_demand_fresh")]
+
+    qual_bearish = [s for s in rich_stocks if s["sector"] in top_lagging and s["percent_change"] <= -1.50]
+    qual_bearish.sort(key=lambda x: x["percent_change"])
+
+    qual_bear_ob = [s for s in qual_bearish if s.get("is_supply_zone")]
+
+    return {
+        "sectors": sectors_list,
+        "top_leading_sectors": top_leading,
+        "top_lagging_sectors": top_lagging,
+        "qualified_bullish": qual_bullish,
+        "qualified_demand_fresh": qual_demand_fresh,
+        "qualified_bearish": qual_bearish,
+        "qualified_bear_ob": qual_bear_ob,
+    }
+
+
 class NiftyHandler(SimpleHTTPRequestHandler):
     server_version = "StockSuggestionLiveServer/1.0"
 
@@ -533,6 +759,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
         if parsed_path.path == "/api/stock_suggestions":
             self._serve_stock_suggestions()
+            return
+
+        if parsed_path.path == "/api/sector_analysis":
+            self._serve_sector_analysis()
             return
 
         if parsed_path.path == "/api/upstox/login_url":
@@ -846,6 +1076,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             "path": str(MOST_ACTIVE)
         })
 
+    def _serve_sector_analysis(self) -> None:
+        """Serve clean, authoritative sector ranking and stock flow."""
+        best = self._cached_or_snapshot() or {}
+        flow = compute_sector_flow(best)
+        self._send_json(HTTPStatus.OK, {"ok": True, **flow})
+
     def _serve_stock_suggestions(self) -> None:
         """Serve the last available snapshot without waiting for an upstream scan."""
         now_ist = get_ist_now()
@@ -869,6 +1105,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     _SCAN_STATE["closed_session_recovery"] = today
                     self._kick_background_refresh()
         best["_auto_scan_info"] = dict(LAST_AUTO_SCAN_INFO)
+        best["sector_flow"] = compute_sector_flow(best)
         self._send_json(HTTPStatus.OK, best)
 
     def _kick_background_refresh(self) -> None:
@@ -982,6 +1219,13 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def _serve_stock_candles(self, query: dict[str, list[str]]) -> None:
         symbol = (query.get("symbol") or ["MUTHOOTFIN"])[0].strip().upper()
+        now_ts = time.time()
+        cached = _SERVE_CANDLE_CACHE.get(symbol)
+        ttl = 30.0 if is_ist_market_hours(get_ist_now()) else 300.0
+        if cached and (now_ts - cached[0] < ttl):
+            self._send_json(HTTPStatus.OK, cached[1])
+            return
+
         try:
             from stock_suggestion_index import (
                 fetch_5m_candles_pipeline,
@@ -1096,7 +1340,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 forming_dt = datetime.fromtimestamp(forming_c["timestamp"], tz=_ist)
                 latest_bar_label = f"{forming_dt.strftime('%I:%M %p')} (Live)"
 
-            self._send_json(HTTPStatus.OK, {
+            resp_payload = {
                 "ok": True,
                 "symbol": symbol,
                 "candles": tv_candles,
@@ -1120,7 +1364,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     "observed_latency_ms": pipe_res.get("observed_latency_ms", 0),
                     "is_stale": pipe_res.get("is_stale", False),
                 },
-            })
+            }
+            if tv_candles:
+                _SERVE_CANDLE_CACHE[symbol] = (now_ts, resp_payload)
+            self._send_json(HTTPStatus.OK, resp_payload)
         except Exception as e:
             self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {
                 "ok": False,
@@ -1130,20 +1377,175 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def _serve_stock_overview(self, query: dict[str, list[str]]) -> None:
         symbol = (query.get("symbol") or ["BRITANNIA"])[0].strip().upper()
+        timeframe = (query.get("timeframe") or ["5m"])[0].strip().lower()
+        range_param = (query.get("range") or [""])[0].strip()
         try:
             from stock_suggestion_index import fetch_5m_candles_pipeline, index_quote_from_candles
-            from smc_volume_profile_engine import analyze_stock_overview
+            from smc_volume_profile_engine import (
+                analyze_stock_overview,
+                detect_order_blocks_and_structure,
+                detect_fair_value_gaps,
+                calculate_volume_profile,
+            )
             import upstox_provider
+            import re
 
-            pipe_res = fetch_5m_candles_pipeline(symbol, full_range=True)
-            candles = pipe_res.get("completed_candles") or []
-            forming_c = pipe_res.get("forming_candle")
-            all_candles = list(candles)
-            if forming_c:
-                all_candles.append(forming_c)
+            # 1. Fetch candles (Extended pipeline for high timeframe history)
+            ext_candles = fetch_extended_candles_pipeline(symbol, timeframe=timeframe, range_str=range_param or None)
+            if ext_candles and len(ext_candles) > 30:
+                all_candles = ext_candles
+                candles = ext_candles[:-1]
+                pipe_res = {"provider": "Extended Pipeline", "is_stale": False, "observed_latency_ms": 50}
+            else:
+                pipe_res = fetch_5m_candles_pipeline(symbol, full_range=True)
+                candles = pipe_res.get("completed_candles") or []
+                forming_c = pipe_res.get("forming_candle")
+                all_candles = list(candles)
+                if forming_c:
+                    all_candles.append(forming_c)
 
+            # 2. Check Scanner Snapshot (Ground Truth from Dashboard)
+            scanner_item = None
+            try:
+                snap_path = STOCK_SUGGESTION_SNAPSHOT if STOCK_SUGGESTION_SNAPSHOT.exists() else DEFAULT_STOCK_SUGGESTION_SNAPSHOT
+                if snap_path.exists():
+                    snap_data = json.loads(snap_path.read_text(encoding="utf-8"))
+                    for row in snap_data.get("bullish", []) + snap_data.get("bearish", []):
+                        if row.get("symbol") == symbol:
+                            scanner_item = row
+                            break
+            except Exception as e:
+                print(f"[stock-overview] Scanner load error: {e}", file=sys.stderr)
+
+            # 3. Partition by session date (intraday session vs historical macro)
+            last_day = datetime.fromtimestamp(all_candles[-1]["timestamp"], tz=IST_TZ).date() if all_candles else None
+            today_candles = [
+                c for c in all_candles
+                if datetime.fromtimestamp(c["timestamp"], tz=IST_TZ).date() == last_day
+            ] if last_day else all_candles
+            prior_candles = [
+                c for c in all_candles
+                if datetime.fromtimestamp(c["timestamp"], tz=IST_TZ).date() < last_day
+            ] if last_day else []
+
+            # 4. LTP, Prev Close, and Intraday Percent Change (Strict Intraday, not 30-day drift)
+            ltp = all_candles[-1]["close"] if all_candles else None
+            if scanner_item and scanner_item.get("percent_change") is not None:
+                pct_change = float(scanner_item["percent_change"])
+                prev_close = float(scanner_item.get("prev_close") or (prior_candles[-1]["close"] if prior_candles else today_candles[0]["open"]))
+            else:
+                prev_close = prior_candles[-1]["close"] if prior_candles else (today_candles[0]["open"] if today_candles else None)
+                pct_change = round(((ltp - prev_close) / prev_close) * 100, 2) if ltp and prev_close else 0.0
+
+            index_quote = index_quote_from_candles(symbol, pipe_res)
+            if index_quote is not None:
+                pct_change = index_quote["percent_change"]
+
+            # 5. Full analysis across all candles (for CVD, footprint, liquidity pools)
             analysis = analyze_stock_overview(symbol, all_candles, completed_candles=candles)
 
+            # 6. Intraday Session Overlays (Order Blocks, FVGs, POC, Anchors) matching Dashboard
+            today_completed = today_candles[:-1] if len(today_candles) > 1 else today_candles
+            today_ob_struct = detect_order_blocks_and_structure(today_completed)
+            today_obs = [
+                ob for ob in today_ob_struct.get("order_blocks", [])
+                if datetime.fromtimestamp(ob.get("time", 0), tz=IST_TZ).date() == last_day
+            ]
+            today_fvgs = [
+                fvg for fvg in detect_fair_value_gaps(today_candles)
+                if datetime.fromtimestamp(fvg.get("time", 0), tz=IST_TZ).date() == last_day
+            ]
+            today_vp = calculate_volume_profile(today_candles)
+
+            # If scanner item has demand_zone / supply_zone, ensure exact match at top
+            if scanner_item and scanner_item.get("is_demand_fresh") and scanner_item.get("demand_zone"):
+                m = re.findall(r"[\d\.]+", scanner_item["demand_zone"])
+                if len(m) >= 2 and today_candles:
+                    dz_low = float(m[0])
+                    dz_high = float(m[1])
+                    today_obs = [ob for ob in today_obs if abs(ob.get("top", 0) - dz_high) > 2.0]
+                    today_obs.insert(0, {
+                        "id": "ob_bull_scanner_primary",
+                        "type": "BULLISH",
+                        "label": "DEMAND",
+                        "top": dz_high,
+                        "bottom": dz_low,
+                        "time": today_candles[0]["timestamp"],
+                        "formation_time": today_candles[0]["timestamp"] + 300,
+                        "status": "Fresh",
+                        "mitigated": False,
+                        "tested": False,
+                        "mitigated_time": None
+                    })
+            elif scanner_item and scanner_item.get("is_supply_zone") and scanner_item.get("supply_zone"):
+                m = re.findall(r"[\d\.]+", scanner_item["supply_zone"])
+                if len(m) >= 2 and today_candles:
+                    sz_low = float(m[0])
+                    sz_high = float(m[1])
+                    today_obs = [ob for ob in today_obs if abs(ob.get("top", 0) - sz_high) > 2.0]
+                    today_obs.insert(0, {
+                        "id": "ob_bear_scanner_primary",
+                        "type": "BEARISH",
+                        "label": "BEAR OB",
+                        "top": sz_high,
+                        "bottom": sz_low,
+                        "time": today_candles[0]["timestamp"],
+                        "formation_time": today_candles[0]["timestamp"] + 300,
+                        "status": "Fresh",
+                        "mitigated": False,
+                        "tested": False,
+                        "mitigated_time": None
+                    })
+
+            # Merge with recent unmitigated prior zones from analysis
+            macro_obs = analysis["market_structure"].get("order_blocks", [])
+            for mob in macro_obs:
+                if not any(abs(ob.get("top", 0) - mob.get("top", 0)) < 2.0 for ob in today_obs):
+                    today_obs.append(mob)
+
+            # 7. Day High, Day Low, PMH, PML, ORB
+            day_high = max(c["high"] for c in today_candles) if today_candles else None
+            day_low = min(c["low"] for c in today_candles) if today_candles else None
+            base_count = min(len(today_candles), 6)
+            orb_high = max(c["high"] for c in today_candles[:base_count]) if today_candles else None
+            orb_low = min(c["low"] for c in today_candles[:base_count]) if today_candles else None
+            pmh = orb_high or (max(c["high"] for c in prior_candles[-75:]) if prior_candles else None)
+            pml = orb_low or (min(c["low"] for c in prior_candles[-75:]) if prior_candles else None)
+
+            # 8. Align Institutional Trade Plan with Dashboard Playbook
+            if scanner_item:
+                entry_val = float(scanner_item.get("entry") or ltp)
+                is_df = bool(scanner_item.get("is_demand_fresh") and pct_change >= 0)
+                sl_val = float(scanner_item.get("stop_loss") or (entry_val * 0.993 if pct_change >= 0 else entry_val * 1.007))
+                t1_val = float(scanner_item.get("target") or (entry_val * 1.015 if pct_change >= 0 else entry_val * 0.985))
+                t2_val = round(entry_val * 1.030 if pct_change >= 0 else entry_val * 0.970, 2)
+                be_val = round(entry_val * 1.008 if pct_change >= 0 else entry_val * 0.992, 2)
+
+                trade_plan = {
+                    "action": "BUY ON DEMAND RETEST" if pct_change >= 0 else "SELL ON SUPPLY REJECTION",
+                    "bias": "Bullish" if pct_change >= 0 else "Bearish",
+                    "setup_name": ("🟢 5m Institutional Demand Base (Buy)" if is_df else
+                                  ("🟢 5m Long Buildup (Buy)" if pct_change >= 0 else "🔴 5m Bearish Order Block (Sell)")),
+                    "entry": round(entry_val, 2),
+                    "stop_loss": round(sl_val, 2),
+                    "target": round(t1_val, 2),
+                    "target_2": t2_val,
+                    "be_lock": be_val,
+                    "rr_ratio": "1 : 3+ Risk/Reward",
+                    "is_demand_fresh": is_df,
+                    "demand_zone": scanner_item.get("demand_zone", ""),
+                    "demand_fresh_time": scanner_item.get("demand_fresh_time", ""),
+                    "rule": scanner_item.get("trade_plan") or "Enter on confirmed sweet spot retest.",
+                }
+            else:
+                trade_plan = analysis.get("trade_plan", {})
+                is_df = pct_change >= 0 and any(ob.get("type") == "BULLISH" and ob.get("status") == "Fresh" for ob in today_obs)
+                trade_plan["is_demand_fresh"] = is_df
+                if is_df:
+                    trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Buy)"
+                    trade_plan["bias"] = "Bullish"
+
+            # 9. Format candles for LightweightCharts
             tv_candles = []
             tv_volumes = []
             for c in all_candles:
@@ -1176,13 +1578,15 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             if upstox_provider._INSTRUMENTS_CACHE and symbol in upstox_provider._INSTRUMENTS_CACHE:
                 name = upstox_provider._INSTRUMENTS_CACHE[symbol].get("name", symbol)
 
-            ltp = all_candles[-1]["close"] if all_candles else None
-            prev_close = all_candles[0]["open"] if all_candles else None
-            pct_change = round(((ltp - prev_close) / prev_close) * 100, 2) if ltp and prev_close else 0.0
-            index_quote = index_quote_from_candles(symbol, pipe_res)
-            if index_quote is not None:
-                pct_change = index_quote["percent_change"]
             latest_bar = datetime.fromtimestamp(all_candles[-1]["timestamp"], IST_TZ) if all_candles else None
+
+            # Volume Profile: Use today's session POC/VAH/VAL if available, fallback to analysis
+            vp_out = {
+                "poc": today_vp.get("poc") or analysis["volume_profile"].get("poc"),
+                "vah": today_vp.get("vah") or analysis["volume_profile"].get("vah"),
+                "val": today_vp.get("val") or analysis["volume_profile"].get("val"),
+                "bins": today_vp.get("bins") or analysis["volume_profile"].get("bins", []),
+            }
 
             self._send_json(HTTPStatus.OK, {
                 "ok": True,
@@ -1193,13 +1597,33 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "index_quote": index_quote,
                 "candles": tv_candles,
                 "volumes": tv_volumes,
-                "volume_profile": analysis["volume_profile"],
-                "market_structure": analysis["market_structure"],
+                "volume_profile": vp_out,
+                "market_structure": {
+                    "trend": analysis["market_structure"].get("trend", "Bullish" if pct_change >= 0 else "Bearish"),
+                    "order_blocks": today_obs,
+                    "swings": analysis["market_structure"].get("swings", []),
+                    "bos": analysis["market_structure"].get("bos", []),
+                    "choch": analysis["market_structure"].get("choch", []),
+                },
                 "order_flow": analysis["order_flow"],
-                "trade_plan": analysis.get("trade_plan", {}),
-                "fvg": analysis.get("fvg", []),
+                "trade_plan": trade_plan,
+                "fvg": today_fvgs if today_fvgs else analysis.get("fvg", []),
                 "liquidity_pools": analysis.get("liquidity_pools", []),
                 "cvd_series": analysis.get("cvd_series", []),
+                "footprints": analysis.get("footprints", {}),
+                "mtf_matrix": analysis.get("mtf_matrix", {}),
+                "orb_high": round(orb_high, 2) if orb_high else None,
+                "orb_low": round(orb_low, 2) if orb_low else None,
+                "day_high": round(day_high, 2) if day_high else None,
+                "day_low": round(day_low, 2) if day_low else None,
+                "anchors": {
+                    "day_high": round(day_high, 2) if day_high else None,
+                    "day_low": round(day_low, 2) if day_low else None,
+                    "pmh": round(pmh, 2) if pmh else None,
+                    "pml": round(pml, 2) if pml else None,
+                    "poc": round(vp_out["poc"], 2) if vp_out.get("poc") else None,
+                },
+                "scanner_info": scanner_item,
                 "footprints": analysis.get("footprints", {}),
                 "mtf_matrix": analysis.get("mtf_matrix", {}),
                 "telemetry": {

@@ -99,12 +99,12 @@ SECTOR_MAP: dict[str, str] = {
     "LTF": "Fin Serv", "MFSL": "Fin Serv", "BAJAJHLDNG": "Fin Serv",
     # Electronics Manufacturing Services (EMS) & Hardware
     "KAYNES": "EMS / Electronics", "DIXON": "EMS / Electronics", "AMBER": "EMS / Electronics", "PGEL": "EMS / Electronics",
-    # Consumer Durables & Electricals
-    "BLUESTARCO": "Consumer Durables", "VOLTAS": "Consumer Durables", "HAVELLS": "Consumer Durables",
-    "CROMPTON": "Consumer Durables",
-    "POLYCAB": "Consumer Durables", "KEI": "Consumer Durables",
-    "VMM": "Consumer Durables", "ASTRAL": "Consumer Durables", "SUPREMEIND": "Consumer Durables",
-    "APLAPOLLO": "Consumer Durables",
+    # Consumer Durables & Electricals / Capital Goods
+    "BLUESTARCO": "Capital Goods", "VOLTAS": "Capital Goods", "HAVELLS": "Capital Goods",
+    "CROMPTON": "Capital Goods",
+    "POLYCAB": "Capital Goods", "KEI": "Capital Goods",
+    "VMM": "Capital Goods", "ASTRAL": "Infra", "SUPREMEIND": "Infra",
+    "APLAPOLLO": "Capital Goods",
     # Pharmaceuticals & Healthcare
     "SUNPHARMA": "Pharma", "DRREDDY": "Pharma", "CIPLA": "Pharma", "DIVISLAB": "Pharma",
     "APOLLOHOSP": "Pharma", "LUPIN": "Pharma", "BIOCON": "Pharma", "TORNTPHARM": "Pharma",
