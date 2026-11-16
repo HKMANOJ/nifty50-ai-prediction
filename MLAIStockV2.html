@@ -2064,18 +2064,6 @@
             </div>
           </div>
 
-          <!-- Early Ignition Playbook Bar -->
-          <div id="chartEarlyPlaybookBanner" style="display:none; margin: 4px 14px 6px; padding: 7px 12px; background: linear-gradient(90deg, #ecfdf5, #f0fdf4); border: 1px solid #6ee7b7; border-radius: 6px; font-size: 11px; color: #065f46; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:14px;">🎯</span>
-              <span><strong>SWEET SPOT IGNITION PLAYBOOK:</strong> Early breakout in high-reward 1.8%–2.5% zone.</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:12px; font-weight:700;">
-              <span id="pbEntry">Entry: Retest EMA9</span>
-              <span id="pbSl" style="color:#b91c1c;">SL: Below Demand Base</span>
-              <span id="pbTgt" style="color:#15803d;">Target: 1:2.5+ RR</span>
-            </div>
-          </div>
 
 
           <!-- TradingView Lightweight Chart Container with SMC Canvas Overlay -->
@@ -3909,9 +3897,8 @@
       }
     }
 
-    // Early Ignition Status Chip & Trade Playbook
+    // Early Ignition Status Chip
     const ignitionChip = document.getElementById("chartEarlyIgnitionChip");
-    const playbookBanner = document.getElementById("chartEarlyPlaybookBanner");
     const p = meta.percent_change !== undefined ? Number(meta.percent_change) : 0;
     const isEarly = Boolean(meta.is_early_ignition || ((p >= 1.5 && p <= 2.8) && (meta.setup || "").toLowerCase().includes("long buildup")));
     if (ignitionChip) {
@@ -3920,25 +3907,6 @@
         ignitionChip.textContent = `🎯 SWEET SPOT IGNITION (${p >= 0 ? "+" : ""}${p.toFixed(2)}%)`;
       } else {
         ignitionChip.style.display = "none";
-      }
-    }
-    if (playbookBanner) {
-      if (isEarly && meta.ltp) {
-        playbookBanner.style.display = "flex";
-        const ltpVal = Number(meta.ltp);
-        const entryLow = (ltpVal * 0.997).toFixed(1);
-        const entryHigh = ltpVal.toFixed(1);
-        const sl = (ltpVal * 0.991).toFixed(1);
-        const t1 = (ltpVal * 1.018).toFixed(1);
-        const t2 = (ltpVal * 1.032).toFixed(1);
-        const pbEntry = document.getElementById("pbEntry");
-        const pbSl = document.getElementById("pbSl");
-        const pbTgt = document.getElementById("pbTgt");
-        if (pbEntry) pbEntry.textContent = `Entry: ₹${entryLow}–₹${entryHigh}`;
-        if (pbSl) pbSl.textContent = `SL: ₹${sl} (-0.9%)`;
-        if (pbTgt) pbTgt.textContent = `Targets: ₹${t1} (1:2) · ₹${t2} (1:3.5)`;
-      } else {
-        playbookBanner.style.display = "none";
       }
     }
 
