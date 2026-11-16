@@ -839,6 +839,22 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             self._serve_index_live()
             return
 
+        if parsed_path.path == "/api/telegram/status":
+            try:
+                import notify
+                token, chat_id, enabled = notify.get_credentials()
+                self._send_json(HTTPStatus.OK, {
+                    "ok": True,
+                    "enabled": enabled,
+                    "bot_name": "ManojLabs",
+                    "bot_username": "ManojLabsBot",
+                    "configured": bool(token and chat_id),
+                    "chat_id": chat_id,
+                })
+            except Exception as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
+
         super().do_GET()
 
     def _serve_index_live(self) -> None:
@@ -866,6 +882,41 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed_path = urlparse(self.path)
+        if parsed_path.path == "/api/telegram/test":
+            try:
+                import notify
+                from zoneinfo import ZoneInfo
+                test_item = {
+                    "symbol": "TATACONSUM",
+                    "percent_change": 3.57,
+                    "entry": 1118.39,
+                    "ltp": 1118.39,
+                    "stop_loss": 1109.76,
+                    "target": 1131.34,
+                    "lot_size": 550,
+                    "rvol_5m": 2.4,
+                    "setup": "Demand Fresh (Test)",
+                    "demand_fresh_time": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%I:%M %p"),
+                    "demand_zone": "₹1,102.50 - ₹1,104.50 (Fresh)",
+                }
+                ok = notify.send_fresh_ob_alert(test_item, sector="FMCG (+1.2%)", is_pe=False, test=True, force=True)
+                self._send_json(HTTPStatus.OK, {"ok": ok, "message": "Test Demand Fresh alert dispatched to Telegram"})
+            except Exception as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
+        if parsed_path.path == "/api/telegram/alert":
+            try:
+                body = self._read_json_body()
+                item = body.get("item") or body
+                sector = body.get("sector", "")
+                is_pe = bool(body.get("is_pe") or body.get("side") == "bearish")
+                force = bool(body.get("force", False))
+                import notify
+                sent = notify.send_fresh_ob_alert(item, sector=sector, is_pe=is_pe, force=force)
+                self._send_json(HTTPStatus.OK, {"ok": True, "sent": sent})
+            except Exception as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
         if parsed_path.path == "/api/alerts/ack":
             try:
                 body = self._read_json_body()
@@ -1190,6 +1241,11 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                         broadcast_scanner_update_sync(payload)
                     except Exception:
                         pass
+                    try:
+                        import notify
+                        notify.dispatch_new_fresh_alerts(payload)
+                    except Exception as exc:
+                        print(f"[telegram] dispatch error: {exc}", file=sys.stderr)
                 return HTTPStatus.OK, payload
 
             # Empty / failed scan: never broadcast it, never return blank -

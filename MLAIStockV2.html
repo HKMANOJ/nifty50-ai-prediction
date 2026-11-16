@@ -1902,6 +1902,10 @@
         </button>
         <button id="soundToggleBtn" style="background:#dbeafe; color:#1d4ed8; font-weight:700; font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #bfdbfe; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Toggle breakout & breakdown bell audio chime">🔔 Bell: ON</button>
         <button id="testBellBtn" style="background:#fdf2f8; color:#be185d; font-weight:700; font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #fbcfe8; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Click to test the bell rang sound and alert">🧪 Test</button>
+        <button id="telegramStatusBtn" onclick="testTelegramAlert()" style="background:#e0f2fe; color:#0369a1; font-weight:700; font-size:11px; padding:3px 7px; border-radius:6px; border:1px solid #bae6fd; cursor:pointer; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Telegram Bot Connected (@ManojLabsBot) - Click to send a test alert to your Telegram">
+          <span style="font-size:11px;">✈️</span>
+          <span id="telegramStatusText">Telegram: Active</span>
+        </button>
         <span id="wsStatusBadge" style="font-size:11px; font-weight:700; padding:3px 7px; border-radius:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="WebSocket connection status only; scanner snapshot status is shown above the table">
           <span id="wsStatusDot" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#16a34a;"></span>
           <span id="wsStatusText">WS: Connected</span>
@@ -3249,6 +3253,17 @@
 
         playBellRangSound();
         showStickyToast(row, isBreakdown);
+
+        // Instant Telegram Push Notification
+        fetch('/api/telegram/alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            item: row,
+            sector: (typeof getSectorBadgeData === 'function') ? (getSectorBadgeData(row.symbol, !isBreakdown)?.name || '') : '',
+            is_pe: isBreakdown,
+          })
+        }).catch(err => console.warn('Telegram dispatch error:', err));
 
         // Acknowledge alert delivery to backend state machine
         if (row.alert_event_id) {
@@ -5875,6 +5890,27 @@
         }
       });
     }
+
+    // Function to manually test Telegram alert from the top navbar button
+    window.testTelegramAlert = function() {
+      const btn = document.getElementById("telegramStatusText");
+      if (btn) btn.textContent = "Sending...";
+      fetch('/api/telegram/test', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) {
+            if (btn) btn.textContent = "Sent! ✓";
+            setTimeout(() => { if (btn) btn.textContent = "Telegram: Active"; }, 3000);
+          } else {
+            alert("Telegram dispatch error: " + (d.error || "failed"));
+            if (btn) btn.textContent = "Telegram: Active";
+          }
+        })
+        .catch(err => {
+          console.error("Telegram test error:", err);
+          if (btn) btn.textContent = "Telegram: Active";
+        });
+    };
 
     loadData();
 

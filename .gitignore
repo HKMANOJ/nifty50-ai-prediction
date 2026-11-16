@@ -8,6 +8,7 @@ __pycache__/
 node_modules/
 inputs/candle_cache.json
 inputs/candle_cache.json.tmp
+inputs/telegram_sent_alerts.json
 inputs/scan_history/
 inputs/scanner_telemetry/
 inputs/tracked_breakouts.json
