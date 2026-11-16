@@ -2077,20 +2077,6 @@
             </div>
           </div>
 
-          <!-- High-Conviction Demand Fresh Trade Playbook Bar -->
-          <div id="chartDemandFreshBanner" class="chart-playbook-banner" style="display:none;">
-            <div class="playbook-title-box">
-              <span style="font-size:15px;">🎯</span>
-              <span><strong>TOP 10 DEMAND FRESH PLAYBOOK:</strong> <span id="dfZoneDesc">High-Conviction Institutional Zone</span></span>
-            </div>
-            <div class="playbook-badge-grid">
-              <span id="dfEntry" class="playbook-pill entry">Entry: ₹--</span>
-              <span id="dfSl" class="playbook-pill sl">SL: ₹-- (-0.7%)</span>
-              <span id="dfBeLock" class="playbook-pill be" title="When MFE reaches +0.80%, move SL to Cost (Breakeven)">🔒 BE Lock: ₹-- (+0.80%)</span>
-              <span id="dfT1" class="playbook-pill t1">Target 1: ₹-- (+1.50%)</span>
-              <span id="dfT2" class="playbook-pill t2">Target 2: ₹-- (+3.00%)</span>
-            </div>
-          </div>
 
           <!-- TradingView Lightweight Chart Container with SMC Canvas Overlay -->
           <div id="tvCandleWrapper" class="dashboard-chart-wrapper">
@@ -3936,48 +3922,8 @@
         ignitionChip.style.display = "none";
       }
     }
-    // High-Conviction Demand Fresh Banner
-    const dfBanner = document.getElementById("chartDemandFreshBanner");
-    const allRowsForDF = [...(_currentBullish || []), ...(_currentBearish || [])];
-    const liveRowForDF = allRowsForDF.find(x => x.symbol === _selectedSymbol) || meta;
-    const isDF = isTop10DemandFreshQualified(liveRowForDF);
-
-    if (dfBanner) {
-      if (isDF && liveRowForDF && (liveRowForDF.ltp || meta.ltp)) {
-        dfBanner.style.display = "flex";
-        const ltpVal = Number(liveRowForDF.ltp || meta.ltp);
-        const entryVal = Number(liveRowForDF.entry) || ltpVal;
-        const isUp = (liveRowForDF.percent_change ?? meta.percent_change ?? 0) >= 0;
-        const slVal = Number(liveRowForDF.stop_loss) || (isUp ? entryVal * 0.993 : entryVal * 1.007);
-        const beVal = isUp ? entryVal * 1.008 : entryVal * 0.992;
-        const t1Val = Number(liveRowForDF.target) || (isUp ? entryVal * 1.015 : entryVal * 0.985);
-        const t2Val = isUp ? entryVal * 1.030 : entryVal * 0.970;
-
-        const dfZoneDesc = document.getElementById("dfZoneDesc");
-        const dfEntry = document.getElementById("dfEntry");
-        const dfSl = document.getElementById("dfSl");
-        const dfBeLock = document.getElementById("dfBeLock");
-        const dfT1 = document.getElementById("dfT1");
-        const dfT2 = document.getElementById("dfT2");
-
-        const pctChg = Math.abs(Number(liveRowForDF.percent_change ?? meta.percent_change ?? 0));
-        let extPrefix = "";
-        if (pctChg > 5.5) {
-          extPrefix = `⚠️ OVER-RUN (${isUp ? '+' : '-'}${pctChg.toFixed(1)}%): Limit order at base only, do not chase! · `;
-        }
-        if (dfZoneDesc) dfZoneDesc.textContent = `${extPrefix}${isUp ? (liveRowForDF.demand_zone ? `Demand Zone ${liveRowForDF.demand_zone}` : "Institutional Base Defended") : (liveRowForDF.supply_zone ? `Bear OB ${liveRowForDF.supply_zone}` : "Supply Block Defended")}`;
-        if (dfEntry) dfEntry.textContent = `Entry: ₹${n2(entryVal)}`;
-        if (dfSl) dfSl.textContent = `SL: ₹${n2(slVal)}`;
-        if (dfBeLock) dfBeLock.textContent = `🔒 BE Lock: ₹${n2(beVal)} (${isUp ? '+0.8%' : '-0.8%'})`;
-        if (dfT1) dfT1.textContent = `T1: ₹${n2(t1Val)} (${isUp ? '+1.5%' : '-1.5%'})`;
-        if (dfT2) dfT2.textContent = `T2: ₹${n2(t2Val)} (${isUp ? '+3.0%' : '-3.0%'})`;
-      } else {
-        dfBanner.style.display = "none";
-      }
-    }
-
     if (playbookBanner) {
-      if (!isDF && isEarly && meta.ltp) {
+      if (isEarly && meta.ltp) {
         playbookBanner.style.display = "flex";
         const ltpVal = Number(meta.ltp);
         const entryLow = (ltpVal * 0.997).toFixed(1);
