@@ -137,74 +137,24 @@ def _save_sent_key(key: str) -> None:
 
 
 def build_alert_message(item: dict, sector: str = "", is_pe: bool = False, test: bool = False) -> str:
-    """Format an institutional Demand Fresh or Bear OB Fresh notification."""
-    symbol = item.get("symbol", "UNKNOWN")
-    pct_chg = item.get("percent_change", 0.0)
-    ltp = item.get("ltp") or item.get("entry") or 0.0
-    entry = item.get("entry") or ltp
-    stop = item.get("stop_loss")
-    target = item.get("target")
-    rvol = item.get("rvol_5m") or item.get("rvol")
-    lot_size = item.get("lot_size")
-    setup = item.get("setup", "Breakout")
+    """Format ultra-clean, minimal Demand Fresh or Bear OB Fresh notification."""
+    symbol = item.get("symbol", "UNKNOWN").upper()
 
-    # Order block time and zone
+    # Order block time
     if is_pe:
         ob_time = item.get("supply_zone_time") or item.get("time") or datetime.now(INDIA_TZ).strftime("%I:%M %p")
-        ob_zone = item.get("supply_zone") or item.get("zone", "")
         dot = "🔴"
-        title = "BEAR OB FRESH ALERT · SHORT"
-        bias = "Short Buildup (Supply Rejection)"
+        title = "BEAR OB FRESH"
     else:
         ob_time = item.get("demand_fresh_time") or item.get("time") or datetime.now(INDIA_TZ).strftime("%I:%M %p")
-        ob_zone = item.get("demand_zone") or item.get("zone", "")
         dot = "🟢"
         title = "DEMAND FRESH ALERT · BUY"
-        bias = "Long Buildup (Demand Base Continuation)"
 
-    lines = [
-        f"{dot} *{title}*",
-        f"⚡ *Stock:* `{symbol}`  |  *LTP:* `₹{ltp:,.2f}` ({pct_chg:+.2f}%)",
-    ]
-    if sector:
-        lines.append(f"🏢 *Sector Alignment:* `{sector}`")
-
-    lines.append(f"⏰ *Base Formed Time:* `{ob_time} IST`")
-    if ob_zone:
-        lines.append(f"📦 *Order Block Zone:* `{ob_zone}`")
-
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-
-    if entry and stop:
-        risk_pts = abs(entry - stop)
-        risk_pct = (risk_pts / entry) * 100 if entry else 0.0
-        t1 = target or (entry - 1.5 * risk_pts if is_pe else entry + 1.5 * risk_pts)
-        t2 = entry - 2.5 * risk_pts if is_pe else entry + 2.5 * risk_pts
-        t1_pct = (abs(t1 - entry) / entry) * 100 if entry else 0.0
-        t2_pct = (abs(t2 - entry) / entry) * 100 if entry else 0.0
-
-        lines.extend([
-            f"💰 *Entry Trigger:* `₹{entry:,.2f}`",
-            f"🛑 *Stop Loss:* `₹{stop:,.2f}` (-{risk_pct:.2f}%)",
-            f"🎯 *Target 1 (1.5R):* `₹{t1:,.2f}` (+{t1_pct:.2f}%)",
-            f"🎯 *Target 2 (2.5R):* `₹{t2:,.2f}` (+{t2_pct:.2f}%)",
-        ])
-
-    metrics = []
-    if lot_size:
-        metrics.append(f"📦 Lot: `{lot_size}`")
-    if rvol:
-        metrics.append(f"📊 RVOL: `{float(rvol):.1f}x`")
-    metrics.append(f"⚡ Setup: `{setup}`")
-    if metrics:
-        lines.append("  |  ".join(metrics))
-
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append("🔔 *ManojLabs AI Stock Hunter V2*")
-    if test:
-        lines.append("*(Test Simulation Verification)*")
-
-    return "\n".join(lines)
+    # Clean 3-line format requested by user:
+    # 🟢 DEMAND FRESH ALERT · BUY (or 🔴 BEAR OB FRESH)
+    # <STOCK NAME>
+    # TIME <HH:MM>
+    return f"{dot} *{title}*\n*{symbol}*\n*TIME:* `{ob_time}`"
 
 
 def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force: bool = False, test: bool = False) -> bool:
@@ -303,19 +253,10 @@ if __name__ == "__main__":
 
     print("\nSending live test Demand Fresh alert...")
     test_item = {
-        "symbol": "TATACONSUM",
-        "percent_change": 3.57,
-        "entry": 1118.39,
-        "ltp": 1118.39,
-        "stop_loss": 1109.76,
-        "target": 1131.34,
-        "lot_size": 550,
-        "rvol_5m": 2.4,
-        "setup": "Long buildup",
-        "demand_fresh_time": "02:20 PM",
-        "demand_zone": "₹1,102.50 - ₹1,104.50 (Fresh)",
+        "symbol": "NESTLEIND",
+        "demand_fresh_time": "12:45 PM",
     }
-    ok = send_fresh_ob_alert(test_item, sector="FMCG (+1.2%)", is_pe=False, test=True, force=True)
+    ok = send_fresh_ob_alert(test_item, is_pe=False, test=True, force=True)
     if ok:
         print("✅ Demand Fresh test alert delivered successfully to Telegram!")
     else:

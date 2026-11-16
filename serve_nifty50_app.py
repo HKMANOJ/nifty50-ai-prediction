@@ -887,19 +887,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 import notify
                 from zoneinfo import ZoneInfo
                 test_item = {
-                    "symbol": "TATACONSUM",
-                    "percent_change": 3.57,
-                    "entry": 1118.39,
-                    "ltp": 1118.39,
-                    "stop_loss": 1109.76,
-                    "target": 1131.34,
-                    "lot_size": 550,
-                    "rvol_5m": 2.4,
-                    "setup": "Demand Fresh (Test)",
-                    "demand_fresh_time": datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%I:%M %p"),
-                    "demand_zone": "₹1,102.50 - ₹1,104.50 (Fresh)",
+                    "symbol": "NESTLEIND",
+                    "demand_fresh_time": "12:45 PM",
                 }
-                ok = notify.send_fresh_ob_alert(test_item, sector="FMCG (+1.2%)", is_pe=False, test=True, force=True)
+                ok = notify.send_fresh_ob_alert(test_item, is_pe=False, test=True, force=True)
                 self._send_json(HTTPStatus.OK, {"ok": ok, "message": "Test Demand Fresh alert dispatched to Telegram"})
             except Exception as exc:
                 self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
