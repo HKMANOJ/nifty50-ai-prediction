@@ -210,7 +210,7 @@ def dispatch_new_fresh_alerts(payload: dict) -> list[str]:
         if not isinstance(row, dict):
             continue
         qtags = row.get("quality_tags") or []
-        is_df = bool(row.get("is_demand_fresh") or any("DEMAND · FRESH" in t for t in qtags))
+        is_df = bool((row.get("is_demand_fresh") or any("DEMAND · FRESH" in t for t in qtags)) and not row.get("is_demand_tested"))
         pct_change = row.get("percent_change") or 0.0
         if is_df and pct_change >= 0.0:
             sector = sym_to_sector.get(row.get("symbol"), "Top Sector")
@@ -225,7 +225,7 @@ def dispatch_new_fresh_alerts(payload: dict) -> list[str]:
         if not isinstance(row, dict):
             continue
         qtags = row.get("quality_tags") or []
-        is_sz = bool(row.get("is_supply_zone") or any("BEAR OB · FRESH" in t or "SUPPLY ZONE" in t for t in qtags))
+        is_sz = bool((row.get("is_bear_ob_fresh") or any("BEAR OB · FRESH" in t for t in qtags) or (row.get("is_supply_zone") and "FRESH" in str(row.get("supply_zone", "")))) and not row.get("is_bear_ob_tested"))
         pct_change = row.get("percent_change") or 0.0
         if is_sz and pct_change <= 0.0:
             sector = sym_to_sector.get(row.get("symbol"), "Lagging Sector")

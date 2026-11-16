@@ -3402,8 +3402,8 @@
         return true;
       });
 
-      // Step B: Directional alignment - match trade side if specified
-      if (options.isBullish !== undefined) {
+      // Step B: Directional alignment - in overview or when options.allZones is true, show both Demand and Bear OB
+      if (options.isBullish !== undefined && !options.allZones) {
         if (options.isBullish) {
           const bullObs = activeObs.filter(ob => (ob.type || "").toUpperCase() === "BULLISH");
           if (bullObs.length > 0) activeObs = bullObs;
@@ -3413,9 +3413,12 @@
         }
       }
 
-      // Step C: Anti-clutter preference - prefer Fresh morning zones over tested historical noise
-      const freshObs = activeObs.filter(ob => ob.status === "Fresh");
-      const targetObs = freshObs.length > 0 ? freshObs : activeObs;
+      // Step C: Anti-clutter preference - in focused dashboard prefer Fresh morning zones over tested; in overview show all active
+      let targetObs = activeObs;
+      if (!options.allZones) {
+        const freshObs = activeObs.filter(ob => ob.status === "Fresh");
+        if (freshObs.length > 0) targetObs = freshObs;
+      }
 
       targetObs.forEach(ob => {
         const yTop = series.priceToCoordinate(ob.top);
@@ -7275,7 +7278,7 @@
       showOb: _ovShowOb,
       showFvg: _ovShowFvg,
       candles: _ovCandlesData,
-      isBullish: _ovIsBullish,
+      allZones: true,
     });
 
     // 3. Draw On-Chart Footprint Focus Indicator (Inspected Candle Only - Keeps Main Chart Clean)
@@ -7988,13 +7991,17 @@
       const rvol = (typeof s.rvol_5m === 'number' && s.rvol_5m > 0) ? s.rvol_5m : ((typeof s.rvol === 'number' && s.rvol > 0) ? s.rvol : 1.0);
       const range = s.range_position_percent || 0;
 
-      // Trade setup badge (Accurately reflects Demand Fresh, Bear OB, Breakout, Block Surge)
+      // Trade setup badge (Accurately reflects Demand Fresh, Demand Tested, Bear OB Fresh, Bear OB Tested)
       let setup = "Watch";
       let setupBg = "#f1f5f9"; let setupCol = "#64748b";
       if (s.is_demand_fresh || (s.quality_tags && s.quality_tags.some(t => t.includes("DEMAND · FRESH")))) {
         setup = "🎯 DEMAND FRESH"; setupBg = "#dcfce7"; setupCol = "#166534";
-      } else if (s.is_supply_zone || (s.quality_tags && s.quality_tags.some(t => t.includes("BEAR OB · FRESH")))) {
+      } else if (s.is_demand_tested || (s.quality_tags && s.quality_tags.some(t => t.includes("DEMAND · TESTED")))) {
+        setup = "🔵 DEMAND TESTED"; setupBg = "#e0f2fe"; setupCol = "#0369a1";
+      } else if (s.is_bear_ob_fresh || (s.quality_tags && s.quality_tags.some(t => t.includes("BEAR OB · FRESH")))) {
         setup = "🔴 BEAR OB FRESH"; setupBg = "#fee2e2"; setupCol = "#991b1b";
+      } else if (s.is_bear_ob_tested || (s.quality_tags && s.quality_tags.some(t => t.includes("BEAR OB · TESTED")))) {
+        setup = "🟠 BEAR OB TESTED"; setupBg = "#ffedd5"; setupCol = "#c2410c";
       } else if (s.is_block_surge || (s.quality_tags && s.quality_tags.some(t => t.includes("BLOCK SURGE")))) {
         setup = "⚡ BLOCK SURGE"; setupBg = "#eff6ff"; setupCol = "#1d4ed8";
       } else if (s.is_breakout && rvol >= 1.5 && sInfo.status === "Bullish") {

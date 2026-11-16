@@ -1590,12 +1590,18 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             pml = orb_low or (min(c["low"] for c in prior_candles[-75:]) if prior_candles else None)
 
             # 8. Align Institutional Trade Plan with Dashboard Playbook & SMC Active Block Status
-            primary_ob = next((ob for ob in today_obs if not ob.get("mitigated")), None)
             is_bull_side = pct_change >= 0
-            is_df = bool(primary_ob and primary_ob.get("type") == "BULLISH" and primary_ob.get("status") == "Fresh" and is_bull_side)
-            is_dt = bool(primary_ob and primary_ob.get("type") == "BULLISH" and primary_ob.get("status") == "Tested" and is_bull_side)
-            is_bf = bool(primary_ob and primary_ob.get("type") == "BEARISH" and primary_ob.get("status") == "Fresh" and not is_bull_side)
-            is_bt = bool(primary_ob and primary_ob.get("type") == "BEARISH" and primary_ob.get("status") == "Tested" and not is_bull_side)
+            if is_bull_side:
+                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and ob.get("type") in ("BULLISH", "+OB")), None)
+            else:
+                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and ob.get("type") in ("BEARISH", "-OB")), None)
+            if not primary_ob:
+                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated")), None)
+
+            is_df = bool(primary_ob and primary_ob.get("type") in ("BULLISH", "+OB") and primary_ob.get("status") == "Fresh" and is_bull_side)
+            is_dt = bool(primary_ob and primary_ob.get("type") in ("BULLISH", "+OB") and primary_ob.get("status") == "Tested" and is_bull_side)
+            is_bf = bool(primary_ob and primary_ob.get("type") in ("BEARISH", "-OB") and primary_ob.get("status") == "Fresh" and not is_bull_side)
+            is_bt = bool(primary_ob and primary_ob.get("type") in ("BEARISH", "-OB") and primary_ob.get("status") == "Tested" and not is_bull_side)
 
             active_zone_str = f"₹{primary_ob['bottom']:.2f} - ₹{primary_ob['top']:.2f}" if primary_ob else ""
             active_time_str = datetime.fromtimestamp(primary_ob.get("formation_time") or primary_ob.get("time", 0), tz=IST_TZ).strftime("%I:%M %p") if primary_ob else ""
@@ -1666,6 +1672,15 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     trade_plan["setup_name"] = "🔴 5m Bearish Order Block (Tested / Supply Rejection)"
                     trade_plan["action"] = "SELL ON SUPPLY REJECTION"
                     trade_plan["bias"] = "Bearish"
+
+                if active_zone_str:
+                    trade_plan["entry_zone"] = active_zone_str
+                    ob_desc = f"{'Fresh' if (is_df or is_bf) else 'Tested'} {'Demand OB' if is_bull_side else 'Bear OB'}"
+                    sl_val = float(trade_plan.get('stop_loss') or (ltp * 0.993 if is_bull_side else ltp * 1.007))
+                    trade_plan["rule"] = (
+                        f"Institutional Structure: Defending {ob_desc} ({active_zone_str}). "
+                        f"Enter on confirmed wick rejection with Stop Loss strictly at ₹{sl_val:,.2f}."
+                    )
 
             # 9. Format candles for LightweightCharts
             tv_candles = []

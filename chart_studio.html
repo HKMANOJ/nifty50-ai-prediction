@@ -674,13 +674,13 @@
           <div class="playbook-card">
             <div class="card-title">
               <span>Trade Setup & Structure</span>
-              <span id="pbStatusBadge" style="background:#047857; color:#fff; font-size:9.5px; padding:2px 6px; border-radius:3px;">DEMAND FRESH</span>
+              <span id="pbStatusBadge" style="background:#0284c7; color:#fff; font-size:9.5px; padding:2px 6px; border-radius:3px;">CALCULATING...</span>
             </div>
             <div style="font-size:13px; font-weight:800; color:var(--text-bright); margin-top:2px;" id="pbSetupName">
-              5m Institutional Demand Base
+              Analyzing Market Structure...
             </div>
             <div style="font-size:11px; color:var(--text-muted);" id="pbSetupDesc">
-              Order block formed after strong liquidity sweep and volume displacement.
+              Scanning 5m candles and volume profile...
             </div>
           </div>
 
@@ -1859,6 +1859,30 @@
     const vp = data.volume_profile || {};
     const anc = data.anchors || {};
     const ltp = Number(data.ltp) || (_activeCandles.length ? _activeCandles[_activeCandles.length - 1].close : 0);
+
+    const isBullish = tp.bias === "Bullish" || (data.percent_change || 0) >= 0;
+    const entry = Number(tp.entry) || ltp;
+    const sl = Number(tp.stop_loss) || (isBullish ? entry * 0.993 : entry * 1.007);
+    const be = Number(tp.be_lock) || (isBullish ? entry * 1.008 : entry * 0.992);
+    const t1 = Number(tp.target || tp.target_1) || (isBullish ? entry * 1.015 : entry * 0.985);
+    const t2 = Number(tp.target_2) || (isBullish ? entry * 1.038 : entry * 0.962);
+
+    // Sidebar Execution Card
+    if (document.getElementById("pbEntry")) document.getElementById("pbEntry").textContent = `₹${entry.toFixed(2)}`;
+    if (document.getElementById("pbSl")) document.getElementById("pbSl").textContent = `₹${sl.toFixed(2)} (${isBullish ? '-0.7%' : '+0.7%'})`;
+    if (document.getElementById("pbBe")) document.getElementById("pbBe").textContent = `₹${be.toFixed(2)} (${isBullish ? '+0.80%' : '-0.80%'})`;
+    if (document.getElementById("pbT1")) document.getElementById("pbT1").textContent = `₹${t1.toFixed(2)} (${isBullish ? '+1.50%' : '-1.50%'})`;
+    if (document.getElementById("pbT2")) document.getElementById("pbT2").textContent = `₹${t2.toFixed(2)} (${isBullish ? '+3.80%' : '-3.80%'})`;
+
+    const pocVal = anc.poc || vp.poc;
+    if (document.getElementById("pbPocVal")) document.getElementById("pbPocVal").textContent = pocVal ? `₹${pocVal.toFixed(2)}` : '--';
+    if (document.getElementById("pbVahVal")) document.getElementById("pbVahVal").textContent = vp.vah ? `₹${vp.vah.toFixed(2)}` : '--';
+    if (document.getElementById("pbValVal")) document.getElementById("pbValVal").textContent = vp.val ? `₹${vp.val.toFixed(2)}` : '--';
+
+    const setupBadge = document.getElementById("pbStatusBadge");
+    const setupName = document.getElementById("pbSetupName");
+    const setupDesc = document.getElementById("pbSetupDesc");
+
     // 1. Inspect active (unmitigated) order blocks on chart for exact Fresh vs Tested status
     const activeBlocks = (_activeSMC.order_blocks || []).filter(ob => !ob.mitigated);
     const currentPrice = ltp;
@@ -1879,7 +1903,6 @@
       }
     });
 
-    const isBullish = tp.bias === "Bullish" || (data.percent_change || 0) >= 0;
     const activeOb = isBullish ? closestBullOb : closestBearOb;
 
     // Strict Fresh vs Tested determination matching chart tag
@@ -1911,45 +1934,39 @@
 
     if (isBullish) {
       if (isObFresh) {
-        setupBadge.textContent = "DEMAND FRESH";
-        setupBadge.style.background = "#047857";
-        setupName.textContent = tp.setup_name || "🟢 5m Institutional Demand Base (Fresh Buy)";
-        setupDesc.textContent = obZoneDesc 
+        if (setupBadge) { setupBadge.textContent = "DEMAND FRESH"; setupBadge.style.background = "#047857"; }
+        if (setupName) setupName.textContent = tp.setup_name || "🟢 5m Institutional Demand Base (Fresh Buy)";
+        if (setupDesc) setupDesc.textContent = obZoneDesc 
           ? `High-conviction fresh demand zone ${obZoneDesc} defended at ${obTimeStr} with strong volume displacement.`
           : "Fresh order block formed after strong liquidity sweep and volume displacement.";
       } else if (isObTested) {
-        setupBadge.textContent = "DEMAND TESTED";
-        setupBadge.style.background = "#0284c7";
-        setupName.textContent = tp.setup_name || "🟢 5m Institutional Demand Base (Tested / Retest Hold)";
-        setupDesc.textContent = obZoneDesc
+        if (setupBadge) { setupBadge.textContent = "DEMAND TESTED"; setupBadge.style.background = "#0284c7"; }
+        if (setupName) setupName.textContent = tp.setup_name || "🟢 5m Institutional Demand Base (Tested / Retest Hold)";
+        if (setupDesc) setupDesc.textContent = obZoneDesc
           ? `Demand zone ${obZoneDesc} retested at ${obTimeStr} - holding key support level.`
           : "Demand zone tested by prior candle - holding structure.";
       } else {
-        setupBadge.textContent = "BULLISH BIAS";
-        setupBadge.style.background = "#059669";
-        setupName.textContent = tp.setup_name || "🟢 5m Long Buildup (Buy)";
-        setupDesc.textContent = "Order block formed after strong liquidity sweep and volume displacement.";
+        if (setupBadge) { setupBadge.textContent = "BULLISH BIAS"; setupBadge.style.background = "#059669"; }
+        if (setupName) setupName.textContent = tp.setup_name || "🟢 5m Long Buildup (Buy)";
+        if (setupDesc) setupDesc.textContent = "Order block formed after strong liquidity sweep and volume displacement.";
       }
     } else {
       if (isObFresh) {
-        setupBadge.textContent = "BEAR OB FRESH";
-        setupBadge.style.background = "#b91c1c";
-        setupName.textContent = tp.setup_name || "🔴 5m Bearish Order Block (Fresh Sell)";
-        setupDesc.textContent = obZoneDesc
+        if (setupBadge) { setupBadge.textContent = "BEAR OB FRESH"; setupBadge.style.background = "#b91c1c"; }
+        if (setupName) setupName.textContent = tp.setup_name || "🔴 5m Bearish Order Block (Fresh Sell)";
+        if (setupDesc) setupDesc.textContent = obZoneDesc
           ? `High-conviction fresh supply zone ${obZoneDesc} confirmed at ${obTimeStr} with aggressive distribution.`
           : "Fresh supply zone formed after strong liquidity sweep and aggressive distribution.";
       } else if (isObTested) {
-        setupBadge.textContent = "BEAR OB TESTED";
-        setupBadge.style.background = "#ea580c";
-        setupName.textContent = tp.setup_name || "🔴 5m Bearish Order Block (Tested / Supply Rejection)";
-        setupDesc.textContent = obZoneDesc
+        if (setupBadge) { setupBadge.textContent = "BEAR OB TESTED"; setupBadge.style.background = "#ea580c"; }
+        if (setupName) setupName.textContent = tp.setup_name || "🔴 5m Bearish Order Block (Tested / Supply Rejection)";
+        if (setupDesc) setupDesc.textContent = obZoneDesc
           ? `Supply zone ${obZoneDesc} retested at ${obTimeStr} with upper wick rejection.`
           : "Supply zone tested by prior candle - rejecting overhead liquidity.";
       } else {
-        setupBadge.textContent = "BEARISH BIAS";
-        setupBadge.style.background = "#dc2626";
-        setupName.textContent = tp.setup_name || "🔴 5m Short Buildup (Sell)";
-        setupDesc.textContent = "Supply zone formed after strong liquidity sweep and aggressive distribution.";
+        if (setupBadge) { setupBadge.textContent = "BEARISH BIAS"; setupBadge.style.background = "#dc2626"; }
+        if (setupName) setupName.textContent = tp.setup_name || "🔴 5m Short Buildup (Sell)";
+        if (setupDesc) setupDesc.textContent = "Supply zone formed after strong liquidity sweep and aggressive distribution.";
       }
     }
 
