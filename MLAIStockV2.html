@@ -4704,9 +4704,9 @@
       const isSelected = row.symbol === _selectedSymbol;
       const qTags = row.quality_tags || [];
       const st = (row.five_min_status || "").toLowerCase();
-      const isBreakdown = Boolean(st.includes("breakdown") || ((row.percent_change || 0) < 0 && row.is_breakout) || row.side === "bearish" || row.side === "LOSER");
-      const isDemand = Boolean((row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isBreakdown);
-      const isSupply = Boolean((row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE"))) && isBreakdown);
+      const isBreakdown = Boolean(st.includes("breakdown") || ((row.percent_change || 0) < 0 && row.is_breakout) || row.side === "bearish" || row.side === "LOSER" || (row.percent_change || 0) < 0 || _activeTab === "bearish");
+      const isDemand = Boolean((row.is_demand_fresh || qTags.some(t => t.includes("DEMAND · FRESH"))) && !isBreakdown && (row.percent_change || 0) > 0 && _activeTab !== "bearish");
+      const isSupply = Boolean((row.is_supply_zone || qTags.some(t => t.includes("BEAR OB · FRESH") || t.includes("SUPPLY ZONE")) || ((row.percent_change || 0) <= -1.5 && (row.setup || '').toLowerCase().includes('short buildup'))) && (isBreakdown || _activeTab === "bearish"));
       let timeMatch = isDemand ? row.demand_fresh_time : (isSupply ? row.supply_zone_time : null);
       if (!timeMatch && qTags.length) {
         const tag = qTags.find(t => t.includes("FRESH"));
