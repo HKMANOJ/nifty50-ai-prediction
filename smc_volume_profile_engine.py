@@ -380,7 +380,7 @@ def latest_fresh_order_block(
     latest = candles[-1]
     session = datetime.fromtimestamp(latest["timestamp"], INDIA_TZ).date()
     block_type = "BULLISH" if bullish else "BEARISH"
-    for block in detect_order_blocks_and_structure(candles)["order_blocks"]:
+    for block in reversed(detect_order_blocks_and_structure(candles)["order_blocks"]):
         if block["type"] != block_type or block["status"] != "Fresh":
             continue
         if datetime.fromtimestamp(block["time"], INDIA_TZ).date() != session:
@@ -532,8 +532,8 @@ def generate_institutional_trade_plan(
     absorption = of.get("absorption", {})
     delta = of.get("delta", 0)
 
-    demand_obs = [ob for ob in order_blocks if ob.get("type") == "+OB"]
-    supply_obs = [ob for ob in order_blocks if ob.get("type") == "-OB"]
+    demand_obs = [ob for ob in order_blocks if ob.get("type") in ("+OB", "BULLISH")]
+    supply_obs = [ob for ob in order_blocks if ob.get("type") in ("-OB", "BEARISH")]
 
     recent_candles = candles[-30:] if len(candles) >= 30 else candles
     swing_high = max(c["high"] for c in recent_candles) if recent_candles else ltp
@@ -559,7 +559,8 @@ def generate_institutional_trade_plan(
             entry_mid = round((entry_low + entry_high) / 2, 2)
             stop_loss = round(entry_low * 0.995, 2)
             entry_zone_str = f"₹{entry_low:,.2f} – ₹{entry_high:,.2f}"
-            ob_source = "Fresh Demand OB" if target_ob.get("fresh") else "Mitigated Demand OB"
+            ob_status = target_ob.get("status") or ("Fresh" if target_ob.get("fresh") else "Tested")
+            ob_source = f"{ob_status} Demand OB"
         else:
             entry_mid = round(min(ltp, poc), 2)
             entry_low = round(entry_mid * 0.996, 2)
@@ -602,7 +603,8 @@ def generate_institutional_trade_plan(
             entry_mid = round((entry_low + entry_high) / 2, 2)
             stop_loss = round(entry_high * 1.005, 2)
             entry_zone_str = f"₹{entry_low:,.2f} – ₹{entry_high:,.2f}"
-            ob_source = "Fresh Supply OB" if target_ob.get("fresh") else "Mitigated Supply OB"
+            ob_status = target_ob.get("status") or ("Fresh" if target_ob.get("fresh") else "Tested")
+            ob_source = f"{ob_status} Supply OB"
         else:
             entry_mid = round(max(ltp, poc), 2)
             entry_low = round(entry_mid * 0.998, 2)

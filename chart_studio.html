@@ -1859,46 +1859,98 @@
     const vp = data.volume_profile || {};
     const anc = data.anchors || {};
     const ltp = Number(data.ltp) || (_activeCandles.length ? _activeCandles[_activeCandles.length - 1].close : 0);
-    const isDemandFresh = !!(tp.is_demand_fresh || si.is_demand_fresh);
-    const isBullish = isDemandFresh || tp.bias === "Bullish" || (data.percent_change || 0) >= 0;
+    // 1. Inspect active (unmitigated) order blocks on chart for exact Fresh vs Tested status
+    const activeBlocks = (_activeSMC.order_blocks || []).filter(ob => !ob.mitigated);
+    const currentPrice = ltp;
 
-    const entry = Number(tp.entry) || ltp;
-    const sl = Number(tp.stop_loss) || (isBullish ? entry * 0.993 : entry * 1.007);
-    const be = Number(tp.be_lock) || (isBullish ? entry * 1.008 : entry * 0.992);
-    const t1 = Number(tp.target) || (isBullish ? entry * 1.015 : entry * 0.985);
-    const t2 = Number(tp.target_2) || (isBullish ? entry * 1.038 : entry * 0.962);
+    let closestBullOb = null;
+    let closestBearOb = null;
 
-    // Sidebar Execution Card
-    document.getElementById("pbEntry").textContent = `₹${entry.toFixed(2)}`;
-    document.getElementById("pbSl").textContent = `₹${sl.toFixed(2)} (${isBullish ? '-0.7%' : '+0.7%'})`;
-    document.getElementById("pbBe").textContent = `₹${be.toFixed(2)} (${isBullish ? '+0.80%' : '-0.80%'})`;
-    document.getElementById("pbT1").textContent = `₹${t1.toFixed(2)} (${isBullish ? '+1.50%' : '-1.50%'})`;
-    document.getElementById("pbT2").textContent = `₹${t2.toFixed(2)} (${isBullish ? '+3.80%' : '-3.80%'})`;
+    activeBlocks.forEach(ob => {
+      const isBull = (ob.type === "BULLISH" || ob.label === "DEMAND");
+      if (isBull) {
+        if (!closestBullOb || Math.abs(((ob.top + ob.bottom) / 2) - currentPrice) < Math.abs(((closestBullOb.top + closestBullOb.bottom) / 2) - currentPrice)) {
+          closestBullOb = ob;
+        }
+      } else {
+        if (!closestBearOb || Math.abs(((ob.top + ob.bottom) / 2) - currentPrice) < Math.abs(((closestBearOb.top + closestBearOb.bottom) / 2) - currentPrice)) {
+          closestBearOb = ob;
+        }
+      }
+    });
 
-    const pocVal = anc.poc || vp.poc;
-    document.getElementById("pbPocVal").textContent = pocVal ? `₹${pocVal.toFixed(2)}` : '--';
-    document.getElementById("pbVahVal").textContent = vp.vah ? `₹${vp.vah.toFixed(2)}` : '--';
-    document.getElementById("pbValVal").textContent = vp.val ? `₹${vp.val.toFixed(2)}` : '--';
+    const isBullish = tp.bias === "Bullish" || (data.percent_change || 0) >= 0;
+    const activeOb = isBullish ? closestBullOb : closestBearOb;
 
-    const setupBadge = document.getElementById("pbStatusBadge");
-    const setupName = document.getElementById("pbSetupName");
-    const setupDesc = document.getElementById("pbSetupDesc");
+    // Strict Fresh vs Tested determination matching chart tag
+    const isObFresh = activeOb ? (activeOb.status === "Fresh") : (isBullish ? !!tp.is_demand_fresh : !!tp.is_bear_ob_fresh);
+    const isObTested = activeOb ? (activeOb.status === "Tested") : (isBullish ? !!tp.is_demand_tested : !!tp.is_bear_ob_tested);
 
-    const demandZone = tp.demand_zone || si.demand_zone || '';
-    const demandTime = tp.demand_fresh_time || si.demand_fresh_time || '09:20 AM';
+    let obZoneDesc = "";
+    if (activeOb) {
+      obZoneDesc = `₹${activeOb.bottom.toFixed(1)} - ₹${activeOb.top.toFixed(1)} (${activeOb.status || 'Fresh'})`;
+    } else if (isBullish && (tp.demand_zone || si.demand_zone)) {
+      obZoneDesc = tp.demand_zone || si.demand_zone;
+    } else if (!isBullish && (tp.supply_zone || si.supply_zone)) {
+      obZoneDesc = tp.supply_zone || si.supply_zone;
+    }
+
+    let obTimeStr = "";
+    if (activeOb && (activeOb.formation_time || activeOb.time)) {
+      try {
+        const rawT = activeOb.formation_time || activeOb.time;
+        const d = new Date(rawT > 1e11 ? rawT : rawT * 1000);
+        if (!isNaN(d.getTime())) {
+          obTimeStr = d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true });
+        }
+      } catch(e) {}
+    }
+    if (!obTimeStr) {
+      obTimeStr = isBullish ? (tp.demand_fresh_time || si.demand_fresh_time || "") : (tp.supply_zone_time || si.supply_zone_time || "");
+    }
 
     if (isBullish) {
-      setupBadge.textContent = isDemandFresh ? "DEMAND FRESH" : "BULLISH BIAS";
-      setupBadge.style.background = "#047857";
-      setupName.textContent = tp.setup_name || "🟢 5m Institutional Demand Base (Buy)";
-      setupDesc.textContent = demandZone 
-        ? `High-conviction demand zone ${demandZone} defended at ${demandTime} with strong volume displacement.`
-        : "Order block formed after strong liquidity sweep and volume displacement.";
+      if (isObFresh) {
+        setupBadge.textContent = "DEMAND FRESH";
+        setupBadge.style.background = "#047857";
+        setupName.textContent = tp.setup_name || "🟢 5m Institutional Demand Base (Fresh Buy)";
+        setupDesc.textContent = obZoneDesc 
+          ? `High-conviction fresh demand zone ${obZoneDesc} defended at ${obTimeStr} with strong volume displacement.`
+          : "Fresh order block formed after strong liquidity sweep and volume displacement.";
+      } else if (isObTested) {
+        setupBadge.textContent = "DEMAND TESTED";
+        setupBadge.style.background = "#0284c7";
+        setupName.textContent = tp.setup_name || "🟢 5m Institutional Demand Base (Tested / Retest Hold)";
+        setupDesc.textContent = obZoneDesc
+          ? `Demand zone ${obZoneDesc} retested at ${obTimeStr} - holding key support level.`
+          : "Demand zone tested by prior candle - holding structure.";
+      } else {
+        setupBadge.textContent = "BULLISH BIAS";
+        setupBadge.style.background = "#059669";
+        setupName.textContent = tp.setup_name || "🟢 5m Long Buildup (Buy)";
+        setupDesc.textContent = "Order block formed after strong liquidity sweep and volume displacement.";
+      }
     } else {
-      setupBadge.textContent = "BEAR OB FRESH";
-      setupBadge.style.background = "#b91c1c";
-      setupName.textContent = tp.setup_name || "🔴 5m Bearish Order Block (Sell)";
-      setupDesc.textContent = "Supply zone formed after strong liquidity sweep and aggressive distribution.";
+      if (isObFresh) {
+        setupBadge.textContent = "BEAR OB FRESH";
+        setupBadge.style.background = "#b91c1c";
+        setupName.textContent = tp.setup_name || "🔴 5m Bearish Order Block (Fresh Sell)";
+        setupDesc.textContent = obZoneDesc
+          ? `High-conviction fresh supply zone ${obZoneDesc} confirmed at ${obTimeStr} with aggressive distribution.`
+          : "Fresh supply zone formed after strong liquidity sweep and aggressive distribution.";
+      } else if (isObTested) {
+        setupBadge.textContent = "BEAR OB TESTED";
+        setupBadge.style.background = "#ea580c";
+        setupName.textContent = tp.setup_name || "🔴 5m Bearish Order Block (Tested / Supply Rejection)";
+        setupDesc.textContent = obZoneDesc
+          ? `Supply zone ${obZoneDesc} retested at ${obTimeStr} with upper wick rejection.`
+          : "Supply zone tested by prior candle - rejecting overhead liquidity.";
+      } else {
+        setupBadge.textContent = "BEARISH BIAS";
+        setupBadge.style.background = "#dc2626";
+        setupName.textContent = tp.setup_name || "🔴 5m Short Buildup (Sell)";
+        setupDesc.textContent = "Supply zone formed after strong liquidity sweep and aggressive distribution.";
+      }
     }
 
     // Top Playbook Banner
@@ -1908,13 +1960,15 @@
       if (isBullish) {
         banner.className = "chart-playbook-banner";
         document.getElementById("spbIcon").textContent = "🎯";
-        document.getElementById("spbTitle").textContent = isDemandFresh ? "TOP 10 DEMAND FRESH PLAYBOOK:" : "BULLISH BREAKOUT PLAYBOOK:";
-        document.getElementById("spbZoneDesc").textContent = demandZone ? `Demand Zone ${demandZone}` : "High-Conviction Institutional Base";
+        const bannerTitle = isObFresh ? "TOP 10 DEMAND FRESH PLAYBOOK:" : (isObTested ? "DEMAND RETEST PLAYBOOK:" : "BULLISH BREAKOUT PLAYBOOK:");
+        document.getElementById("spbTitle").textContent = bannerTitle;
+        document.getElementById("spbZoneDesc").textContent = obZoneDesc ? `Demand Zone ${obZoneDesc}` : "High-Conviction Institutional Base";
       } else {
         banner.className = "chart-playbook-banner bearish";
         document.getElementById("spbIcon").textContent = "🔴";
-        document.getElementById("spbTitle").textContent = "BEARISH ORDER BLOCK PLAYBOOK:";
-        document.getElementById("spbZoneDesc").textContent = "High-Conviction Institutional Supply";
+        const bannerTitle = isObFresh ? "BEAR OB FRESH PLAYBOOK:" : (isObTested ? "BEAR OB RETEST PLAYBOOK:" : "BEARISH BREAKDOWN PLAYBOOK:");
+        document.getElementById("spbTitle").textContent = bannerTitle;
+        document.getElementById("spbZoneDesc").textContent = obZoneDesc ? `Supply Zone ${obZoneDesc}` : "High-Conviction Institutional Supply";
       }
       document.getElementById("spbEntry").textContent = `Entry: ₹${entry.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
       document.getElementById("spbSl").textContent = `SL: ₹${sl.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${isBullish ? '-0.7%' : '+0.7%'})`;

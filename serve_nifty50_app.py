@@ -1504,13 +1504,28 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             ]
             today_vp = calculate_volume_profile(today_candles)
 
-            # If scanner item has demand_zone / supply_zone, ensure exact match at top
+            # If scanner item has demand_zone / supply_zone, ensure exact match at top with dynamic tested check
             if scanner_item and scanner_item.get("is_demand_fresh") and scanner_item.get("demand_zone"):
                 m = re.findall(r"[\d\.]+", scanner_item["demand_zone"])
                 if len(m) >= 2 and today_candles:
                     dz_low = float(m[0])
                     dz_high = float(m[1])
                     today_obs = [ob for ob in today_obs if abs(ob.get("top", 0) - dz_high) > 2.0]
+                    tested = False
+                    mitigated = False
+                    mitigated_time = None
+                    formation_ts = today_candles[0]["timestamp"] + 300
+                    for c_f in today_candles:
+                        if c_f["timestamp"] <= formation_ts:
+                            continue
+                        low_f = float(c_f["low"])
+                        close_f = float(c_f["close"])
+                        if low_f <= dz_high and low_f >= dz_low:
+                            tested = True
+                        if close_f < dz_low:
+                            mitigated = True
+                            mitigated_time = c_f["timestamp"]
+                            break
                     today_obs.insert(0, {
                         "id": "ob_bull_scanner_primary",
                         "type": "BULLISH",
@@ -1518,11 +1533,11 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                         "top": dz_high,
                         "bottom": dz_low,
                         "time": today_candles[0]["timestamp"],
-                        "formation_time": today_candles[0]["timestamp"] + 300,
-                        "status": "Fresh",
-                        "mitigated": False,
-                        "tested": False,
-                        "mitigated_time": None
+                        "formation_time": formation_ts,
+                        "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
+                        "mitigated": mitigated,
+                        "tested": tested,
+                        "mitigated_time": mitigated_time
                     })
             elif scanner_item and scanner_item.get("is_supply_zone") and scanner_item.get("supply_zone"):
                 m = re.findall(r"[\d\.]+", scanner_item["supply_zone"])
@@ -1530,6 +1545,21 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     sz_low = float(m[0])
                     sz_high = float(m[1])
                     today_obs = [ob for ob in today_obs if abs(ob.get("top", 0) - sz_high) > 2.0]
+                    tested = False
+                    mitigated = False
+                    mitigated_time = None
+                    formation_ts = today_candles[0]["timestamp"] + 300
+                    for c_f in today_candles:
+                        if c_f["timestamp"] <= formation_ts:
+                            continue
+                        high_f = float(c_f["high"])
+                        close_f = float(c_f["close"])
+                        if high_f >= sz_low and high_f <= sz_high:
+                            tested = True
+                        if close_f > sz_high:
+                            mitigated = True
+                            mitigated_time = c_f["timestamp"]
+                            break
                     today_obs.insert(0, {
                         "id": "ob_bear_scanner_primary",
                         "type": "BEARISH",
@@ -1537,11 +1567,11 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                         "top": sz_high,
                         "bottom": sz_low,
                         "time": today_candles[0]["timestamp"],
-                        "formation_time": today_candles[0]["timestamp"] + 300,
-                        "status": "Fresh",
-                        "mitigated": False,
-                        "tested": False,
-                        "mitigated_time": None
+                        "formation_time": formation_ts,
+                        "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
+                        "mitigated": mitigated,
+                        "tested": tested,
+                        "mitigated_time": mitigated_time
                     })
 
             # Merge with recent unmitigated prior zones from analysis
@@ -1559,20 +1589,47 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             pmh = orb_high or (max(c["high"] for c in prior_candles[-75:]) if prior_candles else None)
             pml = orb_low or (min(c["low"] for c in prior_candles[-75:]) if prior_candles else None)
 
-            # 8. Align Institutional Trade Plan with Dashboard Playbook
+            # 8. Align Institutional Trade Plan with Dashboard Playbook & SMC Active Block Status
+            primary_ob = next((ob for ob in today_obs if not ob.get("mitigated")), None)
+            is_bull_side = pct_change >= 0
+            is_df = bool(primary_ob and primary_ob.get("type") == "BULLISH" and primary_ob.get("status") == "Fresh" and is_bull_side)
+            is_dt = bool(primary_ob and primary_ob.get("type") == "BULLISH" and primary_ob.get("status") == "Tested" and is_bull_side)
+            is_bf = bool(primary_ob and primary_ob.get("type") == "BEARISH" and primary_ob.get("status") == "Fresh" and not is_bull_side)
+            is_bt = bool(primary_ob and primary_ob.get("type") == "BEARISH" and primary_ob.get("status") == "Tested" and not is_bull_side)
+
+            active_zone_str = f"₹{primary_ob['bottom']:.2f} - ₹{primary_ob['top']:.2f}" if primary_ob else ""
+            active_time_str = datetime.fromtimestamp(primary_ob.get("formation_time") or primary_ob.get("time", 0), tz=IST_TZ).strftime("%I:%M %p") if primary_ob else ""
+
             if scanner_item:
                 entry_val = float(scanner_item.get("entry") or ltp)
-                is_df = bool(scanner_item.get("is_demand_fresh") and pct_change >= 0)
-                sl_val = float(scanner_item.get("stop_loss") or (entry_val * 0.993 if pct_change >= 0 else entry_val * 1.007))
-                t1_val = float(scanner_item.get("target") or (entry_val * 1.015 if pct_change >= 0 else entry_val * 0.985))
-                t2_val = round(entry_val * 1.030 if pct_change >= 0 else entry_val * 0.970, 2)
-                be_val = round(entry_val * 1.008 if pct_change >= 0 else entry_val * 0.992, 2)
+                sl_val = float(scanner_item.get("stop_loss") or (entry_val * 0.993 if is_bull_side else entry_val * 1.007))
+                t1_val = float(scanner_item.get("target") or (entry_val * 1.015 if is_bull_side else entry_val * 0.985))
+                t2_val = round(entry_val * 1.030 if is_bull_side else entry_val * 0.970, 2)
+                be_val = round(entry_val * 1.008 if is_bull_side else entry_val * 0.992, 2)
+
+                if is_df:
+                    action_str = "BUY ON DEMAND BREAKOUT"
+                    setup_name_str = "🟢 5m Institutional Demand Base (Fresh Buy)"
+                elif is_dt:
+                    action_str = "BUY ON DEMAND RETEST"
+                    setup_name_str = "🟢 5m Institutional Demand Base (Tested / Retest Hold)"
+                elif is_bull_side:
+                    action_str = "BUY ON BREAKOUT"
+                    setup_name_str = "🟢 5m Long Buildup (Buy)"
+                elif is_bf:
+                    action_str = "SELL ON BREAKDOWN"
+                    setup_name_str = "🔴 5m Bearish Order Block (Fresh Sell)"
+                elif is_bt:
+                    action_str = "SELL ON SUPPLY REJECTION"
+                    setup_name_str = "🔴 5m Bearish Order Block (Tested / Supply Rejection)"
+                else:
+                    action_str = "SELL ON SUPPLY RALLY"
+                    setup_name_str = "🔴 5m Short Buildup (Sell)"
 
                 trade_plan = {
-                    "action": "BUY ON DEMAND RETEST" if pct_change >= 0 else "SELL ON SUPPLY REJECTION",
-                    "bias": "Bullish" if pct_change >= 0 else "Bearish",
-                    "setup_name": ("🟢 5m Institutional Demand Base (Buy)" if is_df else
-                                  ("🟢 5m Long Buildup (Buy)" if pct_change >= 0 else "🔴 5m Bearish Order Block (Sell)")),
+                    "action": action_str,
+                    "bias": "Bullish" if is_bull_side else "Bearish",
+                    "setup_name": setup_name_str,
                     "entry": round(entry_val, 2),
                     "stop_loss": round(sl_val, 2),
                     "target": round(t1_val, 2),
@@ -1580,17 +1637,35 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     "be_lock": be_val,
                     "rr_ratio": "1 : 3+ Risk/Reward",
                     "is_demand_fresh": is_df,
-                    "demand_zone": scanner_item.get("demand_zone", ""),
-                    "demand_fresh_time": scanner_item.get("demand_fresh_time", ""),
+                    "is_demand_tested": is_dt,
+                    "is_bear_ob_fresh": is_bf,
+                    "is_bear_ob_tested": is_bt,
+                    "demand_zone": active_zone_str or scanner_item.get("demand_zone", ""),
+                    "demand_fresh_time": active_time_str or scanner_item.get("demand_fresh_time", ""),
                     "rule": scanner_item.get("trade_plan") or "Enter on confirmed sweet spot retest.",
                 }
             else:
                 trade_plan = analysis.get("trade_plan", {})
-                is_df = pct_change >= 0 and any(ob.get("type") == "BULLISH" and ob.get("status") == "Fresh" for ob in today_obs)
                 trade_plan["is_demand_fresh"] = is_df
+                trade_plan["is_demand_tested"] = is_dt
+                trade_plan["is_bear_ob_fresh"] = is_bf
+                trade_plan["is_bear_ob_tested"] = is_bt
                 if is_df:
-                    trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Buy)"
+                    trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Fresh Buy)"
+                    trade_plan["action"] = "BUY ON DEMAND BREAKOUT"
                     trade_plan["bias"] = "Bullish"
+                elif is_dt:
+                    trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Tested / Retest Hold)"
+                    trade_plan["action"] = "BUY ON DEMAND RETEST"
+                    trade_plan["bias"] = "Bullish"
+                elif is_bf:
+                    trade_plan["setup_name"] = "🔴 5m Bearish Order Block (Fresh Sell)"
+                    trade_plan["action"] = "SELL ON BREAKDOWN"
+                    trade_plan["bias"] = "Bearish"
+                elif is_bt:
+                    trade_plan["setup_name"] = "🔴 5m Bearish Order Block (Tested / Supply Rejection)"
+                    trade_plan["action"] = "SELL ON SUPPLY REJECTION"
+                    trade_plan["bias"] = "Bearish"
 
             # 9. Format candles for LightweightCharts
             tv_candles = []
