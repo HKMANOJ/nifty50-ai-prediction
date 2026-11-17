@@ -117,7 +117,7 @@ def _get_cached_index_fresh_ob(symbol: str) -> dict[str, Any] | None:
 
 
 def _attach_fresh_ob_to_index_context(payload: dict[str, Any]) -> None:
-    """Attaches active Fresh Order Blocks for NIFTY 50 and SENSEX into payload index_context."""
+    """Attaches active Fresh Order Blocks and Market Regime for NIFTY 50 and SENSEX into payload index_context."""
     if not isinstance(payload, dict):
         return
     idx_ctx = payload.get("index_context")
@@ -126,6 +126,19 @@ def _attach_fresh_ob_to_index_context(payload: dict[str, Any]) -> None:
             if name in idx_ctx and isinstance(idx_ctx[name], dict):
                 idx_ctx[name] = dict(idx_ctx[name])
                 idx_ctx[name]["fresh_ob"] = _get_cached_index_fresh_ob(name)
+                p_chg = float(idx_ctx[name].get("percent_change") or 0.0)
+                if -0.20 <= p_chg <= 0.20:
+                    idx_ctx[name]["regime"] = "SIDEWAYS"
+                    idx_ctx[name]["regime_label"] = "SIDEWAYS (CHOPPY)"
+                    idx_ctx[name]["choppy_shield"] = True
+                elif p_chg > 0.20:
+                    idx_ctx[name]["regime"] = "BULLISH"
+                    idx_ctx[name]["regime_label"] = "BULLISH TREND"
+                    idx_ctx[name]["choppy_shield"] = False
+                else:
+                    idx_ctx[name]["regime"] = "BEARISH"
+                    idx_ctx[name]["regime_label"] = "BEARISH TREND"
+                    idx_ctx[name]["choppy_shield"] = False
 
 
 
@@ -872,11 +885,24 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 _INDEX_QUOTES["ts"] = time.monotonic()
             quotes = dict(_INDEX_QUOTES["quotes"])
 
-        # Attach real-time Fresh SMC Order Blocks (Demand Fresh / Bear OB Fresh) for NIFTY 50 and SENSEX
+        # Attach real-time Fresh SMC Order Blocks (Demand Fresh / Bear OB Fresh) and Market Regime for NIFTY 50 and SENSEX
         for name in ("NIFTY 50", "SENSEX"):
             if name in quotes and isinstance(quotes[name], dict):
                 quotes[name] = dict(quotes[name])
                 quotes[name]["fresh_ob"] = _get_cached_index_fresh_ob(name)
+                p_chg = float(quotes[name].get("percent_change") or 0.0)
+                if -0.20 <= p_chg <= 0.20:
+                    quotes[name]["regime"] = "SIDEWAYS"
+                    quotes[name]["regime_label"] = "SIDEWAYS (CHOPPY)"
+                    quotes[name]["choppy_shield"] = True
+                elif p_chg > 0.20:
+                    quotes[name]["regime"] = "BULLISH"
+                    quotes[name]["regime_label"] = "BULLISH TREND"
+                    quotes[name]["choppy_shield"] = False
+                else:
+                    quotes[name]["regime"] = "BEARISH"
+                    quotes[name]["regime_label"] = "BEARISH TREND"
+                    quotes[name]["choppy_shield"] = False
 
         self._send_json(HTTPStatus.OK, {"ok": True, "index_context": quotes})
 
@@ -1360,8 +1386,17 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             # Filters out all confusing historical/previous-day zones so the trader only sees today's active setup.
             fvg_data = []
             order_blocks = []
+            trend_band = {}
+            extension_gate = {}
+            frozen_breakouts = {}
             try:
-                from smc_volume_profile_engine import detect_fair_value_gaps, detect_order_blocks_and_structure
+                from smc_volume_profile_engine import (
+                    detect_fair_value_gaps,
+                    detect_order_blocks_and_structure,
+                    calculate_monotonic_trend_band,
+                    calculate_extension_gate,
+                    detect_frozen_breakout_levels,
+                )
                 today_completed = [
                     c for c in candles
                     if datetime.fromtimestamp(c["timestamp"], tz=_ist).date() == last_day
@@ -1377,6 +1412,9 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     ob for ob in raw_obs
                     if datetime.fromtimestamp(ob.get("time", 0), tz=_ist).date() == last_day
                 ]
+                trend_band = calculate_monotonic_trend_band(all_display_candles)
+                extension_gate = calculate_extension_gate(all_display_candles)
+                frozen_breakouts = detect_frozen_breakout_levels(today_candles)
             except Exception:
                 pass
 
@@ -1402,6 +1440,9 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "index_quote": index_quote_from_candles(symbol, pipe_res),
                 "fvg": fvg_data,
                 "order_blocks": order_blocks,
+                "trend_band": trend_band,
+                "extension_gate": extension_gate,
+                "frozen_breakouts": frozen_breakouts,
                 "forming_candle": forming_c,
                 "telemetry": {
                     "provider": pipe_res.get("provider", "Unknown"),
@@ -1688,6 +1729,13 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                         f"Enter on confirmed wick rejection with Stop Loss strictly at ₹{sl_val:,.2f}."
                     )
 
+            ext_gate = analysis.get("extension_gate", {})
+            if ext_gate.get("is_extended"):
+                trade_plan["is_extended"] = True
+                trade_plan["extension_atr"] = ext_gate.get("extension_atr")
+                trade_plan["action"] = "DO NOT CHASE (WAIT PULLBACK)"
+                trade_plan["rule"] = f"⚠️ EXTENDED SETUP: {ext_gate.get('warning')}"
+
             # 9. Format candles for LightweightCharts
             tv_candles = []
             tv_volumes = []
@@ -1767,6 +1815,9 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     "poc": round(vp_out["poc"], 2) if vp_out.get("poc") else None,
                 },
                 "scanner_info": scanner_item,
+                "trend_band": analysis.get("trend_band", {}),
+                "extension_gate": analysis.get("extension_gate", {}),
+                "frozen_breakouts": analysis.get("frozen_breakouts", {}),
                 "footprints": analysis.get("footprints", {}),
                 "mtf_matrix": analysis.get("mtf_matrix", {}),
                 "telemetry": {

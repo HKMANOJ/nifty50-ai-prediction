@@ -684,6 +684,9 @@ def analyze_stock_overview(
     cvd = calculate_cvd_series(candles)
     footprints = build_candle_footprints(candles)
     mtf = calculate_multi_timeframe_matrix(candles)
+    trend_band = calculate_monotonic_trend_band(candles)
+    extension_gate = calculate_extension_gate(candles)
+    frozen_breakouts = detect_frozen_breakout_levels(candles)
 
     return {
         "ok": True,
@@ -698,6 +701,9 @@ def analyze_stock_overview(
         "cvd_series": cvd,
         "footprints": footprints,
         "mtf_matrix": mtf,
+        "trend_band": trend_band,
+        "extension_gate": extension_gate,
+        "frozen_breakouts": frozen_breakouts,
     }
 
 
@@ -1323,3 +1329,208 @@ def calculate_multi_timeframe_matrix(candles: list[dict[str, Any]]) -> dict[str,
         "overall": overall,
         "confluence": f"{max(bull_count, bear_count)} / {total_tf} ({conf_pct}%)",
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FEATURE 8: MONOTONIC TRAILING TREND BAND (EMA9(hlc3) ± 0.60*ATR)
+# ═══════════════════════════════════════════════════════════════════════
+
+def calculate_monotonic_trend_band(candles: list[dict[str, Any]]) -> dict[str, Any]:
+    """Computes monotonic trailing trend band:
+    Basis: EMA9(hlc3)
+    Offsets: rawSupport = ema9 - 0.60*atr, rawResistance = ema9 + 0.60*atr
+    Bull Trail: max(prev_trail, rawSupport)  (non-decreasing)
+    Bear Trail: min(prev_trail, rawResistance) (non-increasing)
+    """
+    n = len(candles)
+    if n < 5:
+        return {"mode": "NEUTRAL", "points": [], "latest": None}
+
+    # Calculate ATR14
+    trs = [max(candles[i]["high"] - candles[i]["low"],
+               abs(candles[i]["high"] - candles[i-1]["close"]),
+               abs(candles[i]["low"] - candles[i-1]["close"])) for i in range(1, n)]
+    atr = (sum(trs[-14:]) / min(14, len(trs))) if trs else 5.0
+    atr = max(atr, 0.5)
+
+    # EMA9 of hlc3
+    hlc3_list = [(c["high"] + c["low"] + c["close"]) / 3.0 for c in candles]
+    alpha9 = 2.0 / (9 + 1)
+    ema9 = hlc3_list[0]
+
+    # Simple EMA20 for regime
+    alpha20 = 2.0 / (20 + 1)
+    ema20 = candles[0]["close"]
+
+    trail = 0.0
+    mode = "BULL" if candles[-1]["close"] >= candles[0]["open"] else "BEAR"
+    points: list[dict[str, Any]] = []
+
+    for i in range(n):
+        c = candles[i]
+        h3 = hlc3_list[i]
+        ema9 = alpha9 * h3 + (1.0 - alpha9) * ema9
+        ema20 = alpha20 * c["close"] + (1.0 - alpha20) * ema20
+
+        # Regime evaluation
+        curr_mode = "BULL" if c["close"] >= ema20 else "BEAR"
+
+        if curr_mode == "BULL":
+            raw_supp = ema9 - 0.60 * atr
+            if trail == 0.0 or mode != "BULL":
+                trail = raw_supp
+            else:
+                trail = max(trail, raw_supp)
+            center = round(trail + 0.15 * atr, 2)
+            lower = round(trail - 0.10 * atr, 2)
+            upper = round(trail + 0.45 * atr, 2)
+        else:
+            raw_res = ema9 + 0.60 * atr
+            if trail == 0.0 or mode != "BEAR":
+                trail = raw_res
+            else:
+                trail = min(trail, raw_res)
+            center = round(trail - 0.15 * atr, 2)
+            lower = round(trail - 0.45 * atr, 2)
+            upper = round(trail + 0.10 * atr, 2)
+
+        mode = curr_mode
+        points.append({
+            "time": c["timestamp"],
+            "center": center,
+            "lower": lower,
+            "upper": upper,
+            "trail": round(trail, 2),
+            "mode": mode,
+            "is_above": bool(c["close"] >= lower if mode == "BULL" else c["close"] <= upper),
+        })
+
+    latest = points[-1] if points else None
+    return {
+        "mode": mode,
+        "points": points,
+        "latest": latest,
+        "atr": round(atr, 2),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FEATURE 9: ATR EXTENSION GATE ("DO NOT CHASE" RULE)
+# ═══════════════════════════════════════════════════════════════════════
+
+def calculate_extension_gate(candles: list[dict[str, Any]]) -> dict[str, Any]:
+    """Evaluates whether current price is overextended from EMA20 by > 1.8 ATR.
+    Long extension: (Close - EMA20) / ATR > 1.8 => EXTENDED_DO_NOT_CHASE
+    Short extension: (EMA20 - Close) / ATR > 1.8 => EXTENDED_DO_NOT_CHASE
+    """
+    n = len(candles)
+    if n < 20:
+        return {"is_extended": False, "extension_atr": 0.0, "status": "NORMAL", "warning": ""}
+
+    # Calculate ATR14
+    trs = [max(candles[i]["high"] - candles[i]["low"],
+               abs(candles[i]["high"] - candles[i-1]["close"]),
+               abs(candles[i]["low"] - candles[i-1]["close"])) for i in range(1, n)]
+    atr = (sum(trs[-14:]) / min(14, len(trs))) if trs else 5.0
+    atr = max(atr, 0.5)
+
+    # Calculate EMA20
+    alpha20 = 2.0 / (20 + 1)
+    ema20 = candles[0]["close"]
+    for c in candles:
+        ema20 = alpha20 * c["close"] + (1.0 - alpha20) * ema20
+
+    curr_close = candles[-1]["close"]
+    extension_atr = round((curr_close - ema20) / atr, 2)
+
+    is_extended_long = extension_atr > 1.8
+    is_extended_short = extension_atr < -1.8
+
+    if is_extended_long:
+        return {
+            "is_extended": True,
+            "extension_atr": extension_atr,
+            "status": "EXTENDED_DO_NOT_CHASE",
+            "side": "LONG",
+            "warning": f"Overstretched (+{extension_atr:.1f}x ATR above EMA20). Avoid chasing highs; wait for Demand Zone pullback.",
+        }
+    elif is_extended_short:
+        return {
+            "is_extended": True,
+            "extension_atr": abs(extension_atr),
+            "status": "EXTENDED_DO_NOT_CHASE",
+            "side": "SHORT",
+            "warning": f"Overstretched ({extension_atr:.1f}x ATR below EMA20). Avoid chasing lows; wait for Supply Zone pullback.",
+        }
+
+    return {
+        "is_extended": False,
+        "extension_atr": abs(extension_atr),
+        "status": "NORMAL",
+        "side": "NEUTRAL",
+        "warning": "",
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FEATURE 10: FROZEN BREAKOUT LEVELS & BR CONFIRMATION MARKERS
+# ═══════════════════════════════════════════════════════════════════════
+
+def detect_frozen_breakout_levels(candles: list[dict[str, Any]]) -> dict[str, Any]:
+    """Detects institutional breakout confirmation across rolling 12-bar resistance/support.
+    Level is frozen prior to breakout candle; BR marker emitted strictly on closed candle
+    with close > level + 0.10*ATR, closeLocation >= 0.70, bodyFraction >= 0.50.
+    """
+    n = len(candles)
+    if n < 15:
+        return {"levels": [], "markers": [], "latest_breakout": None}
+
+    trs = [max(candles[i]["high"] - candles[i]["low"],
+               abs(candles[i]["high"] - candles[i-1]["close"]),
+               abs(candles[i]["low"] - candles[i-1]["close"])) for i in range(1, n)]
+    atr = (sum(trs[-14:]) / min(14, len(trs))) if trs else 5.0
+    atr = max(atr, 0.5)
+
+    breakout_levels: list[dict[str, Any]] = []
+    markers: list[dict[str, Any]] = []
+
+    for i in range(12, n):
+        # Resistance frozen from prior 12 closed bars (excluding candle i)
+        frozen_r = max(c["high"] for c in candles[i-12:i])
+        c_curr = candles[i]
+        rng = max(c_curr["high"] - c_curr["low"], 0.01)
+        body = abs(c_curr["close"] - c_curr["open"])
+        close_loc = (c_curr["close"] - c_curr["low"]) / rng
+
+        # Bullish Breakout Confirmation
+        if (c_curr["close"] > frozen_r + 0.10 * atr and
+            c_curr["close"] > c_curr["open"] and
+            body / rng >= 0.50 and
+            close_loc >= 0.70):
+
+            # Check if this level was already recorded recently
+            if not any(abs(bl["price"] - frozen_r) < 1.0 for bl in breakout_levels[-3:]):
+                b_event = {
+                    "id": f"br_lvl_{i}",
+                    "type": "RESISTANCE",
+                    "price": round(frozen_r, 2),
+                    "breakout_price": round(c_curr["close"], 2),
+                    "time": c_curr["timestamp"],
+                    "status": "CONFIRMED",
+                }
+                breakout_levels.append(b_event)
+                markers.append({
+                    "time": c_curr["timestamp"],
+                    "position": "aboveBar",
+                    "color": "#10b981",
+                    "shape": "arrowUp",
+                    "text": "BR",
+                    "price": round(c_curr["high"], 2),
+                })
+
+    return {
+        "levels": breakout_levels,
+        "markers": markers,
+        "latest_breakout": breakout_levels[-1] if breakout_levels else None,
+    }
+

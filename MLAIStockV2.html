@@ -1882,6 +1882,7 @@
             <span class="index-alert-dot" id="niftyAlertDot" style="display:none;" title="Fresh Institutional Setup! Click to view chart"></span>
             <span style="display:inline-flex; align-items:center; gap:4px;">📊 NIFTY 50</span>
             <span class="val" id="niftyVal">--</span>
+            <span id="niftyRegimeBadge" style="display:none; font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; margin-left:4px;"></span>
           </div>
           <div class="ticker-chip up clickable-index-chip" id="bankTickerChip" onclick="openStockInOverview('BANKNIFTY')" title="Click to open interactive 5m SMC chart for BANK NIFTY in Stock Overview">
             <span style="display:inline-flex; align-items:center; gap:4px;">🏛️ BANK NIFTY</span>
@@ -1891,7 +1892,9 @@
             <span class="index-alert-dot" id="sensexAlertDot" style="display:none;" title="Fresh Institutional Setup! Click to view chart"></span>
             <span style="display:inline-flex; align-items:center; gap:4px;">📈 SENSEX</span>
             <span class="val" id="sensexVal">--</span>
+            <span id="sensexRegimeBadge" style="display:none; font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; margin-left:4px;"></span>
           </div>
+          <span id="choppyShieldBadge" style="display:none; font-size:11px; font-weight:800; padding:3px 8px; border-radius:6px; background:#fef3c7; color:#92400e; border:1px solid #fde68a; display:inline-flex; align-items:center; gap:4px; flex-shrink:0;" title="Choppy Market Shield is Active: Indices are consolidating within ±0.20%. Breakouts have low follow-through.">🛡️ Choppy Shield: Active (Choppy Range)</span>
         </div>
       </div>
 
@@ -2050,6 +2053,7 @@
               <span class="chart-stat-chip" id="chartPmhPmlStatus" style="display:none;"></span>
               <span class="chart-stat-chip" id="chartPdh">Structure: Breakout Rally</span>
               <span class="chart-stat-chip" id="chartEarlyIgnitionChip" style="display:none; background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-weight:800;">🎯 SWEET SPOT IGNITION</span>
+              <span class="chart-stat-chip" id="chartExtensionChip" style="display:none; background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-weight:800;" title="Price is extended > 1.8 ATR from EMA20. Wait for pullback to Demand Zone!">⚠️ EXTENDED (DO NOT CHASE)</span>
               <span class="chart-stat-chip" style="background:#eff6ff; color:#2563eb; font-weight:700;">📅 5-Day Historical Candles</span>
               <span class="chart-stat-chip" id="chartTelemetryChip" style="font-weight:700; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;" title="Live candle feed provider, latest completed bar, fetched time, and observed latency">⚡ Feed: Checking...</span>
             </div>
@@ -2059,6 +2063,7 @@
               <button class="tf-btn active" id="btnTf5m">5m (5-Day)</button>
               <button class="tf-btn" id="btnFitChart">Fit View</button>
               <button class="tf-btn active" id="btnToggleDashboardSmc" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;" title="Toggle Fair Value Gaps and Order Blocks on Dashboard Chart">📦 SMC (FVG & OB)</button>
+              <button class="tf-btn active" id="btnToggleTrendBand" onclick="toggleDashboardTrendBand()" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0; font-weight:700;" title="Toggle Monotonic Trailing Trend Band on 5m chart">⚡ Trend Band</button>
               <button class="tf-btn" id="btnOpenOverview" onclick="openStockInOverview(_selectedSymbol)" style="background:linear-gradient(135deg, #4f46e5, #6366f1); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated Stock Overview with Volume Profile & Order Blocks">🔬 Open in Stock Overview</button>
               <button class="tf-btn" onclick="window.open('/chart_studio.html?symbol=' + encodeURIComponent(_selectedSymbol), '_blank')" style="background:linear-gradient(135deg, #2563eb, #1d4ed8); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated full-screen TradingView Studio with Drawing Tools & Upstox Feed">📈 Pro Studio ↗</button>
             </div>
@@ -2080,6 +2085,8 @@
             <div class="legend-item"><span class="dot" style="background:#d97706;"></span> Day High / Low</div>
             <div class="legend-item"><span style="display:inline-block; width:12px; height:8px; background:rgba(16,185,129,0.25); border:1px solid #10b981; border-radius:2px; vertical-align:middle; margin-right:3px;"></span> DEMAND / FVG+</div>
             <div class="legend-item"><span style="display:inline-block; width:12px; height:8px; background:rgba(245,158,11,0.25); border:1px solid #f59e0b; border-radius:2px; vertical-align:middle; margin-right:3px;"></span> BEAR OB / FVG-</div>
+            <div class="legend-item"><span style="display:inline-block; width:12px; height:8px; background:rgba(16,185,129,0.3); border:1px solid #10b981; border-radius:2px; vertical-align:middle; margin-right:3px;"></span> Trend Band</div>
+            <div class="legend-item"><span style="display:inline-block; width:12px; height:2px; background:#f59e0b; vertical-align:middle; margin-right:3px; border-top:1px dashed #f59e0b;"></span> Frozen BR</div>
             <div class="legend-item" style="color:#64748b; margin-left:auto;">Scroll / drag left for 5-day history</div>
           </div>
         </div>
@@ -3308,12 +3315,19 @@
   // Clean-cut horizontal rectangular zones matching Pro Stock Hunter
   // ═══════════════════════════════════════════════════════════════════
   let _dashboardShowSmc = true;
+  let _dashboardShowTrendBand = true;
+  let _dashboardTrendBandData = null;
+  let _dashboardBreakoutsData = null;
+  let _dashboardExtensionData = null;
   let _dashboardObData = [];
   let _dashboardFvgData = [];
   let _dashboardCandleData = [];
   let _dashboardIsBullish = true;
   let _ovCandleData = [];
   let _ovIsBullish = true;
+  let _ovTrendBandData = null;
+  let _ovBreakoutsData = null;
+  let _ovExtensionData = null;
 
   function drawPillRect(ctx, x, y, width, height, radius) {
     if (typeof ctx.roundRect === "function") {
@@ -3596,6 +3610,183 @@
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // FEATURE 8: MONOTONIC TRAILING TREND BAND RENDERER
+  // ═══════════════════════════════════════════════════════════════════
+  function drawTrendBand(ctx, chart, series, w, h, trendBand) {
+    if (!ctx || !chart || !series || !trendBand) return;
+    const points = trendBand.points || trendBand.series || [];
+    if (!Array.isArray(points) || points.length < 2) return;
+
+    let chartPlotWidth = w - 65;
+    try {
+      if (chart.timeScale && typeof chart.timeScale().width === 'function') {
+        const tw = chart.timeScale().width();
+        if (tw > 40) chartPlotWidth = tw;
+      }
+    } catch(e) {}
+
+    const mapped = [];
+    for (let i = 0; i < points.length; i++) {
+      const pt = points[i];
+      const x = chart.timeScale().timeToCoordinate(pt.time);
+      if (x === null) continue;
+      const yCenter = series.priceToCoordinate(pt.center);
+      const yUpper = series.priceToCoordinate(pt.upper);
+      const yLower = series.priceToCoordinate(pt.lower);
+      const yTrail = series.priceToCoordinate(pt.trail);
+      if (yCenter === null || yUpper === null || yLower === null || yTrail === null) continue;
+      mapped.push({ x, yCenter, yUpper, yLower, yTrail, mode: pt.mode });
+    }
+
+    if (mapped.length < 2) return;
+
+    ctx.save();
+
+    // 1. Shaded band between Upper and Lower
+    for (let i = 0; i < mapped.length - 1; i++) {
+      const p1 = mapped[i];
+      const p2 = mapped[i + 1];
+      if (p2.x < -20 || p1.x > chartPlotWidth + 20) continue;
+
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.yUpper);
+      ctx.lineTo(p2.x, p2.yUpper);
+      ctx.lineTo(p2.x, p2.yLower);
+      ctx.lineTo(p1.x, p1.yLower);
+      ctx.closePath();
+
+      const isBull = (p2.mode || "BULL") === "BULL";
+      ctx.fillStyle = isBull ? "rgba(16, 185, 129, 0.08)" : "rgba(239, 68, 68, 0.08)";
+      ctx.fill();
+    }
+
+    // 2. Dotted Center Line (EMA9 of HLC3)
+    ctx.beginPath();
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = "#94a3b8";
+    ctx.lineWidth = 1;
+    let startedCenter = false;
+    for (let i = 0; i < mapped.length; i++) {
+      const p = mapped[i];
+      if (p.x < -20 || p.x > chartPlotWidth + 20) continue;
+      if (!startedCenter) {
+        ctx.moveTo(p.x, p.yCenter);
+        startedCenter = true;
+      } else {
+        ctx.lineTo(p.x, p.yCenter);
+      }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 3. Monotonic Trailing Line (Solid Green in BULL mode, Solid Red in BEAR mode)
+    for (let i = 0; i < mapped.length - 1; i++) {
+      const p1 = mapped[i];
+      const p2 = mapped[i + 1];
+      if (p2.x < -20 || p1.x > chartPlotWidth + 20) continue;
+
+      const isBull = (p2.mode || "BULL") === "BULL";
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.yTrail);
+      ctx.lineTo(p2.x, p2.yTrail);
+      ctx.strokeStyle = isBull ? "#10b981" : "#ef4444";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FEATURE 10: FROZEN BREAKOUT LEVELS & BR MARKERS RENDERER
+  // ═══════════════════════════════════════════════════════════════════
+  function drawFrozenBreakouts(ctx, chart, series, w, h, breakoutData) {
+    if (!ctx || !chart || !series || !breakoutData) return;
+    const levels = breakoutData.levels || [];
+    const markers = breakoutData.markers || [];
+
+    let chartPlotWidth = w - 65;
+    try {
+      if (chart.timeScale && typeof chart.timeScale().width === 'function') {
+        const tw = chart.timeScale().width();
+        if (tw > 40) chartPlotWidth = tw;
+      }
+    } catch(e) {}
+
+    ctx.save();
+
+    // 1. Draw Frozen Resistance / Support Levels
+    levels.forEach(lvl => {
+      const y = series.priceToCoordinate(lvl.price);
+      if (y === null) return;
+      let xStart = chart.timeScale().timeToCoordinate(lvl.time);
+      if (xStart === null) xStart = 0;
+      xStart = Math.max(0, xStart);
+      if (xStart > chartPlotWidth) return;
+
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = "#f59e0b"; // Golden amber
+      ctx.lineWidth = 1.5;
+      ctx.moveTo(xStart, y);
+      ctx.lineTo(chartPlotWidth, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label at right edge
+      const lblText = `FROZEN R: ₹${lvl.price.toFixed(2)}`;
+      ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
+      const tw = ctx.measureText(lblText).width;
+      const lx = chartPlotWidth - tw - 12;
+      const ly = y - 7;
+      ctx.fillStyle = "rgba(254, 243, 199, 0.95)";
+      drawPillRect(ctx, lx, ly, tw + 8, 14, 2);
+      ctx.fill();
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+
+      ctx.fillStyle = "#92400e";
+      ctx.textBaseline = "middle";
+      ctx.fillText(lblText, lx + 4, ly + 7);
+    });
+
+    // 2. Draw Confirmed BR Markers
+    markers.forEach(m => {
+      const x = chart.timeScale().timeToCoordinate(m.time);
+      const y = series.priceToCoordinate(m.price);
+      if (x === null || y === null || x < 0 || x > chartPlotWidth) return;
+
+      const badgeY = y - 18;
+      const badgeW = 32;
+      const badgeH = 14;
+      const badgeX = x - badgeW / 2;
+
+      ctx.fillStyle = "#10b981";
+      drawPillRect(ctx, badgeX, badgeY, badgeW, badgeH, 3);
+      ctx.fill();
+
+      ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("⚡BR", x, badgeY + badgeH / 2);
+    });
+
+    ctx.restore();
+  }
+
+  function toggleDashboardTrendBand() {
+    _dashboardShowTrendBand = !_dashboardShowTrendBand;
+    const btn = document.getElementById("btnToggleTrendBand");
+    if (btn) {
+      btn.style.opacity = _dashboardShowTrendBand ? "1" : "0.5";
+      btn.classList.toggle("active", _dashboardShowTrendBand);
+    }
+    requestAnimationFrame(renderDashboardSmcOverlay);
+  }
+
   function renderDashboardSmcOverlay() {
     const canvas = document.getElementById("tvSmcCanvas");
     if (!canvas || !_candleSeries || !_tvChart) return;
@@ -3619,6 +3810,10 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
+    if (_dashboardShowTrendBand && _dashboardTrendBandData) {
+      drawTrendBand(ctx, _tvChart, _candleSeries, w, h, _dashboardTrendBandData);
+    }
+
     if (_dashboardShowSmc) {
       drawSmcZones(ctx, _tvChart, _candleSeries, w, h, _dashboardObData, _dashboardFvgData, {
         showOb: true,
@@ -3627,6 +3822,11 @@
         isBullish: _dashboardIsBullish,
       });
     }
+
+    if (_dashboardBreakoutsData) {
+      drawFrozenBreakouts(ctx, _tvChart, _candleSeries, w, h, _dashboardBreakoutsData);
+    }
+
     ctx.restore();
   }
 
@@ -4076,11 +4276,25 @@
           }));
         }
 
-        // Store and render SMC overlay (FVG with 50% CE & Order Blocks) on dashboard chart
+        // Store and render SMC overlay, Trend Band, and Frozen Breakouts on dashboard chart
         _dashboardFvgData = data.fvg || [];
         _dashboardObData = data.order_blocks || [];
         _dashboardCandleData = data.candles || [];
+        _dashboardTrendBandData = data.trend_band || null;
+        _dashboardBreakoutsData = data.frozen_breakouts || null;
+        _dashboardExtensionData = data.extension_gate || null;
         _dashboardIsBullish = (meta && (meta.percent_change !== undefined ? meta.percent_change >= 0 : meta.side === 'GAINER')) || !!meta.demand_zone;
+
+        const extChip = document.getElementById("chartExtensionChip");
+        if (extChip) {
+          if (data.extension_gate && data.extension_gate.is_extended) {
+            extChip.style.display = "inline-block";
+            extChip.title = data.extension_gate.warning || "Overstretched > 1.8 ATR from EMA20. Avoid chasing!";
+            extChip.textContent = `⚠️ EXTENDED (${data.extension_gate.extension_atr}x ATR) DO NOT CHASE`;
+          } else {
+            extChip.style.display = "none";
+          }
+        }
         requestAnimationFrame(renderDashboardSmcOverlay);
 
         setTimeout(() => {
@@ -4660,17 +4874,17 @@
       // Sweet Spot vs Over-Run Extension Detection:
       const pVal = Math.abs(row.percent_change || 0);
       const isSweetSpot = pVal >= 1.2 && pVal <= 4.5;
-      const isOverRun = pVal > 5.5;
+      const isOverRun = pVal > 5.5 || row.is_extended || (row.extension_atr && row.extension_atr > 1.8);
 
       let runwayBadge = "";
-      if (isSweetSpot) {
+      if (isOverRun) {
+        runwayBadge = isUp
+          ? `<span style="font-size:8.5px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">⚠️ EXTENDED (DO NOT CHASE)</span>`
+          : `<span style="font-size:8.5px; font-weight:800; color:#475569; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">⚠️ EXTENDED (DO NOT CHASE)</span>`;
+      } else if (isSweetSpot) {
         runwayBadge = isUp
           ? `<span style="font-size:8.5px; font-weight:800; color:#065f46; background:#d1fae5; border:1px solid #6ee7b7; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">🎯 Sweet Spot</span>`
           : `<span style="font-size:8.5px; font-weight:800; color:#991b1b; background:#fee2e2; border:1px solid #fca5a5; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">🎯 Sweet Spot</span>`;
-      } else if (isOverRun) {
-        runwayBadge = isUp
-          ? `<span style="font-size:8.5px; font-weight:800; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">⚠️ Over-Run · Wait Pullback</span>`
-          : `<span style="font-size:8.5px; font-weight:800; color:#475569; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:3px; padding:1px 4px; display:inline-flex; align-items:center; gap:2px;">⚠️ Over-Run · Floor Risk</span>`;
       }
 
       return `
@@ -5124,34 +5338,8 @@
     renderTrackedBreakouts(payload.tracked_breakouts);
     renderInvalidatedCandidates(payload.invalidated_candidates);
 
-    // Update Indexes
-    const idxs = payload.index_context || {};
-    const n50 = idxs["NIFTY 50"] || {};
-    const bnk = idxs["NIFTY BANK"] || {};
-    const snx = idxs["SENSEX"] || idxs["BSE SENSEX"] || {};
-    const n50El = document.getElementById("niftyVal");
-    const bnkEl = document.getElementById("bankVal");
-    const snxEl = document.getElementById("sensexVal");
-    const snxChip = document.getElementById("sensexTickerChip");
-    if (n50El && n50.percent_change !== undefined) {
-      const p = n50.percent_change;
-      const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
-      n50El.textContent = `${ltpStr}(${pct(p)})`;
-      n50El.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
-    }
-    if (bnkEl && bnk.percent_change !== undefined) {
-      const p = bnk.percent_change;
-      const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
-      bnkEl.textContent = `${ltpStr}(${pct(p)})`;
-      bnkEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
-    }
-    if (snxEl && snx.percent_change !== undefined) {
-      if (snxChip) snxChip.style.display = "flex";
-      const p = snx.percent_change;
-      const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
-      snxEl.textContent = `${ltpStr}(${pct(p)})`;
-      snxEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
-    }
+    // Update Indexes & Market Regime Shield
+    updateIndexContextUI(payload.index_context);
 
     // Auto-Scan Badge Telemetry
     const scanBadge = document.getElementById("autoScanBadge");
@@ -6017,6 +6205,102 @@
     if (_lastScannerPayload && !_scannerRetryTimer) scannerSnapshotStatus(_lastScannerPayload);
   }, 45000);
 
+  // ═══════════════════════════════════════════════════════════════════
+  // FEATURE 7: MARKET REGIME & CHOPPY MARKET SHIELD ENGINE
+  // Updates Index Tickers, Regime Badges, and Choppy Shield Warning
+  // ═══════════════════════════════════════════════════════════════════
+  function updateIndexContextUI(idxs) {
+    if (!idxs || typeof idxs !== "object") return;
+    const n50 = idxs["NIFTY 50"] || {};
+    const bnk = idxs["NIFTY BANK"] || {};
+    const snx = idxs["SENSEX"] || idxs["BSE SENSEX"] || {};
+
+    const n50El = document.getElementById("niftyVal");
+    const bnkEl = document.getElementById("bankVal");
+    const snxEl = document.getElementById("sensexVal");
+    const snxChip = document.getElementById("sensexTickerChip");
+
+    if (n50El && n50.percent_change !== undefined) {
+      const p = n50.percent_change;
+      const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
+      n50El.textContent = `${ltpStr}(${pct(p)})`;
+      n50El.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+    }
+    if (bnkEl && bnk.percent_change !== undefined) {
+      const p = bnk.percent_change;
+      const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
+      bnkEl.textContent = `${ltpStr}(${pct(p)})`;
+      bnkEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+    }
+    if (snxEl && snx.percent_change !== undefined) {
+      if (snxChip) snxChip.style.display = "flex";
+      const p = snx.percent_change;
+      const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
+      snxEl.textContent = `${ltpStr}(${pct(p)})`;
+      snxEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
+    }
+
+    // Regime Badges (NIFTY 50 & SENSEX)
+    const n50RegimeEl = document.getElementById("niftyRegimeBadge");
+    if (n50RegimeEl) {
+      const pChg = n50.percent_change || 0;
+      const regime = n50.regime || (Math.abs(pChg) <= 0.20 ? "SIDEWAYS" : (pChg > 0.20 ? "BULLISH" : "BEARISH"));
+      n50RegimeEl.style.display = "inline-block";
+      if (regime === "SIDEWAYS") {
+        n50RegimeEl.textContent = "CHOPPY";
+        n50RegimeEl.style.background = "#fef3c7";
+        n50RegimeEl.style.color = "#92400e";
+      } else if (regime === "BULLISH") {
+        n50RegimeEl.textContent = "BULL";
+        n50RegimeEl.style.background = "#ecfdf5";
+        n50RegimeEl.style.color = "#065f46";
+      } else {
+        n50RegimeEl.textContent = "BEAR";
+        n50RegimeEl.style.background = "#fef2f2";
+        n50RegimeEl.style.color = "#991b1b";
+      }
+    }
+
+    const snxRegimeEl = document.getElementById("sensexRegimeBadge");
+    if (snxRegimeEl) {
+      const pChg = snx.percent_change || 0;
+      const regime = snx.regime || (Math.abs(pChg) <= 0.20 ? "SIDEWAYS" : (pChg > 0.20 ? "BULLISH" : "BEARISH"));
+      snxRegimeEl.style.display = "inline-block";
+      if (regime === "SIDEWAYS") {
+        snxRegimeEl.textContent = "CHOPPY";
+        snxRegimeEl.style.background = "#fef3c7";
+        snxRegimeEl.style.color = "#92400e";
+      } else if (regime === "BULLISH") {
+        snxRegimeEl.textContent = "BULL";
+        snxRegimeEl.style.background = "#ecfdf5";
+        snxRegimeEl.style.color = "#065f46";
+      } else {
+        snxRegimeEl.textContent = "BEAR";
+        snxRegimeEl.style.background = "#fef2f2";
+        snxRegimeEl.style.color = "#991b1b";
+      }
+    }
+
+    // Choppy Market Shield: Alerts user when market is rangebound and breakout success drops
+    const choppyShield = document.getElementById("choppyShieldBadge");
+    if (choppyShield) {
+      const isChoppy = Boolean(n50.choppy_shield || snx.choppy_shield || (Math.abs(n50.percent_change || 0) <= 0.20 && Math.abs(snx.percent_change || 0) <= 0.20));
+      if (isChoppy) {
+        choppyShield.style.display = "inline-flex";
+        choppyShield.innerHTML = "🛡️ Choppy Shield: Active (Choppy Range)";
+        choppyShield.style.background = "#fef3c7";
+        choppyShield.style.color = "#92400e";
+        choppyShield.style.borderColor = "#fde68a";
+      } else {
+        choppyShield.style.display = "inline-flex";
+        choppyShield.innerHTML = "🛡️ Trending Flow: Active";
+        choppyShield.style.background = "#ecfdf5";
+        choppyShield.style.color = "#065f46";
+        choppyShield.style.borderColor = "#a7f3d0";
+      }
+    }
+  }
+
   // ── Live NIFTY / BANK NIFTY ticker: refresh every 30s ──
   async function pollIndexLive(isImmediate = false) {
     if (!isImmediate && !isMarketHours() && !isPreMarket()) return; // skip periodic polling outside trading window
@@ -6024,32 +6308,7 @@
       const res = await fetch(`${API_BASE}/api/index_live`, { cache: "no-store" });
       const d = await res.json();
       if (!d.ok || !d.index_context) return;
-      const n50 = d.index_context["NIFTY 50"] || {};
-      const bnk = d.index_context["NIFTY BANK"] || {};
-      const snx = d.index_context["SENSEX"] || d.index_context["BSE SENSEX"] || {};
-      const n50El = document.getElementById("niftyVal");
-      const bnkEl = document.getElementById("bankVal");
-      const snxEl = document.getElementById("sensexVal");
-      const snxChip = document.getElementById("sensexTickerChip");
-      if (n50El && n50.percent_change !== undefined) {
-        const p = n50.percent_change;
-        const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
-        n50El.textContent = `${ltpStr}(${pct(p)})`;
-        n50El.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
-      }
-      if (bnkEl && bnk.percent_change !== undefined) {
-        const p = bnk.percent_change;
-        const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
-        bnkEl.textContent = `${ltpStr}(${pct(p)})`;
-        bnkEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
-      }
-      if (snxEl && snx.percent_change !== undefined) {
-        if (snxChip) snxChip.style.display = "flex";
-        const p = snx.percent_change;
-        const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
-        snxEl.textContent = `${ltpStr}(${pct(p)})`;
-        snxEl.style.color = (p || 0) >= 0 ? "#16a34a" : "#dc2626";
-      }
+      updateIndexContextUI(d.index_context);
       if (_sectorPayload) {
         _sectorPayload.index_context = d.index_context;
       }
@@ -6254,29 +6513,7 @@
             }
           });
         } else if (msg.type === "index_update" && msg.index_context) {
-          const n50 = msg.index_context["NIFTY 50"] || {};
-          const bnk = msg.index_context["NIFTY BANK"] || {};
-          const snx = msg.index_context["SENSEX"] || msg.index_context["BSE SENSEX"] || {};
-          const n50El = document.getElementById("niftyVal");
-          const bnkEl = document.getElementById("bankVal");
-          const snxEl = document.getElementById("sensexVal");
-          const snxChip = document.getElementById("sensexTickerChip");
-          if (n50El && n50.percent_change !== undefined) {
-            const ltpStr = n50.ltp ? `${n(n50.ltp)} ` : "";
-            n50El.textContent = `${ltpStr}(${pct(n50.percent_change)})`;
-            n50El.style.color = (n50.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
-          }
-          if (bnkEl && bnk.percent_change !== undefined) {
-            const ltpStr = bnk.ltp ? `${n(bnk.ltp)} ` : "";
-            bnkEl.textContent = `${ltpStr}(${pct(bnk.percent_change)})`;
-            bnkEl.style.color = (bnk.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
-          }
-          if (snxEl && snx.percent_change !== undefined) {
-            if (snxChip) snxChip.style.display = "flex";
-            const ltpStr = snx.ltp ? `${n(snx.ltp)} ` : "";
-            snxEl.textContent = `${ltpStr}(${pct(snx.percent_change)})`;
-            snxEl.style.color = (snx.percent_change || 0) >= 0 ? "#16a34a" : "#dc2626";
-          }
+          updateIndexContextUI(msg.index_context);
           if (typeof checkAndTriggerIndexAlerts === "function") {
             checkAndTriggerIndexAlerts(msg.index_context, false);
           }
@@ -7187,13 +7424,23 @@
       });
     }
 
-    // 2. Draw Institutional Order Blocks (DEMAND & BEAR OB) and Fair Value Gaps (FVG+ & FVG- with 50% CE)
+    // 2. Draw Trend Band Overlay (if enabled)
+    if (_dashboardShowTrendBand && _ovTrendBandData) {
+      drawTrendBand(ctx, _ovChart, _ovCandleSeries, w, h, _ovTrendBandData);
+    }
+
+    // 3. Draw Institutional Order Blocks (DEMAND & BEAR OB) and Fair Value Gaps (FVG+ & FVG- with 50% CE)
     drawSmcZones(ctx, _ovChart, _ovCandleSeries, w, h, _ovObData, _ovFvgData, {
       showOb: _ovShowOb,
       showFvg: _ovShowFvg,
       candles: _ovCandlesData,
       allZones: true,
     });
+
+    // 4. Draw Frozen Breakout Levels and BR Markers
+    if (_ovBreakoutsData) {
+      drawFrozenBreakouts(ctx, _ovChart, _ovCandleSeries, w, h, _ovBreakoutsData);
+    }
 
     // 3. Draw On-Chart Footprint Focus Indicator (Inspected Candle Only - Keeps Main Chart Clean)
     if (_ovShowFootprint && _ovCandlesData && _ovCandlesData.length) {
@@ -7448,6 +7695,9 @@
 
       // Store Order Block data for clean rectangular box rendering on canvas (Pro Stock Hunter SMC mapping)
       _ovObData = (ms && ms.order_blocks) || [];
+      _ovTrendBandData = data.trend_band || null;
+      _ovBreakoutsData = data.frozen_breakouts || null;
+      _ovExtensionData = data.extension_gate || null;
 
       // Render Left Volume Profile, Order Blocks & FVG on Canvas (Mathematically aligned to price scale)
       _lastVpData = vp;
