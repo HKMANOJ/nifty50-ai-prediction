@@ -1437,19 +1437,25 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             import upstox_provider
             import re
 
-            # 1. Fetch candles (Extended pipeline for high timeframe history)
-            ext_candles = fetch_extended_candles_pipeline(symbol, timeframe=timeframe, range_str=range_param or None)
-            if ext_candles and len(ext_candles) > 30:
-                all_candles = ext_candles
-                candles = ext_candles[:-1]
-                pipe_res = {"provider": "Extended Pipeline", "is_stale": False, "observed_latency_ms": 50}
-            else:
+            # 1. Fetch candles: For 5m intraday, ALWAYS prioritize direct Upstox real-time broker feed!
+            all_candles = []
+            candles = []
+            pipe_res = {}
+            if timeframe == "5m":
                 pipe_res = fetch_5m_candles_pipeline(symbol, full_range=True)
                 candles = pipe_res.get("completed_candles") or []
                 forming_c = pipe_res.get("forming_candle")
                 all_candles = list(candles)
                 if forming_c:
                     all_candles.append(forming_c)
+
+            # Only fall back to extended pipeline (Yahoo) if timeframe != "5m" or Upstox had zero data
+            if not all_candles:
+                ext_candles = fetch_extended_candles_pipeline(symbol, timeframe=timeframe, range_str=range_param or None)
+                if ext_candles and len(ext_candles) > 30:
+                    all_candles = ext_candles
+                    candles = ext_candles[:-1]
+                    pipe_res = {"provider": "Extended Pipeline", "is_stale": False, "observed_latency_ms": 50}
 
             # 2. Check Scanner Snapshot (Ground Truth from Dashboard)
             scanner_item = None
