@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 ManojLabs AI Stock Hunter - Telegram Notification Dispatcher
-Sends real-time alerts to Telegram when Demand Fresh or Bear OB Fresh setups occur.
+Strictly alerts on NIFTY and SENSEX Demand Fresh setups.
+Suppresses all individual stocks, Bear OBs, and extra messages.
 """
 from __future__ import annotations
 
@@ -64,7 +65,7 @@ def get_credentials() -> tuple[str, str, bool]:
 
 
 def send_telegram_text(text: str, timeout: float = 8.0) -> tuple[bool, str]:
-    """Send arbitrary formatted markdown text via Telegram Bot API."""
+    """Send text via Telegram Bot API."""
     token, chat_id, enabled = get_credentials()
     if not enabled:
         logger.info("Telegram notifications are currently disabled (TELEGRAM_ALERTS_ENABLED=0)")
@@ -136,38 +137,62 @@ def _save_sent_key(key: str) -> None:
             logger.warning("Failed to persist sent key %s: %s", key, exc)
 
 
+def _format_time_str(time_val: Any) -> str:
+    """Formats time into clean string without leading zeros e.g. '9:40 AM'."""
+    if not time_val:
+        return datetime.now(INDIA_TZ).strftime("%I:%M %p").lstrip("0")
+    if isinstance(time_val, (int, float)):
+        dt = datetime.fromtimestamp(time_val, tz=INDIA_TZ)
+        return dt.strftime("%I:%M %p").lstrip("0")
+    s = str(time_val).strip()
+    if s.startswith("0") and len(s) > 1 and s[1].isdigit():
+        s = s[1:]
+    return s
+
+
 def build_alert_message(item: dict, sector: str = "", is_pe: bool = False, test: bool = False) -> str:
-    """Format ultra-clean, minimal Demand Fresh or Bear OB Fresh notification."""
-    symbol = item.get("symbol", "UNKNOWN").upper()
+    """Format single clean line alert:
+    🟢 Nifty Demand fresh at 9:40 AM
+    or
+    🟢 Sensex Demand fresh at 9:40 AM
+    """
+    raw_sym = str(item.get("symbol", "NIFTY")).upper()
+    display_name = "Nifty" if "NIFTY" in raw_sym else ("Sensex" if "SENSEX" in raw_sym else raw_sym.title())
+    ob_time = item.get("demand_fresh_time") or item.get("time") or item.get("formation_time_str")
+    clean_time = _format_time_str(ob_time)
 
-    # Order block time
-    if is_pe:
-        ob_time = item.get("supply_zone_time") or item.get("time") or datetime.now(INDIA_TZ).strftime("%I:%M %p")
-        dot = "🔴"
-        title = "BEAR OB FRESH"
-    else:
-        ob_time = item.get("demand_fresh_time") or item.get("time") or datetime.now(INDIA_TZ).strftime("%I:%M %p")
-        dot = "🟢"
-        title = "DEMAND FRESH ALERT · BUY"
-
-    # Clean 3-line format requested by user:
-    # 🟢 DEMAND FRESH ALERT · BUY (or 🔴 BEAR OB FRESH)
-    # <STOCK NAME>
-    # TIME <HH:MM>
-    return f"{dot} *{title}*\n*{symbol}*\n*TIME:* `{ob_time}`"
+    # Strictly 1 single clean line requested by user:
+    # "Nifty Demand fresh at 9:40 like that no exctra unwanted message delete all"
+    return f"🟢 {display_name} Demand fresh at {clean_time}"
 
 
 def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force: bool = False, test: bool = False) -> bool:
-    """Send a single Demand Fresh or Bear OB alert with session deduplication."""
-    symbol = item.get("symbol", "").upper()
-    if not symbol:
+    """Send a single Demand Fresh alert strictly for NIFTY or SENSEX with session deduplication."""
+    if not isinstance(item, dict):
         return False
 
-    ob_time = item.get("supply_zone_time") if is_pe else item.get("demand_fresh_time")
-    ob_time = ob_time or item.get("time") or datetime.now(INDIA_TZ).strftime("%I:%M %p")
+    raw_sym = str(item.get("symbol", "")).upper()
 
-    side = "PE" if is_pe else "CE"
-    key = f"{symbol}_{side}_{ob_time}"
+    # STRICT FILTER 1: Exclusively NIFTY and SENSEX (strictly block all individual stocks)
+    if not any(k in raw_sym for k in ("NIFTY", "SENSEX")):
+        logger.info("Ignoring alert for %s (Strictly NIFTY & SENSEX only)", raw_sym)
+        return False
+
+    # STRICT FILTER 2: Demand Fresh only (no Bear OB, no PE, no tested zones)
+    if is_pe or item.get("is_pe") or item.get("side") in ("PE", "bearish") or item.get("type") == "BEARISH":
+        logger.info("Ignoring Bear OB / PE alert for %s (Demand Fresh only)", raw_sym)
+        return False
+
+    # STRICT FILTER 3: Must not be tested or mitigated
+    if item.get("is_demand_tested") or item.get("status") in ("Tested", "Mitigated") or item.get("mitigated"):
+        logger.info("Ignoring tested/mitigated order block for %s", raw_sym)
+        return False
+
+    display_name = "Nifty" if "NIFTY" in raw_sym else "Sensex"
+    ob_time = item.get("demand_fresh_time") or item.get("time") or item.get("formation_time_str")
+    clean_time = _format_time_str(ob_time)
+
+    key = f"{display_name}_DEMAND_FRESH_{clean_time}"
 
     if not force and not test:
         sent = _load_sent_keys()
@@ -175,65 +200,85 @@ def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force
             logger.info("Alert already sent to Telegram previously: %s (skipped)", key)
             return True
 
-    text = build_alert_message(item, sector=sector, is_pe=is_pe, test=test)
+    text = build_alert_message(item, sector=sector, is_pe=False, test=test)
     ok, reason = send_telegram_text(text)
     if ok:
-        logger.info("✓ Dispatched Telegram alert for %s (%s)", symbol, side)
+        logger.info("✓ Dispatched Telegram alert: %s", text)
         if not test:
             _save_sent_key(key)
         return True
     else:
-        logger.warning("✗ Failed sending Telegram alert for %s: %s", symbol, reason)
+        logger.warning("✗ Failed sending Telegram alert for %s: %s", display_name, reason)
         return False
 
 
-def dispatch_new_fresh_alerts(payload: dict) -> list[str]:
-    """Scan payload for any newly formed Demand Fresh or Bear OB Fresh setups and notify Telegram."""
-    if not payload:
+def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
+    """Scan NIFTY and SENSEX for newly formed Demand Fresh setups and notify Telegram.
+    Strictly ONLY NIFTY and SENSEX Demand Fresh alerts are dispatched.
+    All individual stocks, Bear OBs, and tested setups are completely suppressed.
+    """
+    sent_this_cycle: list[str] = []
+
+    try:
+        from stock_suggestion_index import fetch_5m_candles_pipeline, INDIA_TZ
+        from smc_volume_profile_engine import detect_order_blocks_and_structure
+    except Exception as exc:
+        logger.warning("Could not import pipeline/SMC engine in dispatch: %s", exc)
         return []
 
-    sent_this_cycle: list[str] = []
-    bullish = payload.get("bullish") or []
-    bearish = payload.get("bearish") or []
+    targets = [
+        ("Nifty", "NIFTY50"),
+        ("Sensex", "SENSEX"),
+    ]
 
-    # Map sectors from payload sector_flow if present
-    sec_flow = payload.get("sector_flow") or {}
-    sym_to_sector = {}
-    for sec in sec_flow.get("sectors", []):
-        sec_name = sec.get("name", "")
-        for s in sec.get("stocks", []):
-            if isinstance(s, dict) and s.get("symbol"):
-                sym_to_sector[s["symbol"]] = sec_name
+    for sym_display, sym_code in targets:
+        try:
+            res = fetch_5m_candles_pipeline(sym_code, full_range=True)
+            candles = res.get("completed_candles") or []
+            if not candles:
+                continue
 
-    # 1. Bullish Demand Fresh
-    for row in bullish:
-        if not isinstance(row, dict):
-            continue
-        qtags = row.get("quality_tags") or []
-        is_df = bool((row.get("is_demand_fresh") or any("DEMAND · FRESH" in t for t in qtags)) and not row.get("is_demand_tested"))
-        pct_change = row.get("percent_change") or 0.0
-        if is_df and pct_change >= 0.0:
-            sector = sym_to_sector.get(row.get("symbol"), "Top Sector")
-            ob_time = row.get("demand_fresh_time") or ""
-            key = f"{row.get('symbol')}_CE_{ob_time}"
-            if key not in _load_sent_keys():
-                if send_fresh_ob_alert(row, sector=sector, is_pe=False):
+            all_days = [datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() for c in candles]
+            last_day = max(all_days) if all_days else None
+            today_completed = [
+                c for c in candles
+                if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == last_day
+            ]
+            if not today_completed:
+                continue
+
+            ob_res = detect_order_blocks_and_structure(today_completed)
+            raw_obs = ob_res.get("order_blocks", [])
+
+            # Strictly Demand Fresh only (Bullish, Fresh status, not mitigated, not tested)
+            demand_fresh = [
+                ob for ob in raw_obs
+                if (ob.get("type") == "BULLISH" or ob.get("label") == "DEMAND")
+                and ob.get("status") == "Fresh"
+                and not ob.get("mitigated")
+                and not ob.get("tested")
+                and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == last_day
+            ]
+
+            for ob in demand_fresh:
+                f_time = ob.get("formation_time") or ob.get("time")
+                clean_time = _format_time_str(f_time)
+                key = f"{sym_display}_DEMAND_FRESH_{clean_time}"
+                if key in _load_sent_keys():
+                    continue
+
+                item = {
+                    "symbol": sym_display,
+                    "demand_fresh_time": clean_time,
+                    "top": ob.get("top"),
+                    "bottom": ob.get("bottom"),
+                    "status": "Fresh",
+                    "mitigated": False,
+                }
+                if send_fresh_ob_alert(item, is_pe=False):
                     sent_this_cycle.append(key)
-
-    # 2. Bearish Bear OB Fresh
-    for row in bearish:
-        if not isinstance(row, dict):
-            continue
-        qtags = row.get("quality_tags") or []
-        is_sz = bool((row.get("is_bear_ob_fresh") or any("BEAR OB · FRESH" in t for t in qtags) or (row.get("is_supply_zone") and "FRESH" in str(row.get("supply_zone", "")))) and not row.get("is_bear_ob_tested"))
-        pct_change = row.get("percent_change") or 0.0
-        if is_sz and pct_change <= 0.0:
-            sector = sym_to_sector.get(row.get("symbol"), "Lagging Sector")
-            ob_time = row.get("supply_zone_time") or ""
-            key = f"{row.get('symbol')}_PE_{ob_time}"
-            if key not in _load_sent_keys():
-                if send_fresh_ob_alert(row, sector=sector, is_pe=True):
-                    sent_this_cycle.append(key)
+        except Exception as exc:
+            logger.error("Error evaluating index demand fresh for %s: %s", sym_display, exc)
 
     return sent_this_cycle
 
@@ -241,7 +286,7 @@ def dispatch_new_fresh_alerts(payload: dict) -> list[str]:
 if __name__ == "__main__":
     token, chat_id, enabled = get_credentials()
     print("=" * 60)
-    print("ManojLabs Telegram Notification Tester")
+    print("ManojLabs Telegram Notification Tester (NIFTY & SENSEX Demand Fresh)")
     print(f"  Bot Token:   {'*' * 6 + token[-6:] if token else 'NOT CONFIGURED'}")
     print(f"  Chat ID:     {chat_id or 'NOT CONFIGURED'}")
     print(f"  Enabled:     {enabled}")
@@ -251,10 +296,10 @@ if __name__ == "__main__":
         print("Error: Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID.")
         sys.exit(1)
 
-    print("\nSending live test Demand Fresh alert...")
+    print("\nSending live test NIFTY Demand Fresh alert...")
     test_item = {
-        "symbol": "NESTLEIND",
-        "demand_fresh_time": "12:45 PM",
+        "symbol": "Nifty",
+        "demand_fresh_time": "9:40 AM",
     }
     ok = send_fresh_ob_alert(test_item, is_pe=False, test=True, force=True)
     if ok:

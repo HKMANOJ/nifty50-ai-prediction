@@ -94,7 +94,8 @@ def _get_cached_index_fresh_ob(symbol: str) -> dict[str, Any] | None:
                     and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == last_day
                 ]
                 if today_fresh:
-                    latest = today_fresh[-1]
+                    demand_obs = [ob for ob in today_fresh if (ob.get("type") == "BULLISH" or ob.get("label") == "DEMAND")]
+                    latest = demand_obs[-1] if demand_obs else today_fresh[-1]
                     f_time = latest.get("formation_time") or latest.get("time")
                     dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
                     new_obs[sym_key] = {
@@ -885,10 +886,9 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         if parsed_path.path == "/api/telegram/test":
             try:
                 import notify
-                from zoneinfo import ZoneInfo
                 test_item = {
-                    "symbol": "NESTLEIND",
-                    "demand_fresh_time": "12:45 PM",
+                    "symbol": "Nifty",
+                    "demand_fresh_time": "9:40 AM",
                 }
                 ok = notify.send_fresh_ob_alert(test_item, is_pe=False, test=True, force=True)
                 self._send_json(HTTPStatus.OK, {"ok": ok, "message": "Test Demand Fresh alert dispatched to Telegram"})
