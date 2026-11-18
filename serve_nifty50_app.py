@@ -1602,69 +1602,113 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 if len(m) >= 2 and today_candles:
                     dz_low = float(m[0])
                     dz_high = float(m[1])
-                    today_obs = [ob for ob in today_obs if abs(ob.get("top", 0) - dz_high) > 2.0]
-                    tested = False
-                    mitigated = False
-                    mitigated_time = None
-                    formation_ts = today_candles[0]["timestamp"] + 300
-                    for c_f in today_candles:
-                        if c_f["timestamp"] <= formation_ts:
-                            continue
-                        low_f = float(c_f["low"])
-                        close_f = float(c_f["close"])
-                        if low_f <= dz_high and low_f >= dz_low:
-                            tested = True
-                        if close_f < dz_low:
-                            mitigated = True
-                            mitigated_time = c_f["timestamp"]
+                    existing_match = None
+                    for ob in today_obs:
+                        if (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND") and abs(ob.get("top", 0) - dz_high) <= 2.0:
+                            existing_match = ob
                             break
-                    today_obs.insert(0, {
-                        "id": "ob_bull_scanner_primary",
-                        "type": "BULLISH",
-                        "label": "DEMAND",
-                        "top": dz_high,
-                        "bottom": dz_low,
-                        "time": today_candles[0]["timestamp"],
-                        "formation_time": formation_ts,
-                        "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
-                        "mitigated": mitigated,
-                        "tested": tested,
-                        "mitigated_time": mitigated_time
-                    })
+                    if existing_match:
+                        today_obs.remove(existing_match)
+                        existing_match["label"] = "DEMAND"
+                        existing_match["type"] = "BULLISH"
+                        if not existing_match.get("mitigated"):
+                            existing_match["status"] = "Tested" if existing_match.get("tested") else "Fresh"
+                        today_obs.insert(0, existing_match)
+                    else:
+                        formation_ts = None
+                        dzt_str = scanner_item.get("demand_fresh_time") or ""
+                        if dzt_str:
+                            for c in today_candles:
+                                c_dt = datetime.fromtimestamp(c["timestamp"], tz=IST_TZ)
+                                if c_dt.strftime("%I:%M %p") == dzt_str or c_dt.strftime("%H:%M") == dzt_str:
+                                    formation_ts = c["timestamp"]
+                                    break
+                        if not formation_ts:
+                            best_c = min(today_candles, key=lambda c: abs(float(c.get("low", 0)) - dz_low))
+                            formation_ts = best_c["timestamp"]
+                        tested = False
+                        mitigated = False
+                        mitigated_time = None
+                        for c_f in today_candles:
+                            if c_f["timestamp"] <= formation_ts:
+                                continue
+                            low_f = float(c_f["low"])
+                            close_f = float(c_f["close"])
+                            if low_f <= dz_high and low_f >= dz_low:
+                                tested = True
+                            if close_f < dz_low:
+                                mitigated = True
+                                mitigated_time = c_f["timestamp"]
+                                break
+                        today_obs.insert(0, {
+                            "id": "ob_bull_scanner_primary",
+                            "type": "BULLISH",
+                            "label": "DEMAND",
+                            "top": dz_high,
+                            "bottom": dz_low,
+                            "time": formation_ts,
+                            "formation_time": formation_ts,
+                            "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
+                            "mitigated": mitigated,
+                            "tested": tested,
+                            "mitigated_time": mitigated_time
+                        })
             elif scanner_item and scanner_item.get("is_supply_zone") and scanner_item.get("supply_zone"):
                 m = re.findall(r"[\d\.]+", scanner_item["supply_zone"])
                 if len(m) >= 2 and today_candles:
                     sz_low = float(m[0])
                     sz_high = float(m[1])
-                    today_obs = [ob for ob in today_obs if abs(ob.get("top", 0) - sz_high) > 2.0]
-                    tested = False
-                    mitigated = False
-                    mitigated_time = None
-                    formation_ts = today_candles[0]["timestamp"] + 300
-                    for c_f in today_candles:
-                        if c_f["timestamp"] <= formation_ts:
-                            continue
-                        high_f = float(c_f["high"])
-                        close_f = float(c_f["close"])
-                        if high_f >= sz_low and high_f <= sz_high:
-                            tested = True
-                        if close_f > sz_high:
-                            mitigated = True
-                            mitigated_time = c_f["timestamp"]
+                    existing_match = None
+                    for ob in today_obs:
+                        if (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY")) and abs(ob.get("top", 0) - sz_high) <= 2.0:
+                            existing_match = ob
                             break
-                    today_obs.insert(0, {
-                        "id": "ob_bear_scanner_primary",
-                        "type": "BEARISH",
-                        "label": "BEAR OB",
-                        "top": sz_high,
-                        "bottom": sz_low,
-                        "time": today_candles[0]["timestamp"],
-                        "formation_time": formation_ts,
-                        "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
-                        "mitigated": mitigated,
-                        "tested": tested,
-                        "mitigated_time": mitigated_time
-                    })
+                    if existing_match:
+                        today_obs.remove(existing_match)
+                        existing_match["label"] = "BEAR OB"
+                        existing_match["type"] = "BEARISH"
+                        if not existing_match.get("mitigated"):
+                            existing_match["status"] = "Tested" if existing_match.get("tested") else "Fresh"
+                        today_obs.insert(0, existing_match)
+                    else:
+                        formation_ts = None
+                        szt_str = scanner_item.get("supply_zone_time") or ""
+                        if szt_str:
+                            for c in today_candles:
+                                c_dt = datetime.fromtimestamp(c["timestamp"], tz=IST_TZ)
+                                if c_dt.strftime("%I:%M %p") == szt_str or c_dt.strftime("%H:%M") == szt_str:
+                                    formation_ts = c["timestamp"]
+                                    break
+                        if not formation_ts:
+                            best_c = min(today_candles, key=lambda c: abs(float(c.get("high", 0)) - sz_high))
+                            formation_ts = best_c["timestamp"]
+                        tested = False
+                        mitigated = False
+                        mitigated_time = None
+                        for c_f in today_candles:
+                            if c_f["timestamp"] <= formation_ts:
+                                continue
+                            high_f = float(c_f["high"])
+                            close_f = float(c_f["close"])
+                            if high_f >= sz_low and high_f <= sz_high:
+                                tested = True
+                            if close_f > sz_high:
+                                mitigated = True
+                                mitigated_time = c_f["timestamp"]
+                                break
+                        today_obs.insert(0, {
+                            "id": "ob_bear_scanner_primary",
+                            "type": "BEARISH",
+                            "label": "BEAR OB",
+                            "top": sz_high,
+                            "bottom": sz_low,
+                            "time": formation_ts,
+                            "formation_time": formation_ts,
+                            "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
+                            "mitigated": mitigated,
+                            "tested": tested,
+                            "mitigated_time": mitigated_time
+                        })
 
             # Merge with recent unmitigated prior zones from analysis
             macro_obs = analysis["market_structure"].get("order_blocks", [])
@@ -1684,16 +1728,20 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             # 8. Align Institutional Trade Plan with Dashboard Playbook & SMC Active Block Status
             is_bull_side = pct_change >= 0
             if is_bull_side:
-                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and ob.get("type") in ("BULLISH", "+OB")), None)
+                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
+                if not primary_ob:
+                    primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
             else:
-                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and ob.get("type") in ("BEARISH", "-OB")), None)
-            if not primary_ob:
-                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated")), None)
+                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
+                if not primary_ob:
+                    primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
 
-            is_df = bool(primary_ob and primary_ob.get("type") in ("BULLISH", "+OB") and primary_ob.get("status") == "Fresh" and is_bull_side)
-            is_dt = bool(primary_ob and primary_ob.get("type") in ("BULLISH", "+OB") and primary_ob.get("status") == "Tested" and is_bull_side)
-            is_bf = bool(primary_ob and primary_ob.get("type") in ("BEARISH", "-OB") and primary_ob.get("status") == "Fresh" and not is_bull_side)
-            is_bt = bool(primary_ob and primary_ob.get("type") in ("BEARISH", "-OB") and primary_ob.get("status") == "Tested" and not is_bull_side)
+            is_df = bool(primary_ob and (primary_ob.get("type") in ("BULLISH", "+OB") or primary_ob.get("label") == "DEMAND") and primary_ob.get("status") == "Fresh" and is_bull_side)
+            if not is_df and scanner_item and scanner_item.get("is_demand_fresh") and is_bull_side:
+                is_df = True
+            is_dt = bool(primary_ob and (primary_ob.get("type") in ("BULLISH", "+OB") or primary_ob.get("label") == "DEMAND") and primary_ob.get("status") == "Tested" and is_bull_side)
+            is_bf = bool(primary_ob and (primary_ob.get("type") in ("BEARISH", "-OB") or primary_ob.get("label") in ("BEAR OB", "SUPPLY")) and primary_ob.get("status") == "Fresh" and not is_bull_side)
+            is_bt = bool(primary_ob and (primary_ob.get("type") in ("BEARISH", "-OB") or primary_ob.get("label") in ("BEAR OB", "SUPPLY")) and primary_ob.get("status") == "Tested" and not is_bull_side)
 
             active_zone_str = f"₹{primary_ob['bottom']:.2f} - ₹{primary_ob['top']:.2f}" if primary_ob else ""
             active_time_str = datetime.fromtimestamp(primary_ob.get("formation_time") or primary_ob.get("time", 0), tz=IST_TZ).strftime("%I:%M %p") if primary_ob else ""
@@ -1729,8 +1777,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     "bias": "Bullish" if is_bull_side else "Bearish",
                     "setup_name": setup_name_str,
                     "entry": round(entry_val, 2),
+                    "entry_zone": (active_zone_str if is_bull_side else "") or f"₹{entry_val:.2f}",
                     "stop_loss": round(sl_val, 2),
                     "target": round(t1_val, 2),
+                    "target_1": round(t1_val, 2),
                     "target_2": t2_val,
                     "be_lock": be_val,
                     "rr_ratio": "1 : 3+ Risk/Reward",
@@ -1738,8 +1788,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     "is_demand_tested": is_dt,
                     "is_bear_ob_fresh": is_bf,
                     "is_bear_ob_tested": is_bt,
-                    "demand_zone": active_zone_str or scanner_item.get("demand_zone", ""),
-                    "demand_fresh_time": active_time_str or scanner_item.get("demand_fresh_time", ""),
+                    "demand_zone": (active_zone_str if is_bull_side else "") or (scanner_item.get("demand_zone", "") if is_bull_side else ""),
+                    "demand_fresh_time": (active_time_str if is_bull_side else "") or (scanner_item.get("demand_fresh_time", "") if is_bull_side else ""),
+                    "supply_zone": (active_zone_str if not is_bull_side else "") or (scanner_item.get("supply_zone", "") if not is_bull_side else ""),
+                    "supply_zone_time": (active_time_str if not is_bull_side else "") or (scanner_item.get("supply_zone_time", "") if not is_bull_side else ""),
                     "rule": scanner_item.get("trade_plan") or "Enter on confirmed sweet spot retest.",
                 }
             else:
@@ -1748,6 +1800,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 trade_plan["is_demand_tested"] = is_dt
                 trade_plan["is_bear_ob_fresh"] = is_bf
                 trade_plan["is_bear_ob_tested"] = is_bt
+                if is_bull_side:
+                    trade_plan["demand_zone"] = active_zone_str
+                    trade_plan["demand_fresh_time"] = active_time_str
+                else:
+                    trade_plan["supply_zone"] = active_zone_str
+                    trade_plan["supply_zone_time"] = active_time_str
                 if is_df:
                     trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Fresh Buy)"
                     trade_plan["action"] = "BUY ON DEMAND BREAKOUT"

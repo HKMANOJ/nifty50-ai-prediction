@@ -1462,13 +1462,15 @@
     if (_showSMC && _activeSMC.order_blocks && _activeSMC.order_blocks.length) {
       let blocksToDraw = _activeSMC.order_blocks;
       if (_cleanProMode) {
-        // In Clean Pro Mode, suppress dead mitigated zones and limit to the 3 closest active unmitigated zones
-        blocksToDraw = blocksToDraw.filter(ob => ob.status === 'Fresh' || ob.status === 'Tested' || !ob.mitigated);
+        // In Clean Pro Mode, suppress dead mitigated zones and preserve all active Fresh zones plus closest tested
+        const activeObs = blocksToDraw.filter(ob => ob.status === 'Fresh' || ob.status === 'Tested' || !ob.mitigated);
+        const freshObs = activeObs.filter(ob => ob.status === 'Fresh' || (!ob.mitigated && !ob.tested));
+        const testedObs = activeObs.filter(ob => !freshObs.includes(ob));
         const currentPrice = _activeCandles[_activeCandles.length - 1]?.close || 0;
         if (currentPrice > 0) {
-          blocksToDraw.sort((a, b) => Math.abs(((a.top+a.bottom)/2) - currentPrice) - Math.abs(((b.top+b.bottom)/2) - currentPrice));
-          blocksToDraw = blocksToDraw.slice(0, 3);
+          testedObs.sort((a, b) => Math.abs(((a.top+a.bottom)/2) - currentPrice) - Math.abs(((b.top+b.bottom)/2) - currentPrice));
         }
+        blocksToDraw = [...freshObs, ...testedObs].slice(0, 4);
       }
 
       blocksToDraw.forEach(ob => {
@@ -1887,16 +1889,20 @@
     const activeBlocks = (_activeSMC.order_blocks || []).filter(ob => !ob.mitigated);
     const currentPrice = ltp;
 
-    let closestBullOb = null;
-    let closestBearOb = null;
+    // Prioritize Fresh order blocks over tested
+    const freshBullOb = activeBlocks.find(ob => (ob.type === "BULLISH" || ob.label === "DEMAND") && ob.status === "Fresh");
+    const freshBearOb = activeBlocks.find(ob => (ob.type === "BEARISH" || ob.label === "BEAR OB" || ob.label === "SUPPLY") && ob.status === "Fresh");
+
+    let closestBullOb = freshBullOb || null;
+    let closestBearOb = freshBearOb || null;
 
     activeBlocks.forEach(ob => {
       const isBull = (ob.type === "BULLISH" || ob.label === "DEMAND");
-      if (isBull) {
+      if (isBull && !freshBullOb) {
         if (!closestBullOb || Math.abs(((ob.top + ob.bottom) / 2) - currentPrice) < Math.abs(((closestBullOb.top + closestBullOb.bottom) / 2) - currentPrice)) {
           closestBullOb = ob;
         }
-      } else {
+      } else if (!isBull && !freshBearOb) {
         if (!closestBearOb || Math.abs(((ob.top + ob.bottom) / 2) - currentPrice) < Math.abs(((closestBearOb.top + closestBearOb.bottom) / 2) - currentPrice)) {
           closestBearOb = ob;
         }
