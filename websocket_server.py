@@ -42,6 +42,78 @@ async def register_client(ws: WebSocketServerProtocol) -> None:
     }
     await ws.send(json.dumps(welcome))
 
+    # Reconnect catch-up: push unacknowledged alerts to reconnected client
+    try:
+        from datetime import datetime
+        from stock_suggestion_index import (
+            INDIA_TZ,
+            INPUT_DIR,
+            _load_lifecycle_state,
+            _save_lifecycle_state,
+        )
+        state = _load_lifecycle_state()
+        raw_cands = state.get("candidates", {})
+
+        now_dt = datetime.now(INDIA_TZ)
+        is_live_market = now_dt.weekday() < 5 and (9 * 60 + 15) <= (now_dt.hour * 60 + now_dt.minute) <= (15 * 60 + 35)
+        now_epoch = time.time()
+
+        # Load latest suggestions for metric enrichment
+        latest_file = INPUT_DIR / "stock_suggestion_index.latest.json"
+        latest_lookup: dict[str, Any] = {}
+        if latest_file.exists():
+            try:
+                latest_data = json.loads(latest_file.read_text(encoding="utf-8"))
+                for row in latest_data.get("bullish", []) + latest_data.get("bearish", []):
+                    if isinstance(row, dict) and "symbol" in row:
+                        latest_lookup[row["symbol"]] = row
+            except Exception:
+                pass
+
+        pending = []
+        needs_save = False
+        for v in raw_cands.values():
+            if not v.get("alert_event_id"):
+                continue
+            if v.get("alert_acknowledged_at"):
+                continue
+
+            created_epoch = v.get("alert_created_epoch") or v.get("claimed_at")
+            is_stale = False
+            if not is_live_market:
+                is_stale = True
+            elif created_epoch and (now_epoch - created_epoch > 900):
+                is_stale = True
+
+            if is_stale:
+                v["alert_acknowledged_at"] = now_dt.strftime("%H:%M:%S")
+                v["delivery_status"] = "ACKNOWLEDGED"
+                needs_save = True
+                continue
+
+            # Genuine fresh unacknowledged alert during live market
+            item_data = dict(v)
+            if v.get("symbol") in latest_lookup:
+                for k, val in latest_lookup[v["symbol"]].items():
+                    if k not in item_data or item_data[k] is None:
+                        item_data[k] = val
+            pending.append(item_data)
+
+        if needs_save:
+            try:
+                _save_lifecycle_state(state)
+            except Exception:
+                pass
+
+        if pending:
+            await ws.send(json.dumps({
+                "type": "pending_alerts",
+                "alerts": pending,
+                "timestamp": int(time.time()),
+            }))
+    except Exception as exc:
+        logger.warning(f"Failed to check pending alerts on connect: {exc}")
+
 
 async def unregister_client(ws: WebSocketServerProtocol) -> None:
     CONNECTED_CLIENTS.discard(ws)
@@ -74,23 +146,29 @@ async def handle_message(ws: WebSocketServerProtocol, message: str) -> None:
 
 
 async def push_single_symbol_candle(symbol: str, target_ws: WebSocketServerProtocol | None = None) -> None:
-    """Fetches latest candle for symbol and pushes to target_ws (or all watching clients)."""
+    """Fetches latest candle for symbol (including real-time forming candle) and pushes to target_ws."""
     try:
+        from stock_suggestion_index import fetch_5m_candles_pipeline
         loop = asyncio.get_running_loop()
-        candles = await loop.run_in_executor(None, fetch_5m_candles_for_symbol, symbol, False)
-        if not candles:
+        pipe_res = await loop.run_in_executor(None, fetch_5m_candles_pipeline, symbol, False)
+        forming = pipe_res.get("forming_candle")
+        completed = pipe_res.get("completed_candles") or []
+        last = forming if forming else (completed[-1] if completed else None)
+        if not last:
             return
-        last = candles[-1]
         candle_payload = {
             "type": "candle_update",
             "symbol": symbol,
+            "provider": pipe_res.get("provider"),
+            "forming": forming is not None,
+            "is_stale": bool(pipe_res.get("is_stale")),
             "candle": {
                 "time": last["timestamp"],
-                "open": last["open"],
-                "high": last["high"],
-                "low": last["low"],
-                "close": last["close"],
-                "volume": last["volume"],
+                "open": round(last["open"], 2),
+                "high": round(last["high"], 2),
+                "low": round(last["low"], 2),
+                "close": round(last["close"], 2),
+                "volume": int(last.get("volume") or 0),
             },
         }
         msg = json.dumps(candle_payload)
@@ -130,13 +208,43 @@ async def ws_handler(ws: WebSocketServerProtocol) -> None:
 
 def broadcast_scanner_update_sync(payload: dict[str, Any]) -> None:
     """Thread-safe broadcast called by 5-minute auto-scanner when a new scan finishes."""
+    import scanner_trace
+    import uuid
+    from datetime import datetime
+    from scanner_telemetry import IST
     if not MAIN_LOOP or not CONNECTED_CLIENTS:
+        scanner_trace.submit_health("ws_delivery_skipped", snapshot_id=payload.get("snapshot_id"),
+                                    reason="no_loop_or_connected_clients")
         return
-    msg = json.dumps({"type": "scanner_update", "payload": payload})
+    delivery = {"delivery_id": "delivery_"+uuid.uuid4().hex, "transport": "websocket",
+                "sent_at_ist": datetime.now(IST).isoformat()}
+
+    # Atomically claim alert events so only ONE worker transmits should_alert=True
+    try:
+        from stock_suggestion_index import claim_alert_delivery, mark_alert_delivered
+        worker_id = delivery["delivery_id"]
+        for side in ("bullish", "bearish"):
+            for row in payload.get(side, []):
+                event_id = row.get("alert_event_id")
+                if event_id and row.get("should_alert"):
+                    claimed = claim_alert_delivery(event_id, worker_id=worker_id)
+                    if claimed:
+                        mark_alert_delivered(event_id, worker_id=worker_id)
+                    else:
+                        # Another worker claimed it; suppress duplicate alert in this payload
+                        row["should_alert"] = False
+    except Exception as claim_err:
+        logger.warning(f"Failed to claim alert delivery: {claim_err}")
+
+    msg = json.dumps({"type": "scanner_update", "payload": {**payload, "_delivery": delivery}})
 
     async def _send_all():
         if CONNECTED_CLIENTS:
-            await asyncio.gather(*[ws.send(msg) for ws in CONNECTED_CLIENTS], return_exceptions=True)
+            clients = list(CONNECTED_CLIENTS)
+            results = await asyncio.gather(*[ws.send(msg) for ws in clients], return_exceptions=True)
+            scanner_trace.submit_health("ws_delivery_completed", snapshot_id=payload.get("snapshot_id"),
+                **delivery, attempted_clients=len(clients), failed_clients=sum(isinstance(r, BaseException) for r in results),
+                note="socket send completion, not browser display")
             logger.info(f"Broadcasted 5-min scanner update to {len(CONNECTED_CLIENTS)} clients.")
 
     asyncio.run_coroutine_threadsafe(_send_all(), MAIN_LOOP)
@@ -158,13 +266,19 @@ def broadcast_index_update_sync(index_context: dict[str, Any]) -> None:
 def start_websocket_server_thread(host: str = WS_HOST, port: int = WS_PORT) -> threading.Thread:
     """Starts the WebSocket server in a background daemon thread."""
     def _run():
-        global MAIN_LOOP
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        MAIN_LOOP = loop
 
         async def _main():
-            async with websockets.serve(ws_handler, host, port):
+            global MAIN_LOOP
+            # ping_interval/ping_timeout are generous so a browser busy repainting
+            # the dashboard does not get its socket dropped (which used to cause a
+            # reconnect storm). max_queue caps a slow client's backlog.
+            async with websockets.serve(
+                ws_handler, host, port,
+                ping_interval=30, ping_timeout=90, max_queue=48, close_timeout=5,
+            ):
+                MAIN_LOOP = loop  # only publish the loop once the bind succeeded
                 logger.info(f"WebSocket push engine listening on ws://{host}:{port}")
                 asyncio.create_task(candle_streaming_loop())
                 await asyncio.Future()
@@ -172,6 +286,7 @@ def start_websocket_server_thread(host: str = WS_HOST, port: int = WS_PORT) -> t
         try:
             loop.run_until_complete(_main())
         except Exception as e:
+            MAIN_LOOP = None
             logger.error(f"WebSocket server exited: {e}")
 
     thread = threading.Thread(target=_run, name="WebSocketServerThread", daemon=True)

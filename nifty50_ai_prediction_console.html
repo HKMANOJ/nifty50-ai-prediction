@@ -756,6 +756,18 @@
     }
     .bo-status-pill.bo { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
     .bo-status-pill.bd { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+    .bo-status-pill.waterfall {
+      background: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fca5a5;
+      font-weight: 800;
+    }
+    .bo-status-pill.impulse {
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #86efac;
+      font-weight: 800;
+    }
     .bo-status-pill.near { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
     .bo-status-pill.wait { background: #f1f5f9; color: var(--text-muted); }
 
@@ -1014,7 +1026,7 @@
               <tr>
                 <th># Rank</th>
                 <th>Stock</th>
-                <th>Price</th>
+                <th>Money Flow %</th>
                 <th>Change %</th>
                 <th>Volume</th>
                 <th>VC Ranking (RVOL)</th>
@@ -1179,7 +1191,15 @@
       pctEl.textContent = `${isUp ? "+" : ""}${meta.percent_change.toFixed(2)}% ${isUp ? "LEADING" : "LAGGING"}`;
     }
     if (pdhEl && meta.chart_structure) {
-      pdhEl.textContent = `Structure: ${meta.chart_structure}`;
+      const isCascade = meta.chart_structure.toLowerCase().includes("waterfall") || meta.chart_structure.toLowerCase().includes("impulse");
+      pdhEl.textContent = `Structure: ${isCascade ? '⚡ ' : ''}${meta.chart_structure}`;
+      if (isCascade) {
+        pdhEl.style.fontWeight = "800";
+        pdhEl.style.color = meta.chart_structure.toLowerCase().includes("waterfall") ? "var(--red)" : "var(--green)";
+      } else {
+        pdhEl.style.fontWeight = "";
+        pdhEl.style.color = "";
+      }
     }
 
     // Highlight in left list and table
@@ -1297,9 +1317,21 @@
       const vc = row.vc_ranking || 1.0;
       const vcCls = vc >= 2.5 ? "high" : (vc >= 1.2 ? "mid" : "low");
       const mp = row.mp_score || 3.0;
-      const statusStr = row.five_min_status || (row.is_breakout ? "Breakout" : "Consolidating");
-      const boCls = statusStr.toLowerCase().includes("breakout") ? "bo" : (statusStr.toLowerCase().includes("breakdown") ? "bd" : (statusStr.toLowerCase().includes("near") ? "near" : "wait"));
-      const timeStr = row.breakout_time ? ` ${row.breakout_time}` : "";
+      const isCascade = Boolean(row.is_cascade || (row.five_min_status || "").toLowerCase().includes("waterfall") || (row.five_min_status || "").toLowerCase().includes("impulse"));
+      const isBreakdown = Boolean((row.five_min_status || "").toLowerCase().includes("breakdown") || (!isUp && row.is_breakout));
+      let statusStr = row.five_min_status || (row.is_breakout ? "Breakout" : "Consolidating");
+      let boCls = "wait";
+      if (isCascade) {
+        statusStr = (!isUp || isBreakdown) ? "⚡ WATERFALL" : "⚡ IMPULSE";
+        boCls = (!isUp || isBreakdown) ? "waterfall" : "impulse";
+      } else if (statusStr.toLowerCase().includes("breakout")) {
+        boCls = "bo";
+      } else if (statusStr.toLowerCase().includes("breakdown")) {
+        boCls = "bd";
+      } else if (statusStr.toLowerCase().includes("near")) {
+        boCls = "near";
+      }
+      const timeStr = (row.breakout_time || row.cascade_time) ? ` ${row.breakout_time || row.cascade_time}` : "";
 
       return `
         <tr class="${isSelected ? 'selected' : ''}" data-sym="${row.symbol}" onclick="selectStock('${row.symbol}', {ltp:${row.ltp || 0}, percent_change:${row.percent_change || 0}, vc_ranking:${vc}, chart_structure:'${row.chart_structure || "Breakout Wave"}'})">
@@ -1310,7 +1342,7 @@
               <span class="sub">${row.setup || "F&O Active"}</span>
             </div>
           </td>
-          <td style="font-weight:700; font-family:var(--font-mono);">₹${n(row.ltp)}</td>
+          <td style="font-weight:700; font-family:var(--font-mono); color:${(row.money_flow_percentage ?? 0) >= 70 ? 'var(--green)' : (row.money_flow_percentage ?? 0) >= 40 ? 'var(--text-dark)' : 'var(--red)'};">${(row.money_flow_percentage ?? 0).toFixed(1)}%</td>
           <td style="font-weight:800; font-family:var(--font-mono); color:${isUp ? 'var(--green)' : 'var(--red)'};">${pct(row.percent_change)}</td>
           <td style="font-family:var(--font-mono); color:var(--text-muted);">${n0(row.volume)}</td>
           <td><span class="vc-pill ${vcCls}">${vc.toFixed(2)}x</span></td>

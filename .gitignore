@@ -6,5 +6,25 @@ __pycache__/
 .venv/
 .vercel/
 node_modules/
-Claude outputs/
-_unused/
+inputs/candle_cache.json
+inputs/candle_cache.json.tmp
+inputs/telegram_sent_alerts.json
+inputs/scan_history/
+inputs/scanner_telemetry/
+inputs/tracked_breakouts.json
+inputs/discovery_log/
+inputs/discovery_state.json
+inputs/daily_top5.json
+inputs/instant_triggers.json
+inputs/outcome_tracker_state.json
+inputs/outcome_log/
+inputs/top5_eligible_state.json
+inputs/candidate_lifecycle*
+inputs/stock_suggestion_index.error.json
+inputs/upstox_credentials.json
+inputs/upstox_token.json
+# Note: inputs/upstox_instruments.json is public instrument metadata, safely tracked for deployment
+scanner_event_log.json
+scanner_event_log.xlsx
+scanner_event_log_full.json
+scratch/

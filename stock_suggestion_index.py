@@ -11,25 +11,32 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import csv
+import fcntl
 import gzip
 import http.cookiejar
 import json
 import math
+import os
 import sys
-import tempfile
+import time as _time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 from breakout_engine import analyze_breakout as run_breakout_engine, BreakoutConfig
 
+from smc_volume_profile_engine import latest_fresh_order_block
+
 
 ROOT = Path(__file__).resolve().parent
-INPUT_DIR = ROOT / "inputs"
+# Support Render persistent disk via PERSISTENT_DATA_DIR / DATA_DIR environment variables
+PERSISTENT_DISK = os.environ.get("PERSISTENT_DATA_DIR") or os.environ.get("DATA_DIR")
+INPUT_DIR = Path(PERSISTENT_DISK) if PERSISTENT_DISK else (ROOT / "inputs")
 OUTPUT_PATH = INPUT_DIR / "stock_suggestion_index.latest.json"
 NSE_BASE = "https://www.nseindia.com"
 YAHOO_CHART_BASE = "https://query2.finance.yahoo.com/v8/finance/chart"
@@ -47,10 +54,180 @@ MIN_ONE_SIDE_SCORE = 65
 MIN_BULLISH_CHANGE = 0.65
 MIN_BEARISH_CHANGE = -0.65
 MIN_RANGE_EXTREME = 0.55
+# A stock trading at <=0.5x its own normal volume (vs the day's median
+# activity) is excluded entirely - too little real participation behind the
+# move to trust it, regardless of how big the %-change looks.
+MIN_VC_RANKING = 0.5
+# PMH/PML qualification allows a small pullback below the exact opening-range
+# extreme (0.5%) so a stock that's still up big on the day but has eased
+# slightly off its morning high isn't zeroed out entirely.
+PMH_PML_TOLERANCE_PCT = 0.5
 INDEX_LIKE_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
-MAX_ALLOWED_LOT_SIZE = 1500
+# "Daily Top 5" multi-factor picks: the system waits until this clock time
+# for the opening range to settle, then re-locks a fresh 5-per-side pick
+# every DAILY_TOP5_WINDOW_MINUTES - stable within a window (no per-scan
+# flicker) but rolling across the day, so a late breakout (e.g. 2:40 PM)
+# gets its own window instead of being invisible for the whole session.
+DAILY_TOP5_LOCK_TIME = time(9, 30)
+DAILY_TOP5_WINDOW_MINUTES = 15
+# A stock whose own breakout happened after this clock time is not considered
+# for Daily Top 5 at all (matches the auto-scanner's own 2:45 PM cutoff) -
+# too late in the session to act on for this feature's purpose.
+DAILY_TOP5_MAX_BREAKOUT_MINUTES = 14 * 60 + 45  # 2:45 PM IST
+# Sector map for the "Sector Alignment" factor - mirrors SECTOR_MAP in
+# MLAIStockV2.html (kept in sync manually; both sides use it only to group
+# stocks for a same-sector agreement check, not for anything load-bearing).
+SECTOR_MAP: dict[str, str] = {
+    # Information Technology
+    "TCS": "IT", "INFY": "IT", "WIPRO": "IT", "HCLTECH": "IT", "TECHM": "IT", "LTIM": "IT", "LTM": "IT",
+    "MPHASIS": "IT", "COFORGE": "IT", "PERSISTENT": "IT", "LTTS": "IT", "KPITTECH": "IT",
+    "BIRLASOFT": "IT", "HEXAWARE": "IT", "OFSS": "IT", "TATAELXSI": "IT",
+    # Banking
+    "HDFCBANK": "Banks", "ICICIBANK": "Banks", "KOTAKBANK": "Banks", "AXISBANK": "Banks",
+    "SBIN": "Banks", "INDUSINDBK": "Banks", "BANDHANBNK": "Banks", "IDFCFIRSTB": "Banks",
+    "FEDERALBNK": "Banks", "RBLBANK": "Banks", "AUBANK": "Banks", "PNB": "Banks",
+    "CANBK": "Banks", "UNIONBANK": "Banks", "BANKBARODA": "Banks", "BANKINDIA": "Banks",
+    "INDIANB": "Banks", "MAHABANK": "Banks", "YESBANK": "Banks",
+    # Financial Services & Exchanges
+    "BAJFINANCE": "Fin Serv", "BAJAJFINSV": "Fin Serv", "MUTHOOTFIN": "Fin Serv",
+    "CHOLAFIN": "Fin Serv", "IIFL": "Fin Serv", "ABCAPITAL": "Fin Serv",
+    "MANAPPURAM": "Fin Serv", "MOTILALOFS": "Fin Serv", "ANGELONE": "Fin Serv",
+    "360ONE": "Fin Serv", "BSE": "Fin Serv", "MCX": "Fin Serv", "CAMS": "Fin Serv", "CDSL": "Fin Serv",
+    "KFINTECH": "Fin Serv", "HDFCAMC": "Fin Serv", "NAM-INDIA": "Fin Serv", "HDFCLIFE": "Fin Serv",
+    "ICICIGI": "Fin Serv", "ICICIPRULI": "Fin Serv", "SBILIFE": "Fin Serv", "LICI": "Fin Serv",
+    "SBICARD": "Fin Serv", "SHRIRAMFIN": "Fin Serv", "PFC": "Fin Serv", "RECLTD": "Fin Serv",
+    "IREDA": "Fin Serv", "JIOFIN": "Fin Serv", "LICHSGFIN": "Fin Serv", "PNBHOUSING": "Fin Serv",
+    "LTF": "Fin Serv", "MFSL": "Fin Serv", "BAJAJHLDNG": "Fin Serv",
+    # Electronics Manufacturing Services (EMS) & Hardware
+    "KAYNES": "EMS / Electronics", "DIXON": "EMS / Electronics", "AMBER": "EMS / Electronics", "PGEL": "EMS / Electronics",
+    # Consumer Durables & Electricals / Capital Goods
+    "BLUESTARCO": "Capital Goods", "VOLTAS": "Capital Goods", "HAVELLS": "Capital Goods",
+    "CROMPTON": "Capital Goods",
+    "POLYCAB": "Capital Goods", "KEI": "Capital Goods",
+    "VMM": "Capital Goods", "ASTRAL": "Infra", "SUPREMEIND": "Infra",
+    "APLAPOLLO": "Capital Goods",
+    # Pharmaceuticals & Healthcare
+    "SUNPHARMA": "Pharma", "DRREDDY": "Pharma", "CIPLA": "Pharma", "DIVISLAB": "Pharma",
+    "APOLLOHOSP": "Pharma", "LUPIN": "Pharma", "BIOCON": "Pharma", "TORNTPHARM": "Pharma",
+    "GLENMARK": "Pharma", "AUROPHARMA": "Pharma", "ABBOTINDIA": "Pharma", "SAGILITY": "Pharma",
+    "ALKEM": "Pharma", "FORTIS": "Pharma", "MAXHEALTH": "Pharma", "MANKIND": "Pharma",
+    "ZYDUSLIFE": "Pharma", "LAURUSLABS": "Pharma",
+    # Automobiles & Ancillaries
+    "TATAMOTORS": "Auto", "MARUTI": "Auto", "EICHERMOT": "Auto", "BAJAJ-AUTO": "Auto",
+    "HEROMOTOCO": "Auto", "M&M": "Auto", "TVSMOTOR": "Auto", "ASHOKLEY": "Auto",
+    "BHARATFORG": "Auto", "BOSCHLTD": "Auto", "FORCEMOT": "Auto", "HYUNDAI": "Auto",
+    "MOTHERSON": "Auto", "SONACOMS": "Auto", "TIINDIA": "Auto", "TMPV": "Auto", "UNOMINDA": "Auto",
+    # Metals & Mining
+    "TATASTEEL": "Metal", "HINDALCO": "Metal", "JSWSTEEL": "Metal", "SAIL": "Metal",
+    "VEDL": "Metal", "NMDC": "Metal", "HINDZINC": "Metal", "NATIONALUM": "Metal",
+    "JINDALSTEL": "Metal",
+    # Energy, Oil & Gas
+    "RELIANCE": "Energy", "BPCL": "Energy", "ONGC": "Energy", "IOC": "Energy", "COALINDIA": "Energy",
+    "HINDPETRO": "Energy", "GAIL": "Energy", "PETRONET": "Energy", "MGL": "Energy",
+    "ATGL": "Energy", "ADANIGREEN": "Energy", "TATAPOWER": "Energy", "OIL": "Energy",
+    # FMCG & Consumption
+    "HINDUNILVR": "FMCG", "NESTLEIND": "FMCG", "BRITANNIA": "FMCG", "DABUR": "FMCG",
+    "MARICO": "FMCG", "GODREJCP": "FMCG", "ITC": "FMCG", "COLPAL": "FMCG",
+    "TATACONSUM": "FMCG", "EMAMILTD": "FMCG", "ASIANPAINT": "FMCG", "GODFRYPHLP": "FMCG",
+    "JUBLFOOD": "FMCG", "KALYANKJIL": "FMCG", "PAGEIND": "FMCG", "PATANJALI": "FMCG",
+    "RADICO": "FMCG", "TITAN": "FMCG", "UNITDSPR": "FMCG", "VBL": "FMCG",
+    # Infrastructure, Real Estate & Cement
+    "LT": "Infra", "LODHA": "Infra", "DLF": "Infra", "GODREJPROP": "Infra", "PRESTIGE": "Infra",
+    "PHOENIXLTD": "Infra", "ULTRACEMCO": "Infra", "AMBUJACEM": "Infra", "SHREECEM": "Infra",
+    "OBEROIRLTY": "Infra", "NBCC": "Infra", "RVNL": "Infra", "GMRAIRPORT": "Infra",
+    "GRASIM": "Infra", "ADANIENT": "Infra",
+    # Capital Goods, Power Equipment & Defence
+    "SIEMENS": "Capital Goods", "ABB": "Capital Goods", "BHEL": "Capital Goods",
+    "CGPOWER": "Capital Goods", "CUMMINSIND": "Capital Goods", "ENRIN": "Capital Goods", "GVT&D": "Capital Goods",
+    "POWERINDIA": "Capital Goods", "SOLARINDS": "Capital Goods",
+    "HAL": "Defence", "BEL": "Defence", "BDL": "Defence", "COCHINSHIP": "Defence", "MAZDOCK": "Defence",
+    # Power & Green Energy
+    "NTPC": "Power", "POWERGRID": "Power", "TORNTPOWER": "Power", "CESC": "Power",
+    "ADANIPOWER": "Power", "ADANIENSOL": "Power", "INOXWIND": "Power", "JSWENERGY": "Power",
+    "NHPC": "Power", "PREMIERENE": "Power", "SUZLON": "Power", "WAAREEENER": "Power",
+    # Chemicals & Agrochemicals
+    "ATUL": "Chemicals", "PIDILITIND": "Chemicals", "NAVINFLUOR": "Chemicals",
+    "PIIND": "Chemicals", "SRF": "Chemicals", "UPL": "Chemicals", "COROMANDEL": "Chemicals",
+    # Telecom & Media
+    "BHARTIARTL": "Telecom", "IDEA": "Telecom", "INDUSTOWER": "Telecom",
+    "ZEEL": "Media", "PVRINOX": "Media",
+    # Logistics, Aviation & Hotels
+    "CONCOR": "Logistics", "IRFC": "Logistics", "IRCTC": "Logistics", "ADANIPORTS": "Logistics",
+    "DELHIVERY": "Logistics", "INDHOTEL": "Hotels", "INDIGO": "Aviation",
+    # Retail & Internet
+    "ZOMATO": "Internet", "POLICYBZR": "Internet", "NYKAA": "Internet", "PAYTM": "Internet",
+    "NAUKRI": "Internet", "SWIGGY": "Internet", "ETERNAL": "Internet", "IEX": "Internet",
+    "DMART": "Retail", "TRENT": "Retail",
+    "ATHERENERG": "EV/Energy", "OLECTRA": "EV/Energy",
+}
+
+
+def get_sector(symbol: str) -> str:
+    return SECTOR_MAP.get(symbol, "Other")
+# Any stock with a lot size above this is excluded entirely - too much
+# capital per contract to be a practical suggestion.
+MAX_ALLOWED_LOT_SIZE = 650
+# Stock price boundaries for practical retail trading:
+# Excludes ultra-high priced stocks (> ₹10,000 like BOSCH, PAGEIND, FORCEMOT)
+# where contract value/capital is excessive, and penny stocks (< ₹50).
+MIN_ALLOWED_STOCK_PRICE = 50.0
+MAX_ALLOWED_STOCK_PRICE = 30000.0
+# Every F&O stock with a lot size below this is scanned directly every cycle,
+# independent of NSE's top-20 gainers/losers or its OI-spurts feed.
+LOT_SCAN_THRESHOLD = 650
 FO_LOT_SIZES_PATH = INPUT_DIR / "fo_lot_sizes.csv"
 _FO_LOT_SIZES_CACHE: dict[str, int] | None = None
+
+# 5-minute candle fetch tuning.
+# Candles only change every 5 minutes, so a short TTL cache lets back-to-back
+# refreshes (manual "Refresh Live" spam, or bullish+bearish in the same scan)
+# reuse the same download instead of re-hitting the slow upstream chart API.
+def get_candle_cache_ttl() -> float:
+    """Dynamic cache TTL: strict 90 seconds during live NSE market hours to prevent stale data;
+    24 hours outside market hours to preserve closed session snapshots between restarts.
+    """
+    now_ist = datetime.now(INDIA_TZ)
+    current_minutes = now_ist.hour * 60 + now_ist.minute
+    is_live_market = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+    return 90.0 if is_live_market else 86400.0
+
+
+CANDLE_CACHE_TTL_SECONDS = 90.0     # Default market-hours fallback
+CANDLE_FETCH_TIMEOUT = 3.5          # per-request socket timeout
+CANDLE_POOL_WAIT_SECONDS = 9.0     # hard cap on the whole batch; stragglers are abandoned
+CANDLE_POOL_MAX_WORKERS = 24
+CANDLE_CACHE_PATH = INPUT_DIR / "candle_cache.json"
+_CANDLE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CANDLE_1M_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CANDLE_CACHE_LOADED = False
+
+
+def _load_candle_cache() -> None:
+    global _CANDLE_CACHE_LOADED
+    if _CANDLE_CACHE_LOADED:
+        return
+    _CANDLE_CACHE_LOADED = True
+    try:
+        raw = json.loads(CANDLE_CACHE_PATH.read_text(encoding="utf-8"))
+        cutoff = _time.time() - get_candle_cache_ttl()
+        for sym, entry in raw.items():
+            if isinstance(entry, list) and len(entry) == 2 and entry[0] >= cutoff:
+                _CANDLE_CACHE[sym] = (float(entry[0]), entry[1])
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001 - a bad cache file must never break a scan
+        print(f"candle cache load skipped: {exc}", file=sys.stderr)
+
+
+def _save_candle_cache() -> None:
+    try:
+        cutoff = _time.time() - get_candle_cache_ttl()
+        fresh = {s: [ts, c] for s, (ts, c) in _CANDLE_CACHE.items() if ts >= cutoff}
+        tmp = CANDLE_CACHE_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(fresh), encoding="utf-8")
+        tmp.replace(CANDLE_CACHE_PATH)
+    except Exception as exc:  # noqa: BLE001
+        print(f"candle cache save skipped: {exc}", file=sys.stderr)
 
 
 def load_fo_lot_sizes() -> dict[str, int]:
@@ -69,7 +246,6 @@ def load_fo_lot_sizes() -> dict[str, int]:
                     sym = c.get("SYMBOL") or c.get("Symbol")
                     if not sym:
                         continue
-                    # Check monthly lot size columns in order
                     for col in ["SEP-26", "OCT-26", "NOV-26", "DEC-26"]:
                         val = c.get(col)
                         if val:
@@ -79,7 +255,7 @@ def load_fo_lot_sizes() -> dict[str, int]:
                             except (ValueError, TypeError):
                                 pass
         except Exception as e:
-            print(f"[WARN] Failed to parse {FO_LOT_SIZES_PATH}: {e}")
+            print(f"Error loading fo_lot_sizes.csv: {e}", file=sys.stderr)
     _FO_LOT_SIZES_CACHE = lot_sizes
     return _FO_LOT_SIZES_CACHE
 
@@ -120,15 +296,60 @@ class Suggestion:
     reason: str
     vc_ranking: float = 1.0
     mp_score: float = 3.0
+    money_flow_percentage: float = 0.0
     five_min_status: str = "Consolidating"
     breakout_time: str | None = None
     is_breakout: bool = False
     chart_structure: str = "Base Building"
     rvol_5m: float = 1.0
     ema_trend: str = "neutral"
-    vwap: float | None = None
-    retest_status: str = "Initial"
     lot_size: int = 0
+    bell_rang: bool = False
+    day_range_percent: float | None = None
+    prev_close: float | None = None
+    is_cascade: bool = False
+    cascade_type: str | None = None
+    cascade_time: str | None = None
+    cascade_body_pct: float = 0.0
+    cascade_vol_ratio: float = 1.0
+    breakout_freshness: str = "PENDING"
+    breakout_age_minutes: int | None = None
+    is_block_surge: bool = False
+    block_surge_type: str | None = None
+    block_surge_time: str | None = None
+    block_surge_turnover_cr: float = 0.0
+    block_surge_rvol: float = 1.0
+    first_qualified_at: str | None = None
+    first_top5_at: str | None = None
+    first_rank1_at: str | None = None
+    first_alerted_at: str | None = None
+    should_alert: bool = False
+    alert_count: int = 0
+    alert_event_id: str | None = None
+    alert_created_at: str | None = None
+    alert_delivered_at: str | None = None
+    alert_acknowledged_at: str | None = None
+    completed_candle_close: float | None = None
+    is_stale_data: bool = False
+    is_stale_fallback: bool = False
+    delivery_status: str = "PENDING"
+    claimed_by: str | None = None
+    claimed_at: float | None = None
+    is_failed_trend: bool = False
+    top5_streak_minutes: int = 0
+    is_early_ignition: bool = False
+    is_extended: bool = False
+    is_demand_fresh: bool = False
+    demand_zone: str = ""
+    demand_fresh_time: str | None = None
+    is_supply_zone: bool = False
+    supply_zone: str = ""
+    supply_zone_time: str | None = None
+    prev_rank: int | None = None
+    rank_velocity: str = "STABLE"
+    rank_progression: str = ""
+    sector: str = ""
+    sector_alignment: float = 50.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -136,6 +357,8 @@ class Suggestion:
             "side": self.side,
             "rank": self.rank,
             "setup": self.setup,
+            "sector": self.sector or get_sector(self.symbol),
+            "sector_alignment": self.sector_alignment,
             "trade_plan": self.trade_plan,
             "ltp": self.ltp,
             "percent_change": self.percent_change,
@@ -157,21 +380,66 @@ class Suggestion:
             "reason": self.reason,
             "vc_ranking": self.vc_ranking,
             "mp_score": self.mp_score,
+            "money_flow_percentage": self.money_flow_percentage,
             "five_min_status": self.five_min_status,
             "breakout_time": self.breakout_time,
             "is_breakout": self.is_breakout,
             "chart_structure": self.chart_structure,
             "rvol_5m": self.rvol_5m,
             "ema_trend": self.ema_trend,
-            "vwap": self.vwap,
-            "retest_status": self.retest_status,
             "lot_size": self.lot_size,
+            "bell_rang": self.bell_rang,
+            "day_range_percent": self.day_range_percent,
+            "prev_close": self.prev_close,
+            "is_cascade": self.is_cascade,
+            "cascade_type": self.cascade_type,
+            "cascade_time": self.cascade_time,
+            "cascade_body_pct": self.cascade_body_pct,
+            "cascade_vol_ratio": self.cascade_vol_ratio,
+            "breakout_freshness": self.breakout_freshness,
+            "breakout_age_minutes": self.breakout_age_minutes,
+            "is_block_surge": self.is_block_surge,
+            "block_surge_type": self.block_surge_type,
+            "block_surge_time": self.block_surge_time,
+            "block_surge_turnover_cr": self.block_surge_turnover_cr,
+            "block_surge_rvol": self.block_surge_rvol,
+            "first_qualified_at": self.first_qualified_at,
+            "first_top5_at": self.first_top5_at,
+            "first_rank1_at": self.first_rank1_at,
+            "first_alerted_at": self.first_alerted_at,
+            "should_alert": self.should_alert,
+            "alert_count": self.alert_count,
+            "alert_event_id": self.alert_event_id,
+            "alert_created_at": self.alert_created_at,
+            "alert_delivered_at": self.alert_delivered_at,
+            "alert_acknowledged_at": self.alert_acknowledged_at,
+            "completed_candle_close": self.completed_candle_close,
+            "is_stale_data": self.is_stale_data,
+            "is_stale_fallback": self.is_stale_fallback,
+            "delivery_status": self.delivery_status,
+            "claimed_by": self.claimed_by,
+            "claimed_at": self.claimed_at,
+            "is_failed_trend": self.is_failed_trend,
+            "top5_streak_minutes": self.top5_streak_minutes,
+            "is_early_ignition": self.is_early_ignition,
+            "is_extended": self.is_extended,
+            "is_demand_fresh": self.is_demand_fresh,
+            "demand_zone": self.demand_zone,
+            "demand_fresh_time": self.demand_fresh_time,
+            "is_supply_zone": self.is_supply_zone,
+            "supply_zone": self.supply_zone,
+            "supply_zone_time": self.supply_zone_time,
+            "prev_rank": self.prev_rank,
+            "rank_velocity": self.rank_velocity,
+            "rank_progression": self.rank_progression,
         }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build today's NSE F&O intraday stock suggestion index.")
     parser.add_argument("--output", default=str(OUTPUT_PATH), help="JSON output path")
+    parser.add_argument("--require-current-session", action="store_true",
+                        help="Keep the previous snapshot if no completed candle from today's session is available.")
     parser.add_argument("--top", type=int, default=DEFAULT_SUGGESTIONS_PER_SIDE, help="Number of matched rows to keep per side")
     return parser.parse_args()
 
@@ -232,116 +500,78 @@ def normalize_symbol(value: Any) -> str:
     return symbol
 
 
-_NSE_SESSION: Any = None
-_NSE_OPENER: Any = None
+# Shared NSE session (cookie jar + opener) so the anti-bot handshake is done
+# once every few minutes instead of on every request. Uses urllib only - no
+# dependency on a `curl` binary (which is absent from slim container images).
+_NSE_OPENER: "urllib.request.OpenerDirector | None" = None
+_NSE_WARMED_AT = 0.0
+_NSE_WARM_TTL = 180.0
 
 
-def get_nse_session() -> Any:
-    global _NSE_SESSION
-    if _NSE_SESSION is None:
-        try:
-            import requests
-            _NSE_SESSION = requests.Session()
-            _NSE_SESSION.headers.update({
-                "User-Agent": USER_AGENT,
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate",
-                "Connection": "keep-alive",
-            })
-        except ImportError:
-            _NSE_SESSION = False
-    return _NSE_SESSION if _NSE_SESSION is not False else None
-
-
-def get_nse_opener() -> urllib.request.OpenerDirector:
+def _nse_opener() -> "urllib.request.OpenerDirector":
     global _NSE_OPENER
     if _NSE_OPENER is None:
-        cj = http.cookiejar.CookieJar()
-        _NSE_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+        jar = http.cookiejar.CookieJar()
+        _NSE_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
     return _NSE_OPENER
 
 
-def nse_get_json(url: str, *, referer: str) -> Any:
-    req_err = ""
-    # 1. Primary: Direct requests.Session if requests is available
-    session = get_nse_session()
-    if session:
-        try:
-            resp = session.get(url, headers={"Referer": referer}, timeout=12)
-            if resp.status_code == 200:
-                return resp.json()
-            if resp.status_code in (401, 403):
-                session.get(referer or NSE_BASE, timeout=8)
-                resp2 = session.get(url, headers={"Referer": referer}, timeout=12)
-                if resp2.status_code == 200:
-                    return resp2.json()
-                req_err = f"requests HTTP {resp2.status_code}"
-            else:
-                req_err = f"requests HTTP {resp.status_code}"
-        except Exception as exc:
-            req_err = f"requests: {exc}"
+def _nse_fetch(url: str, *, referer: str, timeout: float) -> bytes:
+    req = urllib.request.Request(url, headers={
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+        "Referer": referer,
+    })
+    with _nse_opener().open(req, timeout=timeout) as resp:
+        raw = resp.read()
+    if (resp.headers.get("Content-Encoding") or "").lower() == "gzip":
+        raw = gzip.decompress(raw)
+    return raw
 
-    # 2. Secondary: Standard library urllib with cookie jar and gzip decompression
+
+def _nse_warm(referer: str, *, force: bool = False) -> None:
+    global _NSE_WARMED_AT
+    now = _time.time()
+    if not force and (now - _NSE_WARMED_AT) < _NSE_WARM_TTL:
+        return
     try:
-        opener = get_nse_opener()
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate",
-                "Referer": referer,
-            },
-        )
-        with opener.open(req, timeout=12) as resp:
-            content = resp.read()
-            if resp.info().get("Content-Encoding") == "gzip":
-                content = gzip.decompress(content)
-            return json.loads(content.decode("utf-8"))
-    except Exception as exc:
-        req_err = f"{req_err}; urllib: {exc}" if req_err else f"urllib: {exc}"
+        _nse_fetch(NSE_BASE, referer=referer, timeout=15.0)
+        _NSE_WARMED_AT = _time.time()
+    except Exception:
+        _NSE_WARMED_AT = 0.0
 
-    # 3. Tertiary: Try curl if available on host
-    import shutil
-    import subprocess
-    curl_bin = shutil.which("curl")
-    if not curl_bin:
-        for p in ("/usr/bin/curl", "/bin/curl", "/usr/local/bin/curl", "/opt/homebrew/bin/curl"):
-            if Path(p).exists():
-                curl_bin = p
-                break
 
-    if curl_bin:
-        cookie_jar = Path(tempfile.gettempdir()) / "nifty_stock_suggestion_nse.cookies"
-        cmd = [
-            curl_bin,
-            "--silent",
-            "--show-error",
-            "--location",
-            "--compressed",
-            "-c", str(cookie_jar),
-            "-b", str(cookie_jar),
-            "-A", USER_AGENT,
-            "-H", "Accept: application/json, text/plain, */*",
-            "-H", "Accept-Language: en-US,en;q=0.9",
-            "-e", referer,
-            "-H", f"Referer: {referer}",
-            url,
-        ]
+def nse_get_json(url: str, *, referer: str) -> Any:
+    import scanner_trace
+    last_err: Exception | None = None
+    for attempt in range(3):
+        trace_start = _time.monotonic()
+        _nse_warm(referer, force=(attempt > 0))
         try:
-            result = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=15)
-            if result.returncode == 0 and result.stdout.strip():
-                return json.loads(result.stdout)
-        except Exception:
-            pass
-
-    raise LiveDataError(f"NSE request failed for {url}: {req_err}")
-
+            raw = _nse_fetch(url, referer=referer, timeout=25.0)
+            decoded = json.loads(raw.decode("utf-8"))
+            scanner_trace.safe_source("NSE", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                attempt=attempt+1, upstream_timestamp_raw=scanner_trace.supplied_timestamps(decoded),
+                upstream_timestamp_verified=False)
+            return decoded
+        except json.JSONDecodeError as exc:
+            scanner_trace.safe_source("NSE", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                                     status="invalid_json", attempt=attempt+1)
+            raise LiveDataError(f"NSE returned non-JSON for {url}: {raw[:120]!r}") from exc
+        except Exception as exc:  # noqa: BLE001 - retry with a fresh handshake
+            scanner_trace.safe_source("NSE", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                                     status="fetch_failed", attempt=attempt+1, error_type=type(exc).__name__)
+            last_err = exc
+            _time.sleep(0.4 * (attempt + 1))
+    raise LiveDataError(str(last_err) or f"NSE request failed: {url}")
 
 
 def nse_get_csv(url: str, *, referer: str) -> list[dict[str, Any]]:
+    import scanner_trace
+    trace_start = _time.monotonic()
     request = urllib.request.Request(
         url,
         headers={
@@ -351,9 +581,17 @@ def nse_get_csv(url: str, *, referer: str) -> list[dict[str, Any]]:
             "Referer": referer,
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        text = response.read().decode("utf-8-sig")
-    return [dict(row) for row in csv.DictReader(text.splitlines())]
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            text = response.read().decode("utf-8-sig")
+        rows = [dict(row) for row in csv.DictReader(text.splitlines())]
+        scanner_trace.safe_source("NSE_csv", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                                 row_count=len(rows), upstream_timestamp_verified=False)
+        return rows
+    except Exception as exc:
+        scanner_trace.safe_source("NSE_csv", endpoint=scanner_trace.endpoint_name(url), started=trace_start,
+                                 status="fetch_failed", error_type=type(exc).__name__)
+        raise
 
 
 def rows_from_any_payload(payload: Any) -> list[dict[str, Any]]:
@@ -381,9 +619,9 @@ def extract_fno_variation(payload: Any, *, side: str) -> list[dict[str, Any]]:
     filtered = [row for row in normalized if row["symbol"] and row["percent_change"] is not None]
     if side == "gainer":
         filtered = [row for row in filtered if row["percent_change"] >= 0]
-        return sorted(filtered, key=lambda row: row["percent_change"] or 0, reverse=True)[:NSE_TOP_ROWS]
+        return sorted(filtered, key=lambda row: row["percent_change"] or 0, reverse=True)
     filtered = [row for row in filtered if row["percent_change"] <= 0]
-    return sorted(filtered, key=lambda row: row["percent_change"] or 0)[:NSE_TOP_ROWS]
+    return sorted(filtered, key=lambda row: row["percent_change"] or 0)
 
 
 def normalize_variation_row(row: dict[str, Any], *, side: str) -> dict[str, Any]:
@@ -504,67 +742,94 @@ def normalize_index_row(index_name: str, payload: Any) -> dict[str, Any]:
     }
 
 
+INDEX_CHART_NAMES = {"NIFTY50": "NIFTY 50", "BANKNIFTY": "NIFTY BANK", "SENSEX": "SENSEX"}
+
+
+def index_quote_from_candles(symbol: str, result: dict[str, Any]) -> dict[str, Any] | None:
+    """Use the last index bar and the previous session's close as a quote fallback."""
+    name = INDEX_CHART_NAMES.get(symbol)
+    if name is None:
+        return None
+    candles = result.get("completed_candles") or []
+    forming = result.get("forming_candle")
+    latest = forming or (candles[-1] if candles else None)
+    if latest is None or latest["close"] <= 0:
+        return None
+    session = datetime.fromtimestamp(latest["timestamp"], INDIA_TZ).date()
+    previous = next((
+        c["close"] for c in reversed(candles)
+        if datetime.fromtimestamp(c["timestamp"], INDIA_TZ).date() < session
+    ), None)
+    change = latest["close"] - previous if previous else None
+    percent = change / previous * 100 if previous and change is not None else None
+    now = datetime.now(INDIA_TZ)
+    stamp = latest["timestamp"] + (0 if forming else 300)
+    in_session = now.weekday() < 5 and MARKET_OPEN <= now.time() < MARKET_CLOSE
+    return {
+        "name": name,
+        "ltp": round(latest["close"], 2),
+        "percent_change": round(percent, 2) if percent is not None else None,
+        "change": round(change, 2) if change is not None else None,
+        "direction": "bullish" if (change or 0) > 0 else "bearish" if (change or 0) < 0 else "flat",
+        "source": result.get("provider", "Index candles"),
+        "as_of_epoch": stamp,
+        "is_stale": bool(result.get("is_stale") or (in_session and now.timestamp() - stamp > 15 * 60)),
+    }
+
+
 def fetch_index_context() -> tuple[dict[str, dict[str, Any]], list[str]]:
-    referer = f"{NSE_BASE}/market-data/live-equity-market"
     errors: list[str] = []
     indexes: dict[str, dict[str, Any]] = {}
-    
-    # 1. Primary: Official NSE allIndices API (matches Groww/Zerodha perfectly)
     try:
-        data = nse_get_json(f"{NSE_BASE}/api/allIndices", referer=referer)
+        data = nse_get_json(f"{NSE_BASE}/api/allIndices", referer=f"{NSE_BASE}/market-data/live-equity-market")
         for item in data.get("data", []):
-            idx = item.get("index")
-            if idx in ("NIFTY 50", "NIFTY BANK"):
-                pct = float(item.get("percentChange", 0))
-                ltp = float(item.get("last", 0))
-                chg = float(item.get("variation", 0))
-                indexes[idx] = {
-                    "name": idx,
-                    "ltp": round(ltp, 2),
-                    "percent_change": round(pct, 2),
-                    "change": round(chg, 2),
-                    "direction": "bullish" if pct > 0 else "bearish" if pct < 0 else "flat",
-                }
+            name = item.get("index")
+            if name not in ("NIFTY 50", "NIFTY BANK"):
+                continue
+            ltp = parse_float(item.get("last"))
+            if ltp is None or not math.isfinite(ltp) or ltp <= 0:
+                continue
+            percent = parse_float(item.get("percentChange"))
+            stamp = None
+            try:
+                stamp = datetime.strptime(
+                    item.get("timestamp") or data.get("timestamp") or "", "%d-%b-%Y %H:%M:%S"
+                ).replace(tzinfo=INDIA_TZ).timestamp()
+            except ValueError:
+                pass
+            indexes[name] = {
+                "name": name,
+                "ltp": round(ltp, 2),
+                "percent_change": percent,
+                "change": parse_float(item.get("variation")),
+                "direction": "bullish" if (percent or 0) > 0 else "bearish" if (percent or 0) < 0 else "flat",
+                "source": "NSE",
+                "as_of_epoch": stamp,
+            }
     except Exception as exc:
         errors.append(f"nse allIndices: {exc}")
 
-    # 2. Fallback: Yahoo Finance (if NSE blocked)
-    if "NIFTY 50" not in indexes or "NIFTY BANK" not in indexes:
-        mapping = {
-            "NIFTY 50": "^NSEI",
-            "NIFTY BANK": "^NSEBANK",
-        }
-        for index_name, ticker in mapping.items():
-            if index_name in indexes:
-                continue
-            try:
-                url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(ticker)}?interval=5m&range=1d"
-                req = urllib.request.Request(
-                    url,
-                    headers={
-                        "User-Agent": USER_AGENT,
-                        "Accept": "application/json, text/plain, */*",
-                    },
-                )
-                with urllib.request.urlopen(req, timeout=3.5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    result = (data.get("chart") or {}).get("result")
-                    if result:
-                        meta = result[0].get("meta") or {}
-                        ltp = meta.get("regularMarketPrice")
-                        prev = meta.get("chartPreviousClose") or ltp
-                        pct_change = ((ltp - prev) / prev) * 100 if prev else 0.0
-                        change = ltp - prev if prev else 0.0
-                        indexes[index_name] = {
-                            "name": index_name,
-                            "ltp": round(float(ltp), 2),
-                            "percent_change": round(float(pct_change), 2),
-                            "change": round(float(change), 2),
-                            "direction": "bullish" if pct_change > 0 else "bearish" if pct_change < 0 else "flat",
-                        }
-            except Exception as exc:
-                errors.append(f"index {index_name}: {exc}")
-            
+    # SENSEX is a BSE index. Use the same provider fallback as its chart, in
+    # parallel with any NSE indices that the primary endpoint did not return.
+    missing = {symbol: name for symbol, name in INDEX_CHART_NAMES.items() if name not in indexes}
+    if missing:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(missing)) as pool:
+            futures = {
+                pool.submit(fetch_5m_candles_pipeline, symbol, full_range=True): symbol
+                for symbol in missing
+            }
+            for future in concurrent.futures.as_completed(futures):
+                symbol = futures[future]
+                name = missing[symbol]
+                try:
+                    result = future.result()
+                    quote = index_quote_from_candles(symbol, result)
+                    if quote is not None:
+                        indexes[name] = quote
+                    else:
+                        errors.append(f"index {name}: {result.get('error') or 'candles unavailable'}")
+                except Exception as exc:
+                    errors.append(f"index {name}: {exc}")
     return indexes, errors
 
 
@@ -599,138 +864,59 @@ def pct_from_open(row: dict[str, Any]) -> float | None:
     return ((ltp - open_price) / open_price) * 100
 
 
-def _load_candles_from_file(symbol: str) -> list[dict[str, Any]]:
-    sym = symbol.strip().upper()
-    candle_file = ROOT / "inputs" / "candles" / f"{sym}.json"
-    if not candle_file.exists():
-        candle_file = ROOT / "inputs" / "candles" / f"{sym}_5m.json"
-    if not candle_file.exists():
-        return []
+def fetch_5m_candles_pipeline(symbol: str, full_range: bool = False) -> dict[str, Any]:
+    """Hierarchical, verified 5-minute candle engine:
+    1. Upstox API v2 (Primary Fast Path) -> validate completed/fresh candles
+    2. Yahoo Finance (Secondary Fallback) -> validate completed/fresh candles
+    3. Short-Lived Local Cache (TTL 90s market hours) -> explicitly tagged as STALE
+    4. Unavailable / Error status
+    """
+    now_ist = datetime.now(INDIA_TZ)
+    now_epoch = _time.time()
+
+    # 1. Primary: Official Upstox Provider
     try:
-        d = json.loads(candle_file.read_text(encoding="utf-8"))
-        res = (d.get("chart") or {}).get("result", [])
-        if res:
-            quote = res[0]
-            timestamps = quote.get("timestamp") or []
-            quote_data = (quote.get("indicators", {}).get("quote") or [{}])[0]
-            opens = quote_data.get("open") or []
-            highs = quote_data.get("high") or []
-            lows = quote_data.get("low") or []
-            closes = quote_data.get("close") or []
-            volumes = quote_data.get("volume") or []
-            candles = []
-            for i, ts in enumerate(timestamps):
-                if i < len(opens) and opens[i] is not None and closes[i] is not None:
-                    candles.append({
-                        "timestamp": int(ts),
-                        "open": round(float(opens[i]), 2),
-                        "high": round(float(highs[i]), 2),
-                        "low": round(float(lows[i]), 2),
-                        "close": round(float(closes[i]), 2),
-                        "volume": float(volumes[i] or 0),
-                    })
-            if candles:
-                return candles
-        bars = d.get("series", {}).get("5m", [])
-        if bars:
-            return bars
-    except Exception as e:
-        print(f"Error reading disk candle file for {symbol}: {e}")
-    return []
+        import upstox_provider
+        upstox_res = upstox_provider.fetch_5m_candles_with_telemetry(symbol, full_range=full_range)
+        if upstox_res.get("ok") and upstox_res.get("completed_candles"):
+            if upstox_res.get("candles_1m"):
+                _CANDLE_1M_CACHE[symbol] = (_time.time(), upstox_res["candles_1m"])
+            return upstox_res
+    except Exception as exc:
+        pass
 
-
-def _generate_synthetic_candles_for_symbol(symbol: str) -> list[dict[str, Any]]:
-    stock_info = None
-    snapshot_path = ROOT / "inputs" / "stock_suggestion_index.latest.json"
-    if snapshot_path.exists():
-        try:
-            snap = json.loads(snapshot_path.read_text(encoding="utf-8"))
-            for s in snap.get("bullish", []) + snap.get("bearish", []):
-                if s.get("symbol", "").upper() == symbol.upper():
-                    stock_info = s
-                    break
-        except Exception:
-            pass
-
-    ltp = float(stock_info.get("ltp") or 100.0) if stock_info else 100.0
-    pct_chg = float(stock_info.get("percent_change") or 0.0) if stock_info else 0.0
-    total_vol = float(stock_info.get("volume") or 250000.0) if stock_info else 250000.0
-
-    now = datetime.now(INDIA_TZ)
-    cur = now
-    if cur.weekday() == 5:
-        cur = cur - timedelta(days=1)
-    elif cur.weekday() == 6:
-        cur = cur - timedelta(days=2)
-    base_date = cur.date()
-
-    open_p = ltp / (1.0 + (pct_chg / 100.0)) if pct_chg != -100 else ltp
-    vol_per_bar = max(100.0, total_vol / 75.0)
-
-    import random
-    rng = random.Random(hash(symbol) % 100000)
-
-    bars = []
-    for d_offset in range(4, -1, -1):
-        day_date = base_date - timedelta(days=d_offset)
-        if day_date.weekday() >= 5:
-            continue
-        day_start_p = open_p * (1.0 + (d_offset * -0.005))
-        day_end_p = open_p if d_offset > 0 else ltp
-        d_step = (day_end_p - day_start_p) / 75.0
-        cur_p = day_start_p
-
-        for i in range(75):
-            hour = 9 + (15 + i * 5) // 60
-            minute = (15 + i * 5) % 60
-            bar_dt = datetime(day_date.year, day_date.month, day_date.day, hour, minute, tzinfo=INDIA_TZ)
-            ts = int(bar_dt.timestamp())
-            noise = (rng.random() - 0.49) * (ltp * 0.003)
-            b_open = round(cur_p, 2)
-            cur_p += d_step + noise
-            b_close = round(cur_p, 2)
-            spread = abs(rng.random() * ltp * 0.002)
-            b_high = round(max(b_open, b_close) + spread, 2)
-            b_low = round(min(b_open, b_close) - spread, 2)
-            b_vol = int(vol_per_bar * (0.5 + rng.random() * 1.0))
-            bars.append({
-                "timestamp": ts,
-                "open": b_open,
-                "high": b_high,
-                "low": b_low,
-                "close": b_close,
-                "volume": b_vol,
-            })
-    if bars:
-        bars[-1]["close"] = round(ltp, 2)
-    return bars
-
-
-def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
-    """Fetches real-time 5-minute OHLCV candles for an NSE stock with local disk cache and live exchange feeds."""
-    sym = symbol.strip().upper()
-
-    # 1. First check if disk cache exists
-    disk_candles = _load_candles_from_file(sym)
-
-    # 2. Try live network fetch from Yahoo Finance (if available)
-    live_candles = []
+    # 2. Secondary Fallback: Yahoo Finance
+    import scanner_trace
+    trace_start = _time.monotonic()
+    sym_clean = symbol.upper().strip()
+    if sym_clean in ("NIFTY 50", "NIFTY50", "NIFTY"):
+        yahoo_sym = "^NSEI"
+    elif sym_clean in ("NIFTY BANK", "BANKNIFTY", "BANK NIFTY"):
+        yahoo_sym = "^NSEBANK"
+    elif sym_clean in ("SENSEX", "BSESENSEX", "^BSESN", "BSE SENSEX"):
+        yahoo_sym = "^BSESN"
+    else:
+        yahoo_sym = f"{symbol}.NS"
+    chart_range = "5d" if full_range else "1d"
+    url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range={chart_range}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/plain, */*",
+            "Referer": f"https://finance.yahoo.com/quote/{yahoo_sym}/chart",
+        },
+    )
     try:
-        yahoo_sym = f"{sym}.NS"
-        url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range=5d"
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "application/json, text/plain, */*",
-                "Referer": f"https://finance.yahoo.com/quote/{yahoo_sym}/chart",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=3.0) as resp:
+        with urllib.request.urlopen(req, timeout=CANDLE_FETCH_TIMEOUT) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             result = (data.get("chart") or {}).get("result")
             if result:
                 quote = result[0]
+                scanner_trace.safe_source("Yahoo_candles", symbol=symbol, started=trace_start,
+                    quote_market_epoch=(quote.get("meta") or {}).get("regularMarketTime"),
+                    latest_bar_start_epoch=max(quote.get("timestamp") or [0]) or None,
+                    upstream_timestamp_verified=False)
                 timestamps = quote.get("timestamp") or []
                 indicators = quote.get("indicators", {})
                 quote_data = (indicators.get("quote") or [{}])[0]
@@ -739,49 +925,610 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
                 lows = quote_data.get("low") or []
                 closes = quote_data.get("close") or []
                 volumes = quote_data.get("volume") or []
+                all_candles: list[dict[str, Any]] = []
                 for i, ts in enumerate(timestamps):
-                    if i < len(opens) and opens[i] is not None and closes[i] is not None:
-                        live_candles.append({
-                            "timestamp": int(ts),
-                            "open": round(float(opens[i]), 2),
-                            "high": round(float(highs[i]), 2),
-                            "low": round(float(lows[i]), 2),
-                            "close": round(float(closes[i]), 2),
-                            "volume": float(volumes[i] or 0),
-                        })
-                # Cache to disk for offline / weekend use
-                if live_candles:
-                    cache_file = ROOT / "inputs" / "candles" / f"{sym}.json"
-                    cache_file.parent.mkdir(parents=True, exist_ok=True)
-                    cache_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                    if i < len(opens) and i < len(highs) and i < len(lows) and i < len(closes):
+                        o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+                        v = volumes[i] if i < len(volumes) else 0
+                        if None not in (o, h, l, c):
+                            all_candles.append({
+                                "timestamp": int(ts),
+                                "open": float(o),
+                                "high": float(h),
+                                "low": float(l),
+                                "close": float(c),
+                                "volume": float(v or 0),
+                            })
+                if all_candles:
+                    # Collapse multi-ticks in the same 5-minute bucket
+                    merged_candles: list[dict[str, Any]] = []
+                    for c in all_candles:
+                        bucket_ts = (c["timestamp"] // 300) * 300
+                        if merged_candles and (merged_candles[-1]["timestamp"] // 300) * 300 == bucket_ts:
+                            prev = merged_candles[-1]
+                            prev["high"] = max(prev["high"], c["high"])
+                            prev["low"] = min(prev["low"], c["low"])
+                            prev["close"] = c["close"]
+                            prev["volume"] += c["volume"]
+                        else:
+                            merged_candles.append(dict(c))
+                    all_candles = merged_candles
+
+                    # Isolate current session if not full_range
+                    if not full_range:
+                        from datetime import datetime as dt_cls
+                        latest_dt = dt_cls.fromtimestamp(all_candles[-1]["timestamp"], tz=INDIA_TZ).date()
+                        all_candles = [
+                            c for c in all_candles
+                            if dt_cls.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == latest_dt
+                        ] or all_candles[-75:]
+
+                    import upstox_provider
+                    is_valid, _ = upstox_provider.validate_candles_integrity(all_candles, now_ist, allow_multi_day=full_range)
+                    if is_valid:
+                        completed, forming = upstox_provider.separate_completed_and_forming(all_candles, now_ist)
+                        if completed:
+                            lat_ms = int((_time.monotonic() - trace_start) * 1000)
+                            latest_epoch = completed[-1]["timestamp"]
+                            latest_ist = datetime.fromtimestamp(latest_epoch, tz=INDIA_TZ).strftime("%I:%M %p")
+                            return {
+                                "ok": True,
+                                "symbol": symbol,
+                                "provider": "Yahoo (Fallback)",
+                                "completed_candles": completed,
+                                "forming_candle": forming,
+                                "all_candles": all_candles,
+                                "latest_completed_candle_ist": latest_ist,
+                                "latest_completed_candle_epoch": latest_epoch,
+                                "observed_latency_ms": lat_ms,
+                                "fallback_used": True,
+                                "is_stale": False,
+                                "error": None,
+                            }
+    except Exception as e:
+        scanner_trace.safe_source("Yahoo_candles", symbol=symbol, started=trace_start,
+                                 status="fetch_failed", error_type=type(e).__name__)
+
+    # 3. Tertiary: Short-Lived Local Disk Cache (explicitly marked STALE)
+    _load_candle_cache()
+    cached = _CANDLE_CACHE.get(symbol)
+    if cached and (now_epoch - cached[0]) <= get_candle_cache_ttl():
+        c_candles = cached[1]
+        if c_candles:
+            current_minutes = now_ist.hour * 60 + now_ist.minute
+            is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+            if is_live_session and not full_range:
+                latest_dt = datetime.fromtimestamp(c_candles[-1]["timestamp"], tz=INDIA_TZ).date()
+                if latest_dt != now_ist.date():
+                    pass
+        if c_candles:
+            latest_epoch = c_candles[-1]["timestamp"]
+            latest_ist = datetime.fromtimestamp(latest_epoch, tz=INDIA_TZ).strftime("%I:%M %p")
+            return {
+                "ok": True,
+                "symbol": symbol,
+                "provider": "Cache (Stale)",
+                "completed_candles": c_candles,
+                "forming_candle": None,
+                "all_candles": c_candles,
+                "latest_completed_candle_ist": latest_ist,
+                "latest_completed_candle_epoch": latest_epoch,
+                "observed_latency_ms": 0,
+                "fallback_used": True,
+                "is_stale": True,
+                "error": "Upstream feeds unavailable, serving short-lived local cache",
+            }
+
+    # 4. Quaternary: Unavailable / Stale Status
+    return {
+        "ok": False,
+        "symbol": symbol,
+        "provider": "Unavailable",
+        "completed_candles": [],
+        "forming_candle": None,
+        "all_candles": [],
+        "latest_completed_candle_ist": None,
+        "latest_completed_candle_epoch": None,
+        "observed_latency_ms": 0,
+        "fallback_used": True,
+        "is_stale": True,
+        "error": "All data providers failed/unauthorized and local cache is expired or empty",
+    }
+
+
+def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
+    """Fetches real-time 5-minute OHLCV candles for an NSE stock.
+    Executes the validated hierarchical pipeline and returns completed candles only.
+    """
+    pipe_res = fetch_5m_candles_pipeline(symbol, full_range=full_range)
+    if pipe_res.get("ok"):
+        return pipe_res.get("completed_candles", [])
+    return []
+
+
+def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+    """For a symbol that ISN'T in NSE's top-20 gainers/losers: build the same
+    row shape (open/high/low/ltp/percent_change/volume) directly from Yahoo's
+    intraday chart in one request, using its `previousClose` in the response
+    metadata - no dependency on the top-20 feed at all. Used to widen the
+    candidate pool beyond NSE's arbitrary top-20 cutoff."""
+    import scanner_trace
+    trace_start = _time.monotonic()
+    sym_clean = symbol.upper().strip()
+    if sym_clean in ("NIFTY 50", "NIFTY50", "NIFTY"):
+        yahoo_sym = "^NSEI"
+    elif sym_clean in ("NIFTY BANK", "BANKNIFTY", "BANK NIFTY"):
+        yahoo_sym = "^NSEBANK"
+    elif sym_clean in ("SENSEX", "BSESENSEX", "^BSESN", "BSE SENSEX"):
+        yahoo_sym = "^BSESN"
+    else:
+        yahoo_sym = f"{symbol}.NS"
+    url = f"{YAHOO_CHART_BASE}/{urllib.parse.quote(yahoo_sym)}?interval=5m&range=1d"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/plain, */*",
+            "Referer": f"https://finance.yahoo.com/quote/{yahoo_sym}/chart",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=CANDLE_FETCH_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        result = (data.get("chart") or {}).get("result")
+        if not result:
+            scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start, status="empty_response")
+            return None
+        quote = result[0]
+        meta = quote.get("meta") or {}
+        scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start,
+            quote_market_epoch=meta.get("regularMarketTime"),
+            latest_bar_start_epoch=max(quote.get("timestamp") or [0]) or None, upstream_timestamp_verified=False)
+        prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
+        timestamps = quote.get("timestamp") or []
+        indicators = quote.get("indicators", {})
+        quote_data = (indicators.get("quote") or [{}])[0]
+        opens = quote_data.get("open") or []
+        highs = quote_data.get("high") or []
+        lows = quote_data.get("low") or []
+        closes = quote_data.get("close") or []
+        volumes = quote_data.get("volume") or []
+        candles: list[dict[str, Any]] = []
+        for i, ts in enumerate(timestamps):
+            if i < len(opens) and i < len(highs) and i < len(lows) and i < len(closes):
+                o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+                if None not in (o, h, l, c):
+                    v = volumes[i] if i < len(volumes) else 0
+                    candles.append({
+                        "timestamp": int(ts), "open": float(o), "high": float(h),
+                        "low": float(l), "close": float(c), "volume": float(v or 0),
+                    })
+        if not candles or not prev_close:
+            return None
+
+        ltp = candles[-1]["close"]
+        pct = ((ltp - prev_close) / prev_close) * 100
+        row = {
+            "symbol": symbol,
+            "side": "gainer" if pct >= 0 else "loser",
+            "open": candles[0]["open"],
+            "high": max(c["high"] for c in candles),
+            "low": min(c["low"] for c in candles),
+            "prev_close": float(prev_close),
+            "ltp": ltp,
+            "percent_change": pct,
+            "volume": sum(c["volume"] for c in candles),
+            "value_lakhs": None,
+        }
+        from upstox_provider import separate_completed_and_forming
+
+        completed, _ = separate_completed_and_forming(candles, datetime.now(INDIA_TZ))
+        return row, completed
+    except Exception as e:
+        scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start,
+                                 status="fetch_failed", error_type=type(e).__name__)
+        print(f"fetch_quote_and_candles_for_symbol error for {symbol}: {type(e)} {e}", file=sys.stderr)
+        return None
+
+
+def fetch_extra_candidates(
+    symbols: Iterable[str],
+    candles_by_symbol: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Widen the candidate pool beyond NSE's top-20 gainers/losers: for every
+    OI-spurts symbol not already in that top-20, fetch its own quote+candles
+    directly and build a synthetic row in the same shape the top-20 feed
+    produces. These rows then go through the EXACT SAME scoring/blocker
+    pipeline as top-20 candidates - no lowered bar, just a wider net, so a
+    real breakout is never invisible purely because its day-change hasn't
+    cleared an arbitrary top-20 cutoff yet."""
+    symbols = list(symbols)
+    if not symbols:
+        return []
+    rows: list[dict[str, Any]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(symbols), CANDLE_POOL_MAX_WORKERS)) as executor:
+        future_to_sym = {executor.submit(fetch_quote_and_candles_for_symbol, sym): sym for sym in symbols}
+        try:
+            for future in concurrent.futures.as_completed(future_to_sym, timeout=CANDLE_POOL_WAIT_SECONDS):
+                sym = future_to_sym[future]
+                try:
+                    result = future.result()
+                except Exception:
+                    result = None
+                if result:
+                    row, candles = result
+                    rows.append(row)
+                    candles_by_symbol[sym] = candles
+                    if candles:
+                        _CANDLE_CACHE[sym] = (_time.time(), candles)
+        except concurrent.futures.TimeoutError:
+            pass
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+    return rows
+
+
+def bulk_fetch_candles(
+    symbols: Iterable[str],
+    candles_by_symbol: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Populate ``candles_by_symbol`` for every requested symbol.
+
+    Symbols already present in the dict are left alone (so the two sides of a
+    scan share one download). Fresh symbols are served from a short-TTL process
+    cache when possible, otherwise fetched concurrently. The whole batch is
+    capped at ``CANDLE_POOL_WAIT_SECONDS``; symbols whose request has not
+    returned by then are recorded as an empty list and the workers abandoned,
+    so one slow upstream response can no longer stall the entire refresh.
+    """
+    import scanner_trace
+    _load_candle_cache()
+    now = _time.time()
+    pending: list[str] = []
+    for sym in symbols:
+        if sym in candles_by_symbol:
+            scanner_trace.safe_source("candle_input", symbol=sym, status="shared_scan_input",
+                                     cache_age_seconds=None, row_count=len(candles_by_symbol[sym]))
+            continue
+        cached = _CANDLE_CACHE.get(sym)
+        if cached and (now - cached[0]) <= CANDLE_CACHE_TTL_SECONDS:
+            candles_by_symbol[sym] = cached[1]
+            scanner_trace.safe_source("candle_input", symbol=sym, status="cache_hit",
+                                     cache_age_seconds=round(now-cached[0], 3), row_count=len(cached[1]))
+        else:
+            pending.append(sym)
+
+    if not pending:
+        return candles_by_symbol
+
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(len(pending), CANDLE_POOL_MAX_WORKERS)
+    )
+    future_to_sym = {executor.submit(fetch_5m_candles_for_symbol, sym): sym for sym in pending}
+    try:
+        for future in concurrent.futures.as_completed(future_to_sym, timeout=CANDLE_POOL_WAIT_SECONDS):
+            sym = future_to_sym[future]
+            try:
+                result = future.result()
+            except Exception:
+                result = []
+            candles_by_symbol[sym] = result
+            if result:
+                _CANDLE_CACHE[sym] = (_time.time(), result)
+    except concurrent.futures.TimeoutError:
+        pass
     except Exception:
         pass
+    finally:
+        # Do not block on stragglers - abandon any request still in flight.
+        executor.shutdown(wait=False, cancel_futures=True)
 
-    candles = live_candles or disk_candles
-    if not candles:
-        # Fallback: try deployed AWS server for authentic market candles
-        try:
-            aws_url = f"http://3.108.195.198/api/stock_candles?symbol={urllib.parse.quote(sym)}"
-            req_aws = urllib.request.Request(aws_url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req_aws, timeout=3.0) as aws_resp:
-                aws_data = json.loads(aws_resp.read().decode("utf-8"))
-                if aws_data.get("ok") and aws_data.get("candles"):
-                    candles = [
-                        {
-                            "timestamp": int(c["time"]),
-                            "open": round(float(c["open"]), 2),
-                            "high": round(float(c["high"]), 2),
-                            "low": round(float(c["low"]), 2),
-                            "close": round(float(c["close"]), 2),
-                            "volume": float(c.get("value") or 0),
-                        }
-                        for c in aws_data["candles"]
-                    ]
-        except Exception:
-            pass
+    for sym in pending:
+        if sym not in candles_by_symbol:
+            scanner_trace.safe_source("candle_input", symbol=sym, status="batch_timeout_or_missing")
+        candles_by_symbol.setdefault(sym, [])
+    _save_candle_cache()
+    return candles_by_symbol
 
-    if not candles:
-        return []
+
+def detect_3bar_impulse_cascade(
+    candles: list[dict[str, Any]],
+    side: str,
+    *,
+    key_level: float | None = None,
+    avg_5m_vol: float | None = None,
+) -> dict[str, Any]:
+    """Detects 3 consecutive 5-minute candles making continuous lower lows (bearish)
+    or higher highs (bullish) with >= 60% directional body ratio beyond PML/PMH.
+    Serves as the high-conviction micro execution trigger for Two-Tier Approach A."""
+    if len(candles) < 3:
+        return {
+            "is_cascade": False,
+            "cascade_type": None,
+            "cascade_time": None,
+            "cascade_body_pct": 0.0,
+            "cascade_vol_ratio": 1.0,
+        }
+
+    def eval_trio(trio: list[dict[str, Any]]) -> tuple[bool, float, float]:
+        vol_sum = sum(c.get("volume", 0) for c in trio)
+        v_ratio = (vol_sum / (3.0 * avg_5m_vol)) if (avg_5m_vol and avg_5m_vol > 0) else 1.0
+        if v_ratio < 0.65:
+            return False, 0.0, 0.0
+
+        if side == "bearish":
+            # Pattern A: 3 Consecutive Red Waterfall
+            is_3red = all(c["close"] < c["open"] for c in trio) and (trio[1]["low"] < trio[0]["low"] and trio[2]["low"] < trio[1]["low"])
+            # Pattern B: Base-and-Breakdown (Pole -> Pause Flag -> Continuation Breakdown)
+            c0_red = trio[0]["close"] < trio[0]["open"]
+            c1_pause = trio[1]["high"] <= trio[0]["high"] * 1.002
+            c2_break = trio[2]["close"] < trio[2]["open"] and trio[2]["low"] < min(trio[0]["low"], trio[1]["low"])
+            is_base_break = c0_red and c1_pause and c2_break
+
+            if not (is_3red or is_base_break):
+                return False, 0.0, 0.0
+
+            # Body Dominance Check
+            body_ratios = []
+            for c in trio:
+                rng = c["high"] - c["low"]
+                body = c["open"] - c["close"]
+                body_ratios.append(body / rng if rng > 0 else 0.0)
+            avg_body = sum(body_ratios) / 3.0
+            if is_3red and (avg_body < 0.55 or any(b < 0.25 for b in body_ratios)):
+                return False, 0.0, 0.0
+            if is_base_break and (body_ratios[0] < 0.40 or body_ratios[2] < 0.40):
+                return False, 0.0, 0.0
+
+            # Level check: price below key level / PML
+            if key_level is not None and trio[2]["close"] > key_level * 1.002:
+                return False, 0.0, 0.0
+
+            return True, avg_body, v_ratio
+        else:
+            # Bullish
+            # Pattern A: 3 Consecutive Green Impulse
+            is_3green = all(c["close"] > c["open"] for c in trio) and (trio[1]["high"] > trio[0]["high"] and trio[2]["high"] > trio[1]["high"])
+            # Pattern B: Base-and-Breakout (Pole -> Pause Flag -> Continuation Breakout)
+            c0_green = trio[0]["close"] > trio[0]["open"]
+            c1_pause = trio[1]["low"] >= trio[0]["low"] * 0.998
+            c2_break = trio[2]["close"] > trio[2]["open"] and trio[2]["high"] > max(trio[0]["high"], trio[1]["high"])
+            is_base_break = c0_green and c1_pause and c2_break
+
+            if not (is_3green or is_base_break):
+                return False, 0.0, 0.0
+
+            body_ratios = []
+            for c in trio:
+                rng = c["high"] - c["low"]
+                body = c["close"] - c["open"]
+                body_ratios.append(body / rng if rng > 0 else 0.0)
+            avg_body = sum(body_ratios) / 3.0
+            if is_3green and (avg_body < 0.55 or any(b < 0.25 for b in body_ratios)):
+                return False, 0.0, 0.0
+            if is_base_break and (body_ratios[0] < 0.40 or body_ratios[2] < 0.40):
+                return False, 0.0, 0.0
+
+            if key_level is not None and trio[2]["close"] < key_level * 0.998:
+                return False, 0.0, 0.0
+
+            return True, avg_body, v_ratio
+
+    # 1. Check latest 3 completed candles
+    is_valid, avg_b, v_r = eval_trio(candles[-3:])
+    confirmed_candle = candles[-1]
+
+    # 2. If latest bar is consolidating or paused right after an active cascade,
+    # evaluate recent candles (last 4 to 5) so an active waterfall isn't lost on 1 neutral bar
+    if not is_valid and len(candles) >= 4:
+        is_valid, avg_b, v_r = eval_trio(candles[-4:-1])
+        confirmed_candle = candles[-2]
+        if is_valid:
+            if side == "bearish" and candles[-1]["close"] > confirmed_candle["high"]:
+                is_valid = False
+            elif side == "bullish" and candles[-1]["close"] < confirmed_candle["low"]:
+                is_valid = False
+
+    # 3. Wave-level cascade tracking (scanning backwards from most recent):
+    # Ensures we find an active cascade that has NOT dumped or failed.
+    if not is_valid and len(candles) >= 3:
+        for idx in range(len(candles) - 1, 1, -1):
+            trio = candles[idx-2:idx+1]
+            trio_valid, t_avg_b, t_v_r = eval_trio(trio)
+            if trio_valid:
+                # Invalidation check: did any subsequent candle dump or reverse?
+                subsequent = candles[idx+1:]
+                dumped = False
+                if side == "bullish":
+                    impulse_low = trio[2]["low"]
+                    if any(c["close"] < impulse_low * 0.998 for c in subsequent):
+                        dumped = True
+                else:
+                    waterfall_high = trio[2]["high"]
+                    if any(c["close"] > waterfall_high * 1.002 for c in subsequent):
+                        dumped = True
+
+                if not dumped:
+                    is_valid = True
+                    avg_b = t_avg_b
+                    v_r = t_v_r
+                    confirmed_candle = trio[2]
+                    break
+
+    if is_valid:
+        cascade_type = "Waterfall Breakdown" if side == "bearish" else "Impulse Breakout"
+        cascade_time = datetime.fromtimestamp(confirmed_candle["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+        return {
+            "is_cascade": True,
+            "cascade_type": cascade_type,
+            "cascade_time": cascade_time,
+            "cascade_body_pct": round(avg_b * 100, 1),
+            "cascade_vol_ratio": round(v_r, 2),
+        }
+
+    return {
+        "is_cascade": False,
+        "cascade_type": None,
+        "cascade_time": None,
+        "cascade_body_pct": 0.0,
+        "cascade_vol_ratio": 1.0,
+    }
+
+
+def detect_institutional_block_surge(
+    symbol: str,
+    candles_1m: list[dict[str, Any]],
+    candles_5m: list[dict[str, Any]],
+    side: str,
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    """Evaluates sub-minute and multi-crore Institutional Block Surges (FII/DII footprints).
+    
+    Checks both:
+    1. 1-Minute Candle Radar (Fast Sub-Minute Path):
+       - Single 1m turnover >= ₹7.5 Crores AND RVOL_1m >= 4.0x
+       - Single 1m RVOL >= 8.0x AND turnover >= ₹3.0 Crores with directional price move (>=0.25%)
+       - Extreme 1m turnover >= ₹15.0 Crores (unmistakable institutional block trade)
+    2. 5-Minute Candle Radar (Fallback/Confirmation Path):
+       - Single 5m turnover >= ₹20.0 Crores AND RVOL_5m >= 3.5x
+       - Single 5m RVOL >= 7.0x AND turnover >= ₹10.0 Crores
+    
+    Looks across the most recent 15 minutes of trading to maintain the alert if an
+    institutional block trade occurred recently.
+    """
+    default_res = {
+        "is_block_surge": False,
+        "block_surge_type": None,
+        "block_surge_time": None,
+        "block_surge_turnover_cr": 0.0,
+        "block_surge_rvol": 1.0,
+        "block_surge_vol": 0,
+        "block_surge_price": float(row.get("ltp") or 0.0),
+        "surge_age_minutes": 0,
+    }
+
+    # During live trading session, strictly filter candles to TODAY's session only
+    now_ist = datetime.now(INDIA_TZ)
+    current_minutes = now_ist.hour * 60 + now_ist.minute
+    is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+    if is_live_session:
+        today_date = now_ist.date()
+        if any(datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date for c in (candles_5m or [])):
+            candles_5m = [c for c in candles_5m if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
+        if any(datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date for c in (candles_1m or [])):
+            candles_1m = [c for c in candles_1m if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
+
+    day_low = float(row.get("low") or row.get("ltp") or 0.0)
+    day_high = float(row.get("high") or row.get("ltp") or 0.0)
+
+    # 1. Evaluate 1-Minute Candles first (Fast Sub-Minute Radar)
+    if candles_1m and len(candles_1m) >= 2:
+        valid_vols = [float(c.get("volume") or 0) for c in candles_1m if float(c.get("volume") or 0) > 0]
+        if valid_vols:
+            sorted_vols = sorted(valid_vols)
+            median_1m_vol = sorted_vols[len(sorted_vols) // 2]
+            baseline_vol = max(50.0, median_1m_vol)
+        else:
+            baseline_vol = 50.0
+
+        recent_1m = candles_1m[-15:]
+        for idx, c in enumerate(reversed(recent_1m)):
+            vol = float(c.get("volume") or 0)
+            if vol <= 0:
+                continue
+            close = float(c.get("close") or row.get("ltp") or 0)
+            open_p = float(c.get("open") or close)
+            turnover_cr = (vol * close) / 10_000_000.0
+            rvol_1m = vol / baseline_vol
+            move_pct = ((close - open_p) / open_p * 100) if open_p > 0 else 0.0
+
+            # Directional Coherence
+            is_bullish_bar = close >= open_p
+            is_bearish_bar = close <= open_p
+
+            is_match = False
+            if side == "bullish" and is_bullish_bar:
+                if turnover_cr >= 15.0:
+                    is_match = True
+                elif turnover_cr >= 7.5 and rvol_1m >= 4.0:
+                    is_match = True
+                elif rvol_1m >= 8.0 and turnover_cr >= 3.0 and move_pct >= 0.25:
+                    is_match = True
+            elif side == "bearish" and is_bearish_bar:
+                if turnover_cr >= 15.0:
+                    is_match = True
+                elif turnover_cr >= 7.5 and rvol_1m >= 4.0:
+                    is_match = True
+                elif rvol_1m >= 8.0 and turnover_cr >= 3.0 and move_pct <= -0.25:
+                    is_match = True
+
+            if is_match:
+                ts = c.get("timestamp")
+                surge_time = datetime.fromtimestamp(ts, tz=INDIA_TZ).strftime("%I:%M %p") if ts else None
+                stype = "⚡ BLOCK SURGE (BUY)" if side == "bullish" else "⚡ BLOCK SURGE (SELL)"
+                return {
+                    "is_block_surge": True,
+                    "block_surge_type": stype,
+                    "block_surge_time": surge_time,
+                    "block_surge_turnover_cr": round(turnover_cr, 1),
+                    "block_surge_rvol": round(rvol_1m, 1),
+                    "block_surge_vol": int(vol),
+                    "block_surge_price": close,
+                    "surge_age_minutes": idx,
+                }
+
+    # 2. Fallback / Confirmation via 5-Minute Candles
+    if candles_5m and len(candles_5m) >= 2:
+        valid_5m_vols = [float(c.get("volume") or 0) for c in candles_5m if float(c.get("volume") or 0) > 0]
+        sorted_5m = sorted(valid_5m_vols) if valid_5m_vols else [1.0]
+        median_5m_vol = sorted_5m[len(sorted_5m) // 2]
+        baseline_5m = max(100.0, median_5m_vol)
+
+        recent_5m = candles_5m[-4:]
+        for idx, c in enumerate(reversed(recent_5m)):
+            vol = float(c.get("volume") or 0)
+            if vol <= 0:
+                continue
+            close = float(c.get("close") or row.get("ltp") or 0)
+            open_p = float(c.get("open") or close)
+            turnover_cr = (vol * close) / 10_000_000.0
+            rvol_5m = vol / baseline_5m
+            # Directional Coherence (5m)
+            is_bullish_bar = close >= open_p
+            is_bearish_bar = close <= open_p
+
+            is_match = False
+            if side == "bullish" and is_bullish_bar:
+                if turnover_cr >= 35.0:
+                    is_match = True
+                elif turnover_cr >= 20.0 and rvol_5m >= 3.5:
+                    is_match = True
+                elif rvol_5m >= 7.0 and turnover_cr >= 10.0:
+                    is_match = True
+            elif side == "bearish" and is_bearish_bar:
+                if turnover_cr >= 35.0:
+                    is_match = True
+                elif turnover_cr >= 20.0 and rvol_5m >= 3.5:
+                    is_match = True
+                elif rvol_5m >= 7.0 and turnover_cr >= 10.0:
+                    is_match = True
+
+            if is_match:
+                ts = c.get("timestamp")
+                surge_time = datetime.fromtimestamp(ts, tz=INDIA_TZ).strftime("%I:%M %p") if ts else None
+                stype = "⚡ BLOCK SURGE (BUY)" if side == "bullish" else "⚡ BLOCK SURGE (SELL)"
+                return {
+                    "is_block_surge": True,
+                    "block_surge_type": stype,
+                    "block_surge_time": surge_time,
+                    "block_surge_turnover_cr": round(turnover_cr, 1),
+                    "block_surge_rvol": round(rvol_5m, 1),
+                    "block_surge_vol": int(vol),
+                    "block_surge_price": close,
+                    "surge_age_minutes": idx * 5,
+                }
+
+    return default_res
 
     # Sort and deduplicate timestamps
     seen_ts = set()
@@ -792,46 +1539,35 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
             seen_ts.add(ts)
             clean_candles.append(c)
 
-    if full_range:
-        return clean_candles
+def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any]) -> dict[str, Any]:
+    """Analyzes 5-minute candles using a strict 5-Minute Opening Range Breakout (ORB) and Continuous Wave Tracking."""
+    # During live trading session, strictly filter candles to TODAY's session only
+    now_ist = datetime.now(INDIA_TZ)
+    current_minutes = now_ist.hour * 60 + now_ist.minute
+    is_live_session = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+    if is_live_session:
+        today_date = now_ist.date()
+        if any(datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date for c in (candles or [])):
+            candles = [c for c in candles if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today_date]
 
-    # Isolate the latest trading session candles
-    latest_dt = datetime.fromtimestamp(clean_candles[-1]["timestamp"], tz=INDIA_TZ).date()
-    day_candles = [
-        c for c in clean_candles
-        if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == latest_dt
-    ]
-    return day_candles if day_candles else clean_candles[-75:]
-
-
-def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str, Any], activity_ratio: float) -> dict[str, Any]:
-    """Analyzes 5-minute candles using Point-in-Time BreakoutEngine:
-    - Hybrid Opening Range (09:15 body + 09:20-09:30 wicks) filtering freak auction wicks
-    - Strict candle-specific RVOL confirmation >= 1.5x (eliminating daily bleed)
-    - Anti-exhaustion gate (> 3.5x ATR from open)
-    - Structural swing-pivot stop loss (minimum 0.6% floor)
-    - Dynamic consolidation box detection
-    """
     if len(candles) < 2:
+        # No intraday candles came back (upstream slow/blocked or early 09:15-09:20 AM window).
+        # Flag it as its own state instead of "Consolidating" so the row is kept on the list
+        # rather than silently dropped - it just is not eligible for a
+        # confirmed-breakout badge until candles arrive on a later scan.
         return {
             "is_breakout": False,
-            "status": "Setting Opening Range",
+            "status": "Awaiting 5m",
             "breakout_time": None,
             "rvol_5m": 1.0,
             "ema_trend": "bullish" if side == "bullish" else "bearish",
-            "chart_structure": "Setting ORB",
-            "vwap": None,
-            "retest_status": "Setting Range",
-            "is_failed_trend": False,
-            "entry": None,
-            "stop": None,
-            "stop_loss": None,
-            "target": None,
-            "level": None,
-            "level_kind": None,
-            "morning_breakout_time": None,
-            "afternoon_breakout_time": None,
-            "event": None,
+            "chart_structure": "Base Building",
+            "no_candle_data": True,
+            "is_cascade": False,
+            "cascade_type": None,
+            "cascade_time": None,
+            "cascade_body_pct": 0.0,
+            "cascade_vol_ratio": 1.0,
         }
 
     symbol = row.get("symbol", "")
@@ -842,6 +1578,305 @@ def analyze_5m_breakout(candles: list[dict[str, Any]], side: str, row: dict[str,
     res.setdefault("afternoon_breakout_time", None)
     return res
 
+    # 2. Strict 5-Minute Opening Range (The high/low of the very first candle)
+    # This prevents blindly calling 09:15 a breakout. The first candle SETS the resistance line.
+    first_candle = candles[0]
+    morning_high = first_candle["high"]
+    morning_low = first_candle["low"]
+
+    # 3. 5-minute Average Volume
+    valid_vols = [c["volume"] for c in candles if c["volume"] > 0]
+    avg_5m_vol = sum(valid_vols) / len(valid_vols) if valid_vols else 1.0
+
+    latest = candles[-1]
+    latest_close = latest["close"]
+    latest_vol = latest["volume"]
+    latest_rvol = latest_vol / avg_5m_vol if avg_5m_vol > 0 else 1.0
+
+    # 4. Check 3-Bar Impulse Cascade (Two-Tier Trigger)
+    key_level = morning_low if side == "bearish" else morning_high
+    if len(candles) >= 6:
+        key_level = min(c["low"] for c in candles[:6]) if side == "bearish" else max(c["high"] for c in candles[:6])
+
+    cascade_info = detect_3bar_impulse_cascade(
+        candles,
+        side,
+        key_level=key_level,
+        avg_5m_vol=avg_5m_vol,
+    )
+
+    breakout_time = None
+    is_breakout = False
+    breakout_status = "Consolidating"
+    chart_structure = "Base Building"
+
+    # We only look for breakouts starting from the SECOND candle (09:20 onwards)
+    trading_candles = candles[1:]
+
+    if side == "bullish":
+        # Check higher highs and higher lows structure on 5m chart
+        recent = candles[-min(len(candles), 8):]
+        if len(recent) >= 4:
+            higher_highs = sum(1 for i in range(1, len(recent)) if recent[i]["high"] >= recent[i-1]["high"])
+            higher_lows = sum(1 for i in range(1, len(recent)) if recent[i]["low"] >= recent[i-1]["low"])
+            if higher_highs >= len(recent) * 0.6 and higher_lows >= len(recent) * 0.6:
+                chart_structure = "Higher Highs Wave"
+            elif latest_close >= ema9:
+                chart_structure = "Uptrend on EMA9"
+            else:
+                chart_structure = "Pullback to EMA"
+
+        # Track earliest decisive breakout from the morning range (origin timestamp)
+        first_breakout_time = None
+        first_breakout_epoch = None
+        for c in trading_candles:
+            if c["close"] >= morning_high * 1.001 or (c["close"] > morning_high and c["high"] >= morning_high * 1.002 and c["close"] >= c["open"]):
+                first_breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = c["timestamp"]
+                break
+
+        if first_breakout_time:
+            breakout_time = first_breakout_time
+
+        # Major Structural Rail Breakout (PMH) - check if price broke 30m ORB rail later
+        if len(candles) >= 6:
+            orb_high = max(c["high"] for c in candles[:6])
+            if latest_close >= orb_high * 0.995:
+                for c in candles[6:]:
+                    if c["close"] >= orb_high * 0.999 or c["high"] >= orb_high * 1.001:
+                        if not breakout_time:
+                            breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                            first_breakout_epoch = c["timestamp"]
+                        break
+
+        # Early Detection: Live Forming Wick Breakout & Velocity Ignition (dP/dt)
+        live_ltp = float(row.get("ltp") or latest_close)
+        live_high = float(row.get("high") or latest["high"])
+        live_open = float(row.get("open") or candles[0]["open"])
+        open_move = ((live_ltp - live_open) / live_open * 100) if live_open > 0 else 0.0
+        elapsed_min = max(5, len(candles) * 5)
+        velocity = (open_move / elapsed_min) * max(1.0, latest_rvol)
+
+        if cascade_info["is_cascade"]:
+            is_breakout = True
+            breakout_status = "Impulse BO"
+            chart_structure = "Impulse Breakout"
+            if not breakout_time:
+                breakout_time = cascade_info["cascade_time"]
+            if not first_breakout_epoch:
+                first_breakout_epoch = latest["timestamp"]
+        elif (live_ltp >= morning_high * 1.001 or live_high >= morning_high * 1.002) and live_ltp >= ema9 and live_ltp >= live_open:
+            is_breakout = True
+            breakout_status = "Impulse BO"
+            chart_structure = "Live Wick Breakout"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
+        elif elapsed_min <= 45 and open_move >= 0.75 and velocity >= 0.05 and live_ltp >= ema9:
+            is_breakout = True
+            breakout_status = "Impulse BO"
+            chart_structure = "Velocity Ignition"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
+        elif latest_close >= morning_high and latest_close >= ema9:
+            is_breakout = True
+            breakout_status = "Breakout"
+            if chart_structure == "Base Building":
+                chart_structure = "Breakout Rally"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
+        elif latest_close >= morning_high * 0.992 or live_ltp >= morning_high * 0.992:
+            breakout_status = "Near BO"
+            if chart_structure == "Base Building":
+                chart_structure = "Testing Resistance"
+
+    else:
+        # Bearish Breakdown condition
+        recent = candles[-min(len(candles), 8):]
+        if len(recent) >= 4:
+            lower_highs = sum(1 for i in range(1, len(recent)) if recent[i]["high"] <= recent[i-1]["high"])
+            lower_lows = sum(1 for i in range(1, len(recent)) if recent[i]["low"] <= recent[i-1]["low"])
+            if lower_highs >= len(recent) * 0.6 and lower_lows >= len(recent) * 0.6:
+                chart_structure = "Lower Lows Slide"
+            elif latest_close <= ema9:
+                chart_structure = "Downtrend on EMA9"
+            else:
+                chart_structure = "Bounce to EMA"
+
+        # Track earliest decisive breakdown from the morning range (origin timestamp)
+        # Requires close <= morning_low * 0.999 to avoid false 10-paise wick resets (e.g. 923.10 vs 923.20)
+        first_breakout_time = None
+        first_breakout_epoch = None
+        for c in trading_candles:
+            if c["close"] <= morning_low * 0.999 or (c["close"] < morning_low and c["low"] <= morning_low * 0.995 and c["close"] <= c["open"]):
+                first_breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = c["timestamp"]
+                break
+
+        if first_breakout_time:
+            breakout_time = first_breakout_time
+
+        # Major Structural Rail Breakdown (PML) - check if price broke 30m ORB rail later
+        if len(candles) >= 6:
+            orb_low = min(c["low"] for c in candles[:6])
+            if latest_close <= orb_low * 1.005:
+                for c in candles[6:]:
+                    if c["low"] <= orb_low * 1.0005 or c["close"] <= orb_low * 1.001:
+                        if not breakout_time:
+                            breakout_time = datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                            first_breakout_epoch = c["timestamp"]
+                        break
+
+        # Early Detection: Live Forming Wick Breakdown & Velocity Ignition Slide (dP/dt)
+        live_ltp = float(row.get("ltp") or latest_close)
+        live_low = float(row.get("low") or latest["low"])
+        live_open = float(row.get("open") or candles[0]["open"])
+        open_move = ((live_ltp - live_open) / live_open * 100) if live_open > 0 else 0.0
+        elapsed_min = max(5, len(candles) * 5)
+        velocity = (open_move / elapsed_min) * max(1.0, latest_rvol)
+
+        if cascade_info["is_cascade"]:
+            is_breakout = True
+            breakout_status = "Waterfall BD"
+            chart_structure = "Active Waterfall"
+            if not breakout_time:
+                breakout_time = cascade_info["cascade_time"]
+            if not first_breakout_epoch:
+                first_breakout_epoch = latest["timestamp"]
+        elif (live_ltp <= morning_low * 0.999 or live_low <= morning_low * 0.998) and live_ltp <= ema9 and live_ltp <= live_open:
+            is_breakout = True
+            breakout_status = "Waterfall BD"
+            chart_structure = "Live Wick Breakdown"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
+        elif elapsed_min <= 45 and open_move <= -0.75 and velocity <= -0.05 and live_ltp <= ema9:
+            is_breakout = True
+            breakout_status = "Waterfall BD"
+            chart_structure = "Velocity Ignition Slide"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
+        elif latest_close <= morning_low and latest_close <= ema9:
+            is_breakout = True
+            breakout_status = "Breakdown"
+            if chart_structure == "Base Building":
+                chart_structure = "Breakdown Slide"
+            if not breakout_time:
+                breakout_time = datetime.fromtimestamp(latest["timestamp"], tz=INDIA_TZ).strftime("%I:%M %p")
+                first_breakout_epoch = latest["timestamp"]
+        elif latest_close <= morning_low * 1.008 or live_ltp <= morning_low * 1.008:
+            breakout_status = "Near BD"
+            if chart_structure == "Base Building":
+                chart_structure = "Testing Support"
+
+    # Session-wide Trend Invalidation Check (Bull/Bear Trap Protection):
+    # A true One-Side Rally candidate must NEVER breach the opposite rail during the session,
+    # nor should it have staged an intraday reversal against the breakout rail.
+    is_failed_trend = False
+    day_high_so_far = max(c["high"] for c in candles) if candles else latest_close
+    day_low_so_far = min(c["low"] for c in candles) if candles else latest_close
+    day_span = day_high_so_far - day_low_so_far
+    range_pos_now = ((latest_close - day_low_so_far) / day_span) if day_span > 0 else 0.5
+
+    if side == "bullish":
+        has_dumped_below_low = any(c["close"] < morning_low for c in trading_candles) or latest_close < morning_low
+        has_pulled_from_high = (latest_close < ema9 * 0.998) and (range_pos_now < 0.60)
+        if (has_dumped_below_low and latest_close < morning_high * 0.998) or has_pulled_from_high:
+            is_failed_trend = True
+            is_breakout = False
+            breakout_status = "Failed Breakout" if has_dumped_below_low else "Pulled from High"
+            chart_structure = "Bull Trap Reversal" if has_dumped_below_low else "Intraday Pullback"
+    elif side == "bearish":
+        has_spiked_above_high = any(c["close"] > morning_high for c in trading_candles) or latest_close > morning_high
+        has_bounced_from_low = (latest_close > ema9 * 1.002) and (range_pos_now > 0.40)
+        if (has_spiked_above_high and latest_close > morning_low * 1.002) or has_bounced_from_low:
+            is_failed_trend = True
+            is_breakout = False
+            breakout_status = "Failed Breakdown" if has_spiked_above_high else "Bounced from Low"
+            chart_structure = "Bear Trap Reversal" if has_spiked_above_high else "Intraday Recovery"
+
+    # 5. Breakout Freshness & Timing Engine (On-Time Actionable Zones)
+    breakout_freshness = "PENDING"
+    breakout_age_minutes = None
+    tight_stop = None
+
+    if is_breakout and first_breakout_epoch:
+        now_ist = datetime.now(INDIA_TZ)
+        current_minutes = now_ist.hour * 60 + now_ist.minute
+        is_live_market = now_ist.weekday() < 5 and (9 * 60 + 15) <= current_minutes <= (15 * 60 + 35)
+
+        is_truly_live_bar = is_live_market and abs(int(now_ist.timestamp()) - latest["timestamp"]) <= 600
+        ref_epoch = int(now_ist.timestamp()) if is_truly_live_bar else (latest["timestamp"] + 300)
+        breakout_close_epoch = first_breakout_epoch + 300
+        breakout_age_minutes = max(0, int((ref_epoch - breakout_close_epoch) / 60))
+
+        # Half-Life / 30-Minute Breakout Expiration Rule:
+        # A breakout is an impulsive event. If >30 minutes have elapsed without fresh extremes,
+        # the breakout status expires and becomes consolidating so stale morning signals do not trap traders.
+        if breakout_age_minutes > 30:
+            recent_2 = candles[-2:] if len(candles) >= 2 else candles
+            has_fresh_extreme = any(c["high"] >= morning_high * 1.001 for c in recent_2) if side == "bullish" else any(c["low"] <= morning_low * 0.999 for c in recent_2)
+            if not has_fresh_extreme:
+                is_breakout = False
+                breakout_status = "Breakout Expired"
+                breakout_freshness = "EXPIRED"
+                breakout_time = None
+
+        if is_breakout and side == "bullish":
+            tight_stop = max(morning_high * 0.996, ema9 * 0.997)
+            move_past_bo_pct = ((latest_close - morning_high) / morning_high) * 100 if morning_high else 0.0
+
+            recent_4 = candles[-min(len(candles), 4):]
+            touched_retest = any(c["low"] <= morning_high * 1.003 or c["low"] <= ema9 * 1.002 for c in recent_4)
+            holding_retest = latest_close >= morning_high * 0.998 and latest_close >= ema9 and latest_close >= latest["open"]
+
+            if breakout_age_minutes <= 15 and move_past_bo_pct <= 1.5:
+                breakout_freshness = "FRESH"
+            elif breakout_age_minutes > 15 and touched_retest and holding_retest:
+                breakout_freshness = "RETEST"
+            elif breakout_age_minutes > 45 or move_past_bo_pct > 2.5:
+                breakout_freshness = "EXTENDED"
+            else:
+                breakout_freshness = "ACTIVE"
+        elif is_breakout:
+            tight_stop = min(morning_low * 1.004, ema9 * 1.003)
+            move_past_bd_pct = ((morning_low - latest_close) / morning_low) * 100 if morning_low else 0.0
+
+            recent_4 = candles[-min(len(candles), 4):]
+            touched_retest = any(c["high"] >= morning_low * 0.997 or c["high"] >= ema9 * 0.998 for c in recent_4)
+            holding_retest = latest_close <= morning_low * 1.002 and latest_close <= ema9 and latest_close <= latest["open"]
+
+            if breakout_age_minutes <= 15 and move_past_bd_pct <= 1.5:
+                breakout_freshness = "FRESH"
+            elif breakout_age_minutes > 15 and touched_retest and holding_retest:
+                breakout_freshness = "RETEST"
+            elif breakout_age_minutes > 45 or move_past_bd_pct > 2.5:
+                breakout_freshness = "EXTENDED"
+            else:
+                breakout_freshness = "ACTIVE"
+    elif "near" in breakout_status.lower():
+        breakout_freshness = "COILING"
+
+    return {
+        "is_breakout": is_breakout,
+        "status": breakout_status,
+        "breakout_time": breakout_time,
+        "rvol_5m": round(latest_rvol, 2),
+        "ema_trend": "bullish" if latest_close >= ema9 else "bearish",
+        "chart_structure": chart_structure,
+        "is_failed_trend": is_failed_trend,
+        "is_cascade": cascade_info["is_cascade"],
+        "cascade_type": cascade_info["cascade_type"],
+        "cascade_time": cascade_info["cascade_time"],
+        "cascade_body_pct": cascade_info["cascade_body_pct"],
+        "cascade_vol_ratio": cascade_info["cascade_vol_ratio"],
+        "breakout_freshness": breakout_freshness,
+        "breakout_age_minutes": breakout_age_minutes,
+        "tight_stop": tight_stop,
+    }
 
 def index_context_note(row: dict[str, Any], side: str, index_context: dict[str, dict[str, Any]]) -> tuple[str, int]:
     available = [item for item in index_context.values() if item.get("percent_change") is not None]
@@ -875,6 +1910,45 @@ def index_context_note(row: dict[str, Any], side: str, index_context: dict[str, 
     if stock_change <= -1.25:
         return f"{note} | stock falling despite firm index", 4
     return f"{note} | market not supportive", -4
+
+
+def compute_money_flow_percentage(
+    row: dict[str, Any],
+    oi: dict[str, Any] | None,
+    *,
+    side: str,
+    vc_ranking: float,
+    sector_alignment: float | None = None,
+) -> float:
+    """Computes money-flow percentage.
+    Prioritizes real Level-2 order-book buying/selling depth from Upstox if authenticated,
+    falling back to derived volume + OI + sector participation proxy.
+    """
+    sym = row.get("symbol")
+    if sym:
+        try:
+            import upstox_provider
+            depth = upstox_provider.fetch_market_depth(sym)
+            if depth and "buying_pressure_pct" in depth:
+                return float(depth["buying_pressure_pct"])
+        except Exception:
+            pass
+
+    score = 0.0
+    score += min(vc_ranking, 3.0) / 3.0 * 45.0
+
+    oi_change = abs(float((oi or {}).get("oi_change_percent") or 0.0))
+    score += min(oi_change, 25.0) / 25.0 * 35.0
+
+    if sector_alignment is not None:
+        score += max(0.0, min(20.0, abs(sector_alignment - 50.0) * 0.4))
+
+    pct_change = row.get("percent_change")
+    if pct_change is not None:
+        direction_match = 1.0 if ((side == "bullish" and pct_change >= 0) or (side == "bearish" and pct_change <= 0)) else 0.0
+        score += direction_match * 10.0
+
+    return round(min(100.0, max(0.0, score)), 1)
 
 
 def calc_stock_activity(row: dict[str, Any], oi: dict[str, Any] | None) -> float:
@@ -917,6 +1991,7 @@ def assess_one_side_rally(
     side: str,
     activity_ratio: float,
     index_context: dict[str, dict[str, Any]],
+    sector_alignment: float | None = None,
 ) -> dict[str, Any]:
     setup = classify_oi(row.get("percent_change"), (oi or {}).get("oi_change"))
     pct_change = row.get("percent_change")
@@ -926,6 +2001,7 @@ def assess_one_side_rally(
     tags: list[str] = []
     blockers: list[str] = []
     score = 0.0
+    score_components: dict[str, float] = {}
 
     # 1. Volume Surge / RVOL Buildup (Max 25 pts)
     if activity_ratio >= 2.5:
@@ -943,33 +2019,33 @@ def assess_one_side_rally(
     else:
         score += 2
 
+    score_components["volume"] = score
     # 2. Day Range Position / Upper Range Hold (Max 25 pts)
     if range_pos is None:
         score += 10
         tags.append("range position unavailable")
     elif side == "bullish":
-        if range_pos >= 0.80:
+        if range_pos >= 0.75:
             score += 25
             tags.append(f"locked near day high ({range_pos*100:.0f}%)")
-        elif range_pos >= MIN_RANGE_EXTREME:
+        elif range_pos >= 0.60:
             score += 18
             tags.append(f"holding upper range ({range_pos*100:.0f}%)")
         elif range_pos >= 0.45:
             score += 8
         else:
-            blockers.append("rejected from day high")
+            blockers.append(f"rejected from day high (range position {range_pos*100:.0f}%)")
     else:
-        if range_pos <= 0.20:
+        if range_pos <= 0.15:
             score += 25
             tags.append(f"locked near day low ({range_pos*100:.0f}%)")
-        elif range_pos <= (1 - MIN_RANGE_EXTREME):
+        elif range_pos <= 0.25:
             score += 18
             tags.append(f"holding lower range ({range_pos*100:.0f}%)")
-        elif range_pos <= 0.55:
-            score += 8
         else:
-            blockers.append("rejected from day low")
+            blockers.append(f"rejected from day low (bounced {range_pos*100:.0f}% off low)")
 
+    score_components["range_hold"] = score - sum(score_components.values())
     # 3. Move from Open (Max 20 pts)
     if open_move is None:
         tags.append("open move unavailable")
@@ -992,7 +2068,13 @@ def assess_one_side_rally(
         elif open_move > 0:
             blockers.append("trading above session open")
 
+    score_components["move_from_open"] = score - sum(score_components.values())
     # 4. Open Interest Setup & Squeeze Potential (Max 20 pts)
+    is_v_reversal = (
+        open_move is not None
+        and ((side == "bullish" and open_move >= 0.5) or (side == "bearish" and open_move <= -0.5))
+    )
+
     if side == "bullish":
         if setup == "Long buildup":
             score += 20
@@ -1004,6 +2086,16 @@ def assess_one_side_rally(
             else:
                 score += 15
                 tags.append("short covering rally")
+        elif setup in ("Volume / Price Lead", "OI not confirmed", "Flat OI"):
+            if activity_ratio >= 1.2:
+                score += 15
+                tags.append("volume-driven rally")
+            else:
+                score += 10
+                tags.append("price momentum lead")
+        elif is_v_reversal and open_move >= 0.5:
+            score += 18
+            tags.append("bear-trap reversal rally")
         else:
             blockers.append("OI setup not bullish")
     else:
@@ -1017,6 +2109,16 @@ def assess_one_side_rally(
             else:
                 score += 15
                 tags.append("long unwinding slide")
+        elif setup in ("Volume / Price Lead", "OI not confirmed", "Flat OI"):
+            if activity_ratio >= 1.2:
+                score += 15
+                tags.append("volume-driven slide")
+            else:
+                score += 10
+                tags.append("downside price lead")
+        elif is_v_reversal and open_move <= -0.5:
+            score += 18
+            tags.append("bull-trap reversal slide")
         else:
             blockers.append("OI setup not bearish")
 
@@ -1026,6 +2128,7 @@ def assess_one_side_rally(
     elif oi_change_percent >= 6:
         score += 3
 
+    score_components["oi_setup_and_expansion"] = score - sum(score_components.values())
     # 5. Price Momentum (Max 10 pts)
     if pct_change is None:
         blockers.append("price change unavailable")
@@ -1038,10 +2141,16 @@ def assess_one_side_rally(
             tags.append("clean price momentum")
         elif pct_change >= MIN_BULLISH_CHANGE:
             score += 4
+        elif is_v_reversal and open_move >= 0.5:
+            score += 6
+            tags.append(f"v-reversal from open (+{open_move:.2f}%)")
         else:
             blockers.append(f"price move below +{MIN_BULLISH_CHANGE:.2f}%")
     else:
-        if pct_change <= -2.5:
+        # Rule 1: Anti-Exhaustion Gap Cap (Never short stocks already down > 3.50% at open unless actively driving intraday)
+        if pct_change <= -3.50 and (open_move is None or open_move > -2.0):
+            blockers.append(f"gap-down exhaustion ({pct_change:.2f}%) - high bounce trap risk")
+        elif pct_change <= -2.0:
             score += 10
             tags.append("strong downside expansion")
         elif pct_change <= -1.2:
@@ -1049,13 +2158,75 @@ def assess_one_side_rally(
             tags.append("clean downside momentum")
         elif pct_change <= MIN_BEARISH_CHANGE:
             score += 4
+        elif is_v_reversal and open_move <= -0.5:
+            score += 6
+            tags.append(f"v-reversal below open ({open_move:.2f}%)")
         else:
             blockers.append(f"price move above {MIN_BEARISH_CHANGE:.2f}%")
 
+    score_components["price_momentum"] = score - sum(score_components.values())
     # 6. Index Context Score (Max 8 pts)
     note, index_score = index_context_note(row, side, index_context)
     score += index_score
+    score_components["index_context"] = index_score
     tags.append(note)
+
+    sym = row.get("symbol", "")
+    sector_name = get_sector(sym)
+
+    # Layer 2: Macro Market Movement Analysis (Never block running stocks!)
+    nifty = index_context.get("NIFTY 50", {})
+    bank = index_context.get("NIFTY BANK", {})
+    nifty_pct = nifty.get("percent_change")
+    bank_pct = bank.get("percent_change")
+
+    if nifty_pct is not None:
+        if side == "bullish":
+            if nifty_pct >= 0.20:
+                score += 5
+                tags.append(f"market tailwind (NIFTY {nifty_pct:+.2f}%)")
+            elif nifty_pct <= -0.20:
+                tags.append(f"independent relative strength (running against red NIFTY {nifty_pct:+.2f}%)")
+        else:  # bearish
+            if nifty_pct <= -0.20:
+                score += 5
+                tags.append(f"market breakdown tailwind (NIFTY {nifty_pct:+.2f}%)")
+            elif nifty_pct >= 0.20:
+                tags.append(f"independent relative weakness (cracking against green NIFTY {nifty_pct:+.2f}%)")
+
+    if bank_pct is not None and sector_name in ("Banks", "Fin Serv"):
+        if side == "bullish" and bank_pct >= 0.20:
+            score += 3
+            tags.append(f"banking tailwind (BANKNIFTY {bank_pct:+.2f}%)")
+        elif side == "bearish" and bank_pct <= -0.20:
+            score += 3
+            tags.append(f"banking slide tailwind (BANKNIFTY {bank_pct:+.2f}%)")
+
+    # Layer 3: Micro Sector Movement Analysis (Never block running stocks!)
+    if sector_alignment is not None:
+        if side == "bullish":
+            if sector_alignment >= 70.0:
+                score += 5
+                tags.append(f"sector tailwind ({sector_name} {sector_alignment:.0f}% bullish)")
+            elif sector_alignment < 45.0:
+                score -= 3
+                tags.append(f"standalone idiosyncratic rally ({sector_name} {sector_alignment:.0f}% aligned)")
+        else:
+            if sector_alignment >= 70.0:
+                score += 5
+                tags.append(f"sector breakdown ({sector_name} {sector_alignment:.0f}% bearish)")
+            elif sector_alignment < 45.0:
+                score -= 3
+                tags.append(f"standalone idiosyncratic breakdown ({sector_name} {sector_alignment:.0f}% aligned)")
+
+    # Layer 4: Heavyweight Context Tagging (Never block running heavyweights!)
+    INDEX_HEAVYWEIGHTS = {
+        "RELIANCE", "TCS", "HINDUNILVR", "ICICIBANK", "NESTLEIND", "BHARTIARTL", "SBIN",
+        "ASIANPAINT", "TATACONSUM", "TITAN", "MARUTI", "M&M", "EICHERMOT",
+        "HAL", "CIPLA", "TECHM", "HCLTECH", "BAJAJ-AUTO", "BAJAJFINSV", "LT"
+    }
+    if sym in INDEX_HEAVYWEIGHTS:
+        tags.append("index heavyweight runner")
 
     score_int = int(round(max(0, min(100, score))))
     is_priority = score_int >= 75 and (range_pos is None or range_pos >= 0.55 if side == "bullish" else range_pos <= 0.45) and (activity_ratio >= 0.8 or score_int >= 85)
@@ -1072,11 +2243,17 @@ def assess_one_side_rally(
         "index_context": note,
         "quality_tags": tags,
         "blockers": blockers,
+        "score_components": score_components,
         "is_one_side": one_side,
     }
 
 
-def build_trade_levels(row: dict[str, Any], *, side: str) -> tuple[float | None, float | None, float | None, str]:
+def build_trade_levels(
+    row: dict[str, Any],
+    *,
+    side: str,
+    bo_info: dict[str, Any] | None = None
+) -> tuple[float | None, float | None, float | None, str]:
     ltp = row.get("ltp")
     high = row.get("high")
     low = row.get("low")
@@ -1086,21 +2263,43 @@ def build_trade_levels(row: dict[str, Any], *, side: str) -> tuple[float | None,
 
     buffer = max(round(ltp * 0.0008, 2), 0.5)
     if side == "bullish":
-        entry = round((high if high is not None else ltp) + buffer, 2)
-        base_stop = low if low is not None else min(open_price or ltp, ltp - buffer)
-        # Cap risk between 0.6% and 1.2%
-        risk = max(min(entry - base_stop, ltp * 0.012), max(ltp * 0.006, 2.0))
-        stop = round(entry - risk, 2)
-        target = round(entry + (risk * 1.7), 2)
-        plan = f"Buy breakout above ₹{entry} | SL ₹{stop} ({(risk/entry*100):.2f}%) | Tgt ₹{target}"
+        entry = round((ltp if ltp is not None else high) + buffer, 2)
+        tight = bo_info.get("tight_stop") if bo_info else None
+        if tight and tight < entry:
+            risk = entry - tight
+            if risk < ltp * 0.004:
+                stop = round(entry - max(ltp * 0.005, 3.0), 2)
+            elif risk > ltp * 0.015:
+                stop = round(entry - (ltp * 0.008), 2)
+            else:
+                stop = round(tight, 2)
+        else:
+            base_stop = low if low is not None else min(open_price or ltp, ltp - buffer)
+            risk = min(max(entry - base_stop, max(ltp * 0.004, 3.0)), ltp * 0.010)
+            stop = round(entry - risk, 2)
+
+        final_risk = max(entry - stop, max(ltp * 0.003, 1.0))
+        target = round(entry + (final_risk * 1.5), 2)
+        plan = "Buy on confirmed breakout; Target 1 (+1.5%); trail SL to Breakeven once +1.2% reached; SL below EMA9."
     else:
-        entry = round((low if low is not None else ltp) - buffer, 2)
-        base_stop = high if high is not None else max(open_price or ltp, ltp + buffer)
-        # Cap risk between 0.6% and 1.2%
-        risk = max(min(base_stop - entry, ltp * 0.012), max(ltp * 0.006, 2.0))
-        stop = round(entry + risk, 2)
-        target = round(entry - (risk * 1.7), 2)
-        plan = f"Sell breakdown below ₹{entry} | SL ₹{stop} ({(risk/entry*100):.2f}%) | Tgt ₹{target}"
+        entry = round((ltp if ltp is not None else low) - buffer, 2)
+        tight = bo_info.get("tight_stop") if bo_info else None
+        if tight and tight > entry:
+            risk = tight - entry
+            if risk < ltp * 0.004:
+                stop = round(entry + max(ltp * 0.005, 3.0), 2)
+            elif risk > ltp * 0.015:
+                stop = round(entry + (ltp * 0.008), 2)
+            else:
+                stop = round(tight, 2)
+        else:
+            base_stop = high if high is not None else max(open_price or ltp, ltp + buffer)
+            risk = min(max(base_stop - entry, max(ltp * 0.004, 3.0)), ltp * 0.010)
+            stop = round(entry + risk, 2)
+
+        final_risk = max(stop - entry, max(ltp * 0.003, 1.0))
+        target = round(entry - (final_risk * 1.5), 2)
+        plan = "Sell on confirmed breakdown; Target 1 (-1.5%); trail SL to Breakeven once -1.2% reached; SL above EMA9."
     return entry, stop, target, plan
 
 
@@ -1121,14 +2320,48 @@ def build_suggestions(
     side: str,
     top: int,
     index_context: dict[str, dict[str, Any]],
+    candles_by_symbol: dict[str, list[dict[str, Any]]] | None = None,
+    audit: list[dict[str, Any]] | None = None,
+    market_universe: list[dict[str, Any]] | None = None,
+    scan_session_date: date | None = None,
 ) -> tuple[list[Suggestion], int]:
+    def record(row, decision_reason, **details):
+        if audit is not None:
+            audit.append({"symbol": row["symbol"], "side": side,
+                          "setup": classify_oi(row.get("percent_change"), (oi_by_symbol.get(row["symbol"]) or {}).get("oi_change")),
+                          "ltp": row.get("ltp"), "percent_change": row.get("percent_change"),
+                          "volume": row.get("volume"), "qualified": False,
+                          "included_in_payload": False, **details, "reason": decision_reason})
+
+    for row in rows:
+        symbol = row["symbol"]
+        lot_size = get_fo_lot_size(symbol)
+        ltp = float(row.get("ltp") or 0.0)
+        if symbol in INDEX_LIKE_SYMBOLS:
+            record(row, "index_symbol_excluded")
+        elif lot_size <= 0:
+            record(row, "non_fno_symbol_excluded")
+        elif lot_size > MAX_ALLOWED_LOT_SIZE:
+            record(row, "lot_size_above_limit", lot_size=lot_size)
+        elif ltp > 0 and (ltp < MIN_ALLOWED_STOCK_PRICE or ltp > MAX_ALLOWED_STOCK_PRICE):
+            record(row, "stock_price_outside_limit", ltp=ltp)
     matched_rows = [
         row for row in rows
-        if row["symbol"] in oi_by_symbol
-        and row["symbol"] not in INDEX_LIKE_SYMBOLS
-        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+        if row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and 0 < get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+        and (float(row.get("ltp") or 0.0) <= 0 or MIN_ALLOWED_STOCK_PRICE <= float(row.get("ltp") or 0.0) <= MAX_ALLOWED_STOCK_PRICE)
     ]
     
+    # Load previous scan Top 5 symbols for hysteresis anti-flicker protection
+    prev_top5_symbols = set()
+    try:
+        if OUTPUT_PATH.exists():
+            prev_data = json.loads(OUTPUT_PATH.read_text(encoding="utf-8"))
+            prev_side_items = prev_data.get(side, []) or []
+            prev_top5_symbols = {it.get("symbol") for it in prev_side_items[:5] if it.get("symbol")}
+    except Exception:
+        prev_top5_symbols = set()
+
     # Calculate activities across candidates to compute true relative volume (RVOL)
     activities = [calc_stock_activity(r, oi_by_symbol.get(r["symbol"])) for r in matched_rows]
     pos_acts = sorted([a for a in activities if a > 0])
@@ -1138,69 +2371,153 @@ def build_suggestions(
     else:
         median_act = 1.0
 
-    # Fetch 5-minute candles concurrently for all candidate symbols
-    candles_by_symbol: dict[str, list[dict[str, Any]]] = {}
+    # Fetch 5-minute candles for all candidate symbols. A caller can pass a
+    # shared dict so both sides of one scan reuse a single download; anything
+    # missing is filled here (served from the short-TTL cache when possible).
+    if candles_by_symbol is None:
+        candles_by_symbol = {}
     candidate_symbols = [r["symbol"] for r in matched_rows]
     if candidate_symbols:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(candidate_symbols), 8)) as executor:
-            future_to_sym = {executor.submit(fetch_5m_candles_for_symbol, sym): sym for sym in candidate_symbols}
-            try:
-                for future in concurrent.futures.as_completed(future_to_sym, timeout=12.0):
-                    sym = future_to_sym[future]
-                    try:
-                        candles_by_symbol[sym] = future.result()
-                    except Exception:
-                        candles_by_symbol[sym] = []
-            except Exception:
-                pass  # Gracefully handle any slow timeouts without crashing
+        bulk_fetch_candles(candidate_symbols, candles_by_symbol)
 
-            for future, sym in future_to_sym.items():
-                if sym not in candles_by_symbol:
-                    if future.done() and not future.cancelled():
-                        try:
-                            candles_by_symbol[sym] = future.result()
-                        except Exception:
-                            candles_by_symbol[sym] = []
-                    else:
-                        candles_by_symbol[sym] = []
+    # Compute true sector alignment across the broader market universe once,
+    # rather than with a single-stock list inside the loop (which broke money flow).
+    universe_for_sector = market_universe if market_universe is not None else rows
+    sector_alignments = compute_sector_alignment(universe_for_sector)
 
     suggestions: list[Suggestion] = []
+    assessments: dict[str, dict[str, Any]] = {}
+    breakout_assessments: dict[str, dict[str, Any]] = {}
     for row in matched_rows:
         symbol = row["symbol"]
-        oi = oi_by_symbol[symbol]
+        oi = oi_by_symbol.get(symbol, {})
         row_act = calc_stock_activity(row, oi)
         activity_ratio = (row_act / median_act) if median_act > 0 else 1.0
         vc_ranking = round(max(0.1, activity_ratio), 2)
+        # Dynamic VC threshold: running stocks (>=0.65% move) only require 0.25 VC so mid-caps are never blocked
+        effective_min_vc = 0.25 if abs(row.get("percent_change") or 0.0) >= 0.65 else MIN_VC_RANKING
+        if vc_ranking <= effective_min_vc:
+            record(row, "volume_confluence_below_minimum", vc_ranking=vc_ranking)
+            continue
+
+        stock_sector_align = sector_alignments.get(symbol, 50.0)
+        money_flow_percentage = compute_money_flow_percentage(
+            row,
+            oi,
+            side=side,
+            vc_ranking=vc_ranking,
+            sector_alignment=stock_sector_align,
+        )
 
         setup = classify_oi(row.get("percent_change"), oi.get("oi_change"))
         base_score = calc_score(row, oi, side=side, activity_ratio=activity_ratio)
-        rally = assess_one_side_rally(row, oi, side=side, activity_ratio=activity_ratio, index_context=index_context)
+        rally = assess_one_side_rally(
+            row,
+            oi,
+            side=side,
+            activity_ratio=activity_ratio,
+            index_context=index_context,
+            sector_alignment=stock_sector_align,
+        )
+        assessments[symbol] = rally
         if not rally["is_one_side"]:
+            record(row, "rally_gate_failed", rally=rally, base_score=base_score, vc_ranking=vc_ranking)
             continue
 
-        # 5-Minute Breakout Analysis
+        # 5-Minute Breakout Analysis & 1-Minute Institutional Block Surge Radar
         sym_candles = candles_by_symbol.get(symbol, [])
-        bo_info = analyze_5m_breakout(sym_candles, side, row, activity_ratio)
+        latest_bar = datetime.fromtimestamp(sym_candles[-1]["timestamp"], tz=INDIA_TZ) if sym_candles else None
+        fresh_block = None
+        if latest_bar and (scan_session_date is None or latest_bar.date() == scan_session_date):
+            fresh_block = latest_fresh_order_block(sym_candles, bullish=side == "bullish")
+        sym_1m_candles = _CANDLE_1M_CACHE.get(symbol, (0, []))[1]
+
+        surge_info = detect_institutional_block_surge(
+            symbol=symbol,
+            candles_1m=sym_1m_candles,
+            candles_5m=sym_candles,
+            side=side,
+            row=row,
+        )
+
+        bo_info = analyze_5m_breakout(sym_candles, side, row)
+        bo_info["latest_candle_at_ist"] = latest_bar.isoformat() if latest_bar else None
+        breakout_assessments[symbol] = bo_info
         five_min_status = bo_info["status"]
         breakout_time = bo_info["breakout_time"]
         is_breakout = bo_info["is_breakout"]
 
-        # If it dropped below PML (Bullish) or above PMH (Bearish), it failed its trend.
+        # If institutional block surge arrived on forming/1m bar, upgrade status ONLY if price is at breakout rail
+        if surge_info.get("is_block_surge"):
+            live_ltp_check = float(row.get("ltp") or 0.0)
+            morning_high_check = sym_candles[0]["high"] if sym_candles else live_ltp_check
+            morning_low_check = sym_candles[0]["low"] if sym_candles else live_ltp_check
+            at_rail = (live_ltp_check >= morning_high_check * 0.997) if side == "bullish" else (live_ltp_check <= morning_low_check * 1.003)
+            if at_rail:
+                is_breakout = True
+                if not breakout_time:
+                    breakout_time = surge_info.get("block_surge_time")
+            if five_min_status.lower() == "consolidating":
+                five_min_status = "Block Surge" if at_rail else "Consolidating"
+
+        # If it dropped below PML (Bullish) or above PMH (Bearish) or reversed off extreme, it failed its trend.
         if bo_info.get("is_failed_trend"):
+            record(row, "trend_invalidated", rally=rally, breakout=bo_info, vc_ranking=vc_ranking)
             continue
 
-        # Boost score and tag if active 5m breakout / retest is confirmed
+        # Must be trading beyond today's opening-range high/low (PMH/PML - same
+        # first-6-candle level the chart draws in blue) AND beyond yesterday's
+        # close - drops a stock still sitting inside this morning's range or
+        # still on the wrong side of prev close, even if %-change looks
+        # positive/negative on paper. Skipped only when too few candles exist
+        # yet to judge (not excluded - same "not yet known" philosophy used
+        # elsewhere), not applied as a silent exclusion.
+        if len(sym_candles) >= 6:
+            orb_check_high = max(c["high"] for c in sym_candles[:6])
+            orb_check_low = min(c["low"] for c in sym_candles[:6])
+            ltp_check = row.get("ltp")
+            prev_close_check = row.get("prev_close")
+            # Hysteresis buffer for already-ranked stocks or high-conviction runners prevents 2-minute minor tick drop
+            is_already_top5 = symbol in prev_top5_symbols
+            is_high_conviction = rally["score"] >= 75
+            tolerance_pct = 1.0 if (is_already_top5 or is_high_conviction) else PMH_PML_TOLERANCE_PCT
+            if side == "bullish":
+                bullish_floor = orb_check_high * (1 - tolerance_pct / 100)
+                if ltp_check is None or ltp_check < bullish_floor:
+                    record(row, "below_opening_range_floor", rally=rally, breakout=bo_info, required_level=bullish_floor)
+                    continue
+                if prev_close_check is not None and ltp_check <= prev_close_check:
+                    record(row, "not_above_previous_close", rally=rally, breakout=bo_info)
+                    continue
+            else:
+                bearish_ceiling = orb_check_low * (1 + tolerance_pct / 100)
+                if ltp_check is None or ltp_check > bearish_ceiling:
+                    record(row, "above_opening_range_ceiling", rally=rally, breakout=bo_info, required_level=bearish_ceiling)
+                    continue
+                if prev_close_check is not None and ltp_check >= prev_close_check:
+                    record(row, "not_below_previous_close", rally=rally, breakout=bo_info)
+                    continue
+
+        # Anti-Disappear Rule: Keep active Breakout/Breakdown, Near BO/Near BD, and confirmed runners in pullback.
+        # Only drop low-scoring consolidating stocks that never triggered a breakout.
+        has_earlier_breakout = bool(breakout_time or bo_info.get("breakout_time"))
+        is_high_conviction = rally["score"] >= 75
+        if (five_min_status.lower() == "consolidating" and fresh_block is None
+                and not surge_info.get("is_block_surge") and not has_earlier_breakout and not is_high_conviction):
+            record(row, "consolidating", rally=rally, breakout=bo_info)
+            continue
+
+        # Boost score and tag if active institutional block surge, 3-bar cascade or 5m breakout is confirmed
         rally_score = rally["score"]
         quality_tags = list(rally["quality_tags"])
-        retest_stat = bo_info.get("retest_status", "Initial")
-        if retest_stat == "Confirmed":
-            rally_score = min(100, rally_score + 10)
-            quality_tags.insert(0, f"Retest Confirmed ({breakout_time})")
-        elif retest_stat == "Fresh":
-            rally_score = min(100, rally_score + 10)
-            quality_tags.insert(0, f"⚡ Fresh Breakout ({breakout_time})")
-        elif retest_stat == "Extended":
-            quality_tags.insert(0, f"Extended ({breakout_time}) - Wait Retest")
+        if surge_info.get("is_block_surge"):
+            rally_score = min(100, rally_score + 20)
+            stype = surge_info.get("block_surge_type") or "⚡ BLOCK SURGE"
+            quality_tags.insert(0, f"{stype} ({surge_info.get('block_surge_time') or 'Active'}, ₹{surge_info.get('block_surge_turnover_cr', 0):.1f}Cr, {surge_info.get('block_surge_rvol', 1):.0f}x vol)")
+        if bo_info.get("is_cascade"):
+            rally_score = min(100, rally_score + 15)
+            c_label = "3-Bar Waterfall" if side == "bearish" else "3-Bar Impulse"
+            quality_tags.insert(0, f"⚡ {c_label} ({bo_info.get('cascade_time') or 'Active'}, {bo_info.get('cascade_body_pct', 0):.0f}% body)")
         elif is_breakout:
             rally_score = min(100, rally_score + 8)
             quality_tags.insert(0, f"5m Breakout ({breakout_time or 'Active'})")
@@ -1208,16 +2525,26 @@ def build_suggestions(
             quality_tags.insert(0, five_min_status)
         elif "near" in five_min_status.lower():
             quality_tags.insert(0, "Near 5m Breakout")
+        elif bo_info.get("no_candle_data"):
+            quality_tags.insert(0, "5m data pending (kept on OI + rally strength)")
 
-        if bo_info.get("entry") and bo_info.get("stop"):
-            entry = bo_info["entry"]
-            stop = bo_info["stop"]
-            target = bo_info.get("target") or round(entry + (1.7 * abs(entry - stop) if side == "bullish" else -1.7 * abs(entry - stop)), 2)
-            risk_pct = round(abs(entry - stop) / entry * 100, 2)
-            lvl_name = bo_info.get("level_kind") or "Breakout"
-            plan = f"{side.capitalize()} {lvl_name} @ ₹{entry} | SL ₹{stop} ({risk_pct}%) | Tgt ₹{target}"
-        else:
-            entry, stop, target, plan = build_trade_levels(row, side=side)
+        # Freshness bonuses / penalties for on-time prioritization
+        freshness = bo_info.get("breakout_freshness", "PENDING")
+        age_m = bo_info.get("breakout_age_minutes")
+        if freshness == "FRESH":
+            rally_score = min(100, rally_score + 10)
+            age_str = f"{age_m}m ago" if age_m is not None else "Just now"
+            quality_tags.insert(0, f"⚡ Fresh Breakout ({age_str})")
+        elif freshness == "RETEST":
+            rally_score = min(100, rally_score + 8)
+            quality_tags.insert(0, "🔄 Retest Hold")
+        elif freshness == "EXTENDED":
+            rally_score = max(50, rally_score - 8)
+            quality_tags.append("⚠️ Extended (Late move)")
+        elif freshness == "COILING":
+            quality_tags.insert(0, "⏳ Coiling Near Rail")
+
+        entry, stop, target, plan = build_trade_levels(row, side=side, bo_info=bo_info)
         oi_change_percent = oi.get("oi_change_percent")
         oi_change = oi.get("oi_change")
         display_volume = row.get("volume") or oi.get("volume_contracts")
@@ -1248,6 +2575,35 @@ def build_suggestions(
         if display_volume is not None:
             reason_parts.append(f"volume {int(display_volume):,}")
 
+        status_val = rally["status"] or status_from_score(rally_score, setup)
+        if (bo_info.get("is_cascade") or surge_info.get("is_block_surge")) and rally_score >= 65:
+            status_val = "Priority Rally"
+
+        is_demand_fresh = fresh_block is not None and side == "bullish"
+        is_supply_zone = fresh_block is not None and side == "bearish"
+        zone_time = None
+        zone_range = ""
+        if fresh_block is not None:
+            zone_time = datetime.fromtimestamp(
+                fresh_block["formation_time"], tz=INDIA_TZ
+            ).strftime("%I:%M %p")
+            zone_range = f"₹{fresh_block['bottom']:.2f}-₹{fresh_block['top']:.2f} (Fresh)"
+            label = "🟢 DEMAND" if is_demand_fresh else "🔴 BEAR OB"
+            quality_tags.insert(0, f"{label} · FRESH ({zone_range}) [{zone_time}]")
+            rally_score = min(100, rally_score + 10)
+
+        demand_zone_str = zone_range if is_demand_fresh else ""
+        demand_fresh_time = zone_time if is_demand_fresh else None
+        supply_zone_str = zone_range if is_supply_zone else ""
+        supply_zone_time = zone_time if is_supply_zone else None
+        bell_rang = fresh_block is not None
+
+        _high, _low, _prev_close = row.get("high"), row.get("low"), row.get("prev_close")
+        day_range_percent = (
+            round(((_high - _low) / _prev_close) * 100, 2)
+            if (_high is not None and _low is not None and _prev_close) else None
+        )
+
         suggestions.append(
             Suggestion(
                 symbol=symbol,
@@ -1271,33 +2627,59 @@ def build_suggestions(
                 move_from_open_percent=rally["move_from_open_percent"],
                 index_context=rally["index_context"],
                 quality_tags=quality_tags,
-                status="Priority Rally" if (is_breakout and rally_score >= 75) else (rally["status"] or status_from_score(rally_score, setup)),
+                status=status_val,
                 reason=" | ".join(reason_parts),
                 vc_ranking=vc_ranking,
                 mp_score=mp_score,
+                money_flow_percentage=money_flow_percentage,
                 five_min_status=five_min_status,
                 breakout_time=breakout_time,
                 is_breakout=is_breakout,
                 chart_structure=bo_info.get("chart_structure", "Base Building"),
                 rvol_5m=bo_info.get("rvol_5m", 1.0),
                 ema_trend=bo_info.get("ema_trend", "neutral"),
-                vwap=bo_info.get("vwap"),
-                retest_status=bo_info.get("retest_status", "Initial"),
                 lot_size=get_fo_lot_size(symbol),
+                bell_rang=bell_rang,
+                day_range_percent=day_range_percent,
+                prev_close=row.get("prev_close"),
+                is_cascade=bool(bo_info.get("is_cascade")),
+                cascade_type=bo_info.get("cascade_type"),
+                cascade_time=bo_info.get("cascade_time"),
+                cascade_body_pct=float(bo_info.get("cascade_body_pct") or 0.0),
+                cascade_vol_ratio=float(bo_info.get("cascade_vol_ratio") or 1.0),
+                breakout_freshness=bo_info.get("breakout_freshness", "PENDING"),
+                breakout_age_minutes=bo_info.get("breakout_age_minutes"),
+                is_block_surge=bool(surge_info.get("is_block_surge")),
+                block_surge_type=surge_info.get("block_surge_type"),
+                block_surge_time=surge_info.get("block_surge_time"),
+                block_surge_turnover_cr=float(surge_info.get("block_surge_turnover_cr") or 0.0),
+                block_surge_rvol=float(surge_info.get("block_surge_rvol") or 1.0),
+                is_demand_fresh=is_demand_fresh,
+                demand_zone=demand_zone_str,
+                demand_fresh_time=demand_fresh_time,
+                is_supply_zone=is_supply_zone,
+                supply_zone=supply_zone_str,
+                supply_zone_time=supply_zone_time,
+                sector=get_sector(symbol),
+                sector_alignment=round(float(stock_sector_align if stock_sector_align is not None else 50.0), 1),
             )
         )
 
-    # Priority Sort:
-    # Tier 1 (Top): Active 5-Minute Breakouts (is_breakout=True)
-    # Tier 2 (Middle): Near Breakouts (Near BO / Near BD)
-    # Tier 3 (Base): Other valid candidates
-    # Within each tier: sorted by Volume Multiplier (VC Ranking) × Rally Score descending, then % Change
-    # Sort strictly by Percentage Change (Highest % gainers on top for Bullish, Largest % drop on top for Bearish)
-    if side == "bullish":
-        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else -9999, reverse=True)
-    else:
-        suggestions.sort(key=lambda item: item.percent_change if item.percent_change is not None else 9999)
+    direction = -1 if side == "bullish" else 1
+    suggestions.sort(key=lambda item: (
+        item.percent_change is None, direction * (item.percent_change or 0)
+    ))
 
+    if audit is not None:
+        for index, item in enumerate(suggestions, start=1):
+            record({"symbol": item.symbol, "ltp": item.ltp, "percent_change": item.percent_change,
+                    "volume": item.volume}, "included" if index <= top else "payload_rank_limit",
+                   **{**item.to_dict(), "side": side, "qualified": True,
+                      "rank": index, "included_in_payload": index <= top,
+                      "rally": assessments[item.symbol],
+                      "breakout": breakout_assessments[item.symbol],
+                      "scanner_reason": item.reason,
+                      "breakout_bonus": 8 if item.is_breakout else 0})
     ranked = suggestions[:top]
     return [
         Suggestion(**{**item.to_dict(), "rank": index})
@@ -1309,6 +2691,8 @@ def phase_for_time(now_ist: datetime) -> str:
     current = now_ist.time()
     if current < MARKET_OPEN:
         return "Pre-open: waiting for NSE 09:15 data"
+    if current < time(9, 20):
+        return "Opening Discovery: awaiting 09:20 Candle 1 settlement"
     if MARKET_OPEN <= current < SUGGESTION_READY:
         return "Building opening scan: analyze until 10:00"
     if SUGGESTION_READY <= current <= MARKET_CLOSE:
@@ -1316,36 +2700,1709 @@ def phase_for_time(now_ist: datetime) -> str:
     return "Market closed: today's list is archived/reset on next session"
 
 
-def build_payload(top: int) -> dict[str, Any]:
+def _passes_base_filter(symbol: str, oi_by_symbol: dict[str, dict[str, Any]] | None = None, ltp: float | None = None) -> bool:
+    lot = get_fo_lot_size(symbol)
+    if symbol in INDEX_LIKE_SYMBOLS or not (0 < lot <= MAX_ALLOWED_LOT_SIZE):
+        return False
+    if ltp is not None and ltp > 0 and not (MIN_ALLOWED_STOCK_PRICE <= ltp <= MAX_ALLOWED_STOCK_PRICE):
+        return False
+    return True
+
+
+CANDIDATE_LIFECYCLE_PATH = INPUT_DIR / "candidate_lifecycle.json"
+
+
+def _lifecycle_paths() -> tuple[Path, Path, Path]:
+    base = CANDIDATE_LIFECYCLE_PATH
+    bak = base.with_name(f"{base.stem}.bak")
+    lock = base.with_name(f"{base.stem}.lock")
+    return base, bak, lock
+
+
+@contextlib.contextmanager
+def _lifecycle_file_lock():
+    base, bak, lock = _lifecycle_paths()
+    base.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = open(lock, "a+")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
+        lock_file.close()
+
+
+def _load_lifecycle_state() -> dict[str, Any]:
+    base, bak, _ = _lifecycle_paths()
+    if base.exists():
+        try:
+            content = base.read_text(encoding="utf-8")
+            if content.strip():
+                return json.loads(content)
+        except Exception as exc:
+            print(f"[lifecycle] Primary state corrupted ({exc}), attempting backup...", file=sys.stderr)
+            if bak.exists():
+                try:
+                    bak_content = bak.read_text(encoding="utf-8")
+                    if bak_content.strip():
+                        print("[lifecycle] Successfully recovered state from backup file.", file=sys.stderr)
+                        return json.loads(bak_content)
+                except Exception as bak_exc:
+                    print(f"[lifecycle] Backup state also unreadable ({bak_exc}).", file=sys.stderr)
+
+    return {"session_date": None, "candidates": {}}
+
+
+def _save_lifecycle_state(state: dict[str, Any]) -> None:
+    try:
+        base, bak, _ = _lifecycle_paths()
+        base.parent.mkdir(parents=True, exist_ok=True)
+        # 1. Update backup copy if valid primary file currently exists
+        if base.exists():
+            try:
+                raw_primary = base.read_text(encoding="utf-8")
+                if raw_primary.strip():
+                    bak.write_text(raw_primary, encoding="utf-8")
+            except Exception:
+                pass
+
+        # 2. Atomic write of primary file using unique temporary file + os.replace
+        temp_path = base.with_name(
+            f"{base.name}.{os.getpid()}.{_time.time_ns()}.tmp"
+        )
+        temp_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        os.replace(temp_path, base)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[lifecycle] save skipped: {exc}", file=sys.stderr)
+
+
+def _parse_time_minutes(time_str: str | None) -> int:
+    """Parses 'HH:MM AM/PM' or 'HH:MM:SS' into minutes from midnight."""
+    if not time_str or not isinstance(time_str, str):
+        return -1
+    s = time_str.strip().upper()
+    try:
+        if "AM" in s or "PM" in s:
+            dt = datetime.strptime(s, "%I:%M %p")
+            return dt.hour * 60 + dt.minute
+        parts = s.split(":")
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return -1
+
+
+def evaluate_direction_evidence(item: Suggestion, opposite_item: Suggestion) -> float:
+    """Computes an evidence score for resolving concurrent bullish/bearish collisions.
+    Evidence hierarchy:
+    1. Invalidation of old setup (if opposite is failed_trend, candidate gets +1000 pts).
+    2. Completed-bar structure strength (Waterfall/Impulse cascade: +60 pts, Clean BO: +40 pts).
+    3. Newest confirmed reversal timestamp (recency: more recent breakout/cascade wins).
+    4. Confirmation / quality score (one_side_rally_score / score + volume activity).
+    5. Net percentage change magnitude as final tie-breaker."""
+    score = 0.0
+
+    # 1. Invalidation of old setup
+    if getattr(opposite_item, "is_failed_trend", False):
+        score += 1000.0
+    if getattr(item, "is_failed_trend", False):
+        score -= 1000.0
+
+    # 2. Completed-bar structure strength
+    structure_weights = {
+        "Waterfall Breakdown": 60.0,
+        "Impulse Breakout": 60.0,
+        "Clean Breakdown": 40.0,
+        "Clean Breakout": 40.0,
+        "Base Breakdown": 20.0,
+        "Base Breakout": 20.0,
+        "Active Waterfall": 50.0,
+        "Active Rally": 30.0,
+    }
+    score += structure_weights.get(item.chart_structure, 10.0)
+    score -= structure_weights.get(opposite_item.chart_structure, 10.0)
+
+    if item.is_cascade:
+        score += 30.0
+    if opposite_item.is_cascade:
+        score -= 30.0
+
+    # 3. Newest confirmed reversal timestamp (minutes from midnight)
+    t_item = max(_parse_time_minutes(item.breakout_time), _parse_time_minutes(item.cascade_time))
+    t_opp = max(_parse_time_minutes(opposite_item.breakout_time), _parse_time_minutes(opposite_item.cascade_time))
+    if t_item > t_opp and t_opp > 0:
+        score += 25.0
+    elif t_opp > t_item and t_item > 0:
+        score -= 25.0
+
+    # 4. Confirmation / quality score & volume activity
+    q_item = float(item.one_side_rally_score or item.score or 0) + (item.vc_ranking * 2.0)
+    q_opp = float(opposite_item.one_side_rally_score or opposite_item.score or 0) + (opposite_item.vc_ranking * 2.0)
+    score += (q_item - q_opp) * 0.2
+
+    # 5. Net percentage change magnitude as final tie-breaker
+    chg_item = abs(item.percent_change or 0.0)
+    chg_opp = abs(opposite_item.percent_change or 0.0)
+    score += (chg_item - chg_opp) * 2.0
+
+    return score
+
+
+def claim_alert_delivery(
+    alert_event_id: str,
+    worker_id: str,
+    lease_seconds: float = 30.0,
+    now_epoch: float | None = None,
+) -> bool:
+    """Atomic claim state machine: PENDING -> CLAIMED -> DELIVERED -> ACKNOWLEDGED.
+    Guarantees that between multiple concurrent workers (e.g. 2 WebSocket workers),
+    only the worker that successfully claims PENDING -> CLAIMED may broadcast the alert."""
+    if not alert_event_id:
+        return False
+    if now_epoch is None:
+        now_epoch = _time.time()
+
+    with _lifecycle_file_lock():
+        state = _load_lifecycle_state()
+        candidates = state.get("candidates", {})
+        target_entry = None
+        for entry in candidates.values():
+            if entry.get("alert_event_id") == alert_event_id:
+                target_entry = entry
+                break
+
+        if not target_entry:
+            return False
+
+        if target_entry.get("alert_acknowledged_at"):
+            return False
+
+        status = target_entry.get("delivery_status", "PENDING")
+
+        if status == "PENDING":
+            target_entry["delivery_status"] = "CLAIMED"
+            target_entry["claimed_by"] = worker_id
+            target_entry["claimed_at"] = now_epoch
+            target_entry["claim_expires_at"] = now_epoch + lease_seconds
+            _save_lifecycle_state(state)
+            return True
+        elif status == "CLAIMED":
+            # Check if lease expired (worker crashed or timed out)
+            expires_at = target_entry.get("claim_expires_at", 0.0)
+            if now_epoch > expires_at:
+                target_entry["claimed_by"] = worker_id
+                target_entry["claimed_at"] = now_epoch
+                target_entry["claim_expires_at"] = now_epoch + lease_seconds
+                _save_lifecycle_state(state)
+                return True
+            return False
+        elif status in ("DELIVERED", "ACKNOWLEDGED"):
+            return False
+
+        return False
+
+
+def mark_alert_delivered(
+    alert_event_id: str,
+    worker_id: str | None = None,
+    delivered_at_ist: str | None = None,
+) -> bool:
+    """Transitions state from CLAIMED -> DELIVERED after successful transmission."""
+    with _lifecycle_file_lock():
+        state = _load_lifecycle_state()
+        candidates = state.get("candidates", {})
+        found = False
+        if delivered_at_ist is None:
+            delivered_at_ist = datetime.now(INDIA_TZ).strftime("%H:%M:%S")
+        for entry in candidates.values():
+            if entry.get("alert_event_id") == alert_event_id:
+                entry["delivery_status"] = "DELIVERED"
+                entry["alert_delivered_at"] = delivered_at_ist
+                found = True
+        if found:
+            _save_lifecycle_state(state)
+        return found
+
+
+def acknowledge_alert(
+    alert_event_id: str,
+    acknowledged_at_ist: str | None = None,
+    client_id: str | None = None,
+) -> bool:
+    """Marks an alert event as delivered and acknowledged by the UI client.
+    Guarantees 'one logical alert' delivery semantics even if UI was disconnected.
+    Strictly validates alert_event_id format and existence in candidate lifecycle store."""
+    if not alert_event_id or not isinstance(alert_event_id, str):
+        return False
+
+    import re
+    if not re.match(r"^evt_[A-Za-z0-9_-]+$", alert_event_id):
+        return False
+
+    with _lifecycle_file_lock():
+        state = _load_lifecycle_state()
+        candidates = state.get("candidates", {})
+        found = False
+        if acknowledged_at_ist is None:
+            acknowledged_at_ist = datetime.now(INDIA_TZ).strftime("%H:%M:%S")
+        for entry in candidates.values():
+            if entry.get("alert_event_id") == alert_event_id:
+                entry["delivery_status"] = "ACKNOWLEDGED"
+                entry["alert_acknowledged_at"] = acknowledged_at_ist
+                entry["alert_delivered_at"] = entry.get("alert_delivered_at") or acknowledged_at_ist
+                if client_id:
+                    entry.setdefault("acknowledged_by_clients", []).append(client_id)
+                found = True
+                break
+        if found:
+            _save_lifecycle_state(state)
+        return found
+
+
+def _invalidate_lifecycle_entry(
+    cands_store: dict[str, dict[str, Any]],
+    symbol: str,
+    side: str,
+    market_clock_ist: str,
+    now_epoch: float,
+    reason: str,
+) -> None:
+    key = f"{symbol}_{side}"
+    entry = cands_store.get(key)
+    if entry:
+        entry["is_active"] = False
+        entry["is_invalidated"] = True
+        entry["invalidated_at"] = market_clock_ist
+        entry["invalidated_epoch"] = now_epoch
+        entry["invalidation_reason"] = reason
+        entry["delivery_status"] = "PENDING"
+        entry["claimed_by"] = None
+        entry["claimed_at"] = None
+        entry["claim_expires_at"] = None
+        # 3 completed 5m candles = 15 minutes cooldown (900 seconds)
+        entry["cooldown_until_epoch"] = now_epoch + 900.0
+        entry["consecutive_top5_scans"] = 0
+        entry["top5_streak_minutes"] = 0
+    else:
+        cands_store[key] = {
+            "symbol": symbol,
+            "side": side,
+            "first_qualified_at": None,
+            "first_top5_at": None,
+            "first_rank1_at": None,
+            "first_alerted_at": None,
+            "consecutive_top5_scans": 0,
+            "top5_streak_minutes": 0,
+            "alert_fired": False,
+            "alert_count": 0,
+            "alert_event_id": None,
+            "alert_created_at": None,
+            "alert_delivered_at": None,
+            "alert_acknowledged_at": None,
+            "delivery_status": "PENDING",
+            "claimed_by": None,
+            "claimed_at": None,
+            "claim_expires_at": None,
+            "current_rank": 99,
+            "is_active": False,
+            "is_invalidated": True,
+            "invalidated_at": market_clock_ist,
+            "invalidated_epoch": now_epoch,
+            "invalidation_reason": reason,
+            "cooldown_until_epoch": now_epoch + 900.0,
+            "last_breakout_level": 0.0,
+            "last_structure": None,
+        }
+
+
+def _process_candidate_lifecycle(
+    cands_store: dict[str, dict[str, Any]],
+    item: Suggestion,
+    side: str,
+    rank: int,
+    market_clock_ist: str,
+    now_epoch: float,
+) -> Suggestion:
+    key = f"{item.symbol}_{side}"
+    entry = cands_store.get(key)
+
+    # Rule 8: Stale fallback data CANNOT invalidate or requalify setups
+    if getattr(item, "is_stale_data", False) or getattr(item, "is_stale_fallback", False):
+        d = item.to_dict()
+        if entry:
+            d["first_qualified_at"] = entry.get("first_qualified_at")
+            d["first_top5_at"] = entry.get("first_top5_at")
+            d["first_rank1_at"] = entry.get("first_rank1_at")
+            d["first_alerted_at"] = entry.get("first_alerted_at")
+            d["alert_event_id"] = entry.get("alert_event_id")
+            d["alert_created_at"] = entry.get("alert_created_at")
+            d["alert_delivered_at"] = entry.get("alert_delivered_at")
+            d["alert_acknowledged_at"] = entry.get("alert_acknowledged_at")
+            d["alert_count"] = entry.get("alert_count", 0)
+            d["delivery_status"] = entry.get("delivery_status", "PENDING")
+            d["claimed_by"] = entry.get("claimed_by")
+            d["claimed_at"] = entry.get("claimed_at")
+            d["top5_streak_minutes"] = entry.get("top5_streak_minutes", 0)
+        d["should_alert"] = False
+        d["bell_rang"] = False
+        return Suggestion(**d)
+
+    is_qualified = bool(item.is_breakout or item.is_cascade or getattr(item, "is_block_surge", False) or "near" in (item.five_min_status or "").lower())
+    is_confirmed_breakout = bool(item.is_breakout or item.is_cascade or getattr(item, "is_block_surge", False))
+    breakout_level = item.entry or item.ltp or 0.0
+    ob_time = (item.demand_fresh_time if side == "bullish" and item.is_demand_fresh
+               else item.supply_zone_time if side == "bearish" and item.is_supply_zone
+               else None)
+
+    if entry is None:
+        # First time seen this session
+        alert_fired = bool(item.bell_rang)
+        alert_count = 1 if alert_fired else 0
+        event_id = f"evt_{item.symbol}_{side}_w1_{int(now_epoch)}" if alert_fired else None
+        created_at = (ob_time or market_clock_ist) if alert_fired else None
+        is_top5 = (rank <= 5)
+        consecutive_top5_scans = 1 if is_top5 else 0
+        top5_streak_minutes = 5 if is_top5 else 0
+
+        entry = {
+            "symbol": item.symbol,
+            "side": side,
+            "first_qualified_at": market_clock_ist if is_qualified else None,
+            "first_top5_at": market_clock_ist if rank <= 5 else None,
+            "first_rank1_at": market_clock_ist if rank == 1 else None,
+            "first_alerted_at": market_clock_ist if alert_fired else None,
+            "consecutive_top5_scans": consecutive_top5_scans,
+            "top5_streak_minutes": top5_streak_minutes,
+            "alert_fired": alert_fired,
+            "alert_count": alert_count,
+            "alert_event_id": event_id,
+            "alert_created_at": created_at,
+            "last_ob_alert_time": ob_time if alert_fired else None,
+            "alert_created_epoch": now_epoch if alert_fired else None,
+            "alert_delivered_at": None,
+            "alert_acknowledged_at": None,
+            "delivery_status": "PENDING" if alert_fired else "ACKNOWLEDGED",
+            "claimed_by": None,
+            "claimed_at": None,
+            "claim_expires_at": None,
+            "current_rank": rank,
+            "prev_rank": rank,
+            "is_active": True,
+            "is_invalidated": False,
+            "invalidated_at": None,
+            "invalidation_reason": None,
+            "cooldown_until_epoch": 0.0,
+            "last_breakout_level": breakout_level,
+            "last_structure": item.chart_structure,
+            "entry": item.entry,
+            "stop_loss": item.stop_loss,
+            "target": item.target,
+            "score": item.score,
+            "one_side_rally_score": item.one_side_rally_score,
+            "rvol_5m": item.rvol_5m,
+            "vc_ranking": getattr(item, "vc_ranking", None),
+            "range_position_percent": item.range_position_percent,
+            "breakout_time": item.breakout_time,
+            "lot_size": item.lot_size,
+            "breakout_freshness": getattr(item, "breakout_freshness", None),
+            "ltp": item.ltp,
+            "percent_change": item.percent_change,
+            "is_block_surge": getattr(item, "is_block_surge", False),
+            "block_surge_type": getattr(item, "block_surge_type", None),
+            "block_surge_time": getattr(item, "block_surge_time", None),
+            "block_surge_turnover_cr": getattr(item, "block_surge_turnover_cr", 0.0),
+            "block_surge_rvol": getattr(item, "block_surge_rvol", 1.0),
+        }
+        cands_store[key] = entry
+    else:
+        # Candidate already exists in lifecycle store
+        entry["is_active"] = True
+        prev_rank = entry.get("current_rank", rank)
+        if prev_rank != rank:
+            entry["prev_rank"] = prev_rank
+        entry["current_rank"] = rank
+        entry["last_structure"] = item.chart_structure
+        entry["ltp"] = item.ltp
+        entry["percent_change"] = item.percent_change
+        if item.entry is not None:
+            entry["entry"] = item.entry
+        if item.stop_loss is not None:
+            entry["stop_loss"] = item.stop_loss
+        if item.target is not None:
+            entry["target"] = item.target
+        if item.score is not None:
+            entry["score"] = item.score
+        if item.one_side_rally_score is not None:
+            entry["one_side_rally_score"] = item.one_side_rally_score
+        if item.rvol_5m is not None:
+            entry["rvol_5m"] = item.rvol_5m
+        if item.range_position_percent is not None:
+            entry["range_position_percent"] = item.range_position_percent
+        if item.breakout_time:
+            entry["breakout_time"] = item.breakout_time
+        if getattr(item, "vc_ranking", None) is not None:
+            entry["vc_ranking"] = getattr(item, "vc_ranking", None)
+        if getattr(item, "breakout_freshness", None) is not None:
+            entry["breakout_freshness"] = getattr(item, "breakout_freshness", None)
+        if getattr(item, "is_block_surge", False):
+            entry["is_block_surge"] = True
+            entry["block_surge_type"] = item.block_surge_type
+            entry["block_surge_time"] = item.block_surge_time
+            entry["block_surge_turnover_cr"] = item.block_surge_turnover_cr
+            entry["block_surge_rvol"] = item.block_surge_rvol
+        # Rule 9: Preserve original timestamps; do not overwrite during refreshes
+        if is_qualified and not entry.get("first_qualified_at"):
+            entry["first_qualified_at"] = market_clock_ist
+
+        # Rule 3: Rank movement or leaving/returning to Top 5 does not overwrite first_top5_at
+        if rank <= 5 and not entry.get("first_top5_at"):
+            entry["first_top5_at"] = market_clock_ist
+
+        # Rule 2: Rank movement to #1 records first_rank1_at once
+        if rank == 1 and not entry.get("first_rank1_at"):
+            entry["first_rank1_at"] = market_clock_ist
+
+        # Dynamic Top-5 Streak Counter (5m, 10m, 15m... resets to 0 if drops out of Top 5)
+        if rank <= 5:
+            entry["consecutive_top5_scans"] = entry.get("consecutive_top5_scans", 0) + 1
+            entry["top5_streak_minutes"] = entry["consecutive_top5_scans"] * 5
+        else:
+            entry["consecutive_top5_scans"] = 0
+            entry["top5_streak_minutes"] = 0
+
+        entry["current_rank"] = rank
+
+        # Rule 9 Check: Close-based stop-loss evaluation
+        # Completed candle close is checked; if not available, fallback to ltp.
+        # Intrabar low/high wick touches that recover by completed candle close do NOT invalidate.
+        if getattr(item, "is_failed_trend", False):
+            _invalidate_lifecycle_entry(cands_store, item.symbol, side, market_clock_ist, now_epoch, "Trend Invalidation / Trap")
+        elif item.stop_loss is not None:
+            check_price = getattr(item, "completed_candle_close", None)
+            if check_price is None:
+                check_price = item.ltp
+
+            if check_price is not None:
+                if side == "bullish" and check_price < item.stop_loss:
+                    _invalidate_lifecycle_entry(cands_store, item.symbol, side, market_clock_ist, now_epoch, "Stop Loss Breached")
+                elif side == "bearish" and check_price > item.stop_loss:
+                    _invalidate_lifecycle_entry(cands_store, item.symbol, side, market_clock_ist, now_epoch, "Stop Loss Breached")
+
+        if entry.get("is_invalidated"):
+            # Setup was previously invalidated.
+            # Rules 6 & 7: Check if eligible for a SECOND same-direction alert
+            cooldown_passed = now_epoch >= entry.get("cooldown_until_epoch", 0.0)
+            
+            # Genuinely new structure check:
+            old_level = entry.get("last_breakout_level", 0.0)
+            if side == "bullish":
+                new_structure = (breakout_level > old_level * 1.002) and is_confirmed_breakout
+            else:
+                new_structure = (breakout_level < old_level * 0.998) and is_confirmed_breakout
+
+            if cooldown_passed and new_structure and (ob_time is None or item.bell_rang):
+                # Genuinely new structure formed after cooldown!
+                new_count = entry.get("alert_count", 1) + 1
+                entry["is_invalidated"] = False
+                entry["invalidated_at"] = None
+                entry["invalidation_reason"] = None
+                entry["last_breakout_level"] = breakout_level
+                entry["last_structure"] = item.chart_structure
+                entry["alert_count"] = new_count
+                entry["alert_fired"] = True
+                entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w{new_count}_{int(now_epoch)}"
+                entry["alert_created_at"] = ob_time or market_clock_ist
+                entry["last_ob_alert_time"] = ob_time
+                entry["alert_created_epoch"] = now_epoch
+                entry["alert_delivered_at"] = None
+                entry["alert_acknowledged_at"] = None
+                entry["delivery_status"] = "PENDING"
+                entry["claimed_by"] = None
+                entry["claimed_at"] = None
+                entry["claim_expires_at"] = None
+        else:
+            # Active, valid setup
+            new_ob = _parse_time_minutes(ob_time) > _parse_time_minutes(entry.get("last_ob_alert_time"))
+            if item.bell_rang and (not entry.get("alert_fired") or new_ob):
+                entry["first_alerted_at"] = entry.get("first_alerted_at") or market_clock_ist
+                entry["alert_fired"] = True
+                entry["alert_count"] = entry.get("alert_count", 0) + 1
+                entry["last_breakout_level"] = breakout_level
+                entry["last_structure"] = item.chart_structure
+                entry["alert_event_id"] = f"evt_{item.symbol}_{side}_w{entry['alert_count']}_{int(now_epoch)}"
+                entry["alert_created_at"] = ob_time or market_clock_ist
+                entry["last_ob_alert_time"] = ob_time
+                entry["alert_created_epoch"] = now_epoch
+                entry["alert_delivered_at"] = None
+                entry["alert_acknowledged_at"] = None
+                entry["delivery_status"] = "PENDING"
+                entry["claimed_by"] = None
+                entry["claimed_at"] = None
+                entry["claim_expires_at"] = None
+
+    entry.update(
+        is_demand_fresh=item.is_demand_fresh, demand_zone=item.demand_zone,
+        demand_fresh_time=item.demand_fresh_time, is_supply_zone=item.is_supply_zone,
+        supply_zone=item.supply_zone, supply_zone_time=item.supply_zone_time,
+    )
+    # Cancel an undelivered zone alert if that zone is no longer the fresh setup.
+    last_ob_time = entry.get("last_ob_alert_time")
+    if last_ob_time and last_ob_time != ob_time and not entry.get("alert_acknowledged_at"):
+        entry["alert_acknowledged_at"] = market_clock_ist
+        entry["delivery_status"] = "ACKNOWLEDGED"
+
+    should_alert = bool(
+        entry.get("alert_event_id")
+        and entry.get("alert_created_at")
+        and not entry.get("alert_acknowledged_at")
+    )
+
+    # Early Ignition & Rank Velocity Evaluation
+    prev_r = entry.get("prev_rank", rank)
+    if prev_r > rank:
+        rank_vel = "SURGING" if (prev_r - rank >= 2) else "CLIMBING"
+        rank_prog = f"#{prev_r} ➔ #{rank}"
+    elif prev_r < rank:
+        rank_vel = "DROPPING"
+        rank_prog = f"#{prev_r} ➔ #{rank}"
+    else:
+        rank_vel = "STABLE"
+        rank_prog = f"#{rank}"
+
+    pct_chg = item.percent_change or 0.0
+    st_setup = (item.setup or "").lower()
+    vol_rat = max(float(getattr(item, "vc_ranking", 1.0) or 1.0), float(getattr(item, "rvol_5m", 1.0) or 1.0))
+
+    if side == "bullish":
+        is_early_ign = (1.5 <= pct_chg <= 2.8) and ("long buildup" in st_setup or "buildup" in st_setup) and (rank <= 8 or rank_vel in ("SURGING", "CLIMBING")) and (vol_rat >= 1.1)
+        is_ext = pct_chg >= 4.5
+    else:
+        is_early_ign = (-2.8 <= pct_chg <= -1.5) and ("short buildup" in st_setup or "buildup" in st_setup) and (rank <= 8 or rank_vel in ("SURGING", "CLIMBING")) and (vol_rat >= 1.1)
+        is_ext = pct_chg <= -4.5
+
+    # Return updated Suggestion with lifecycle attributes
+    d = item.to_dict()
+    d["rank"] = rank
+    d["is_early_ignition"] = is_early_ign
+    d["is_extended"] = is_ext
+    d["prev_rank"] = prev_r
+    d["rank_velocity"] = rank_vel
+    d["rank_progression"] = rank_prog
+    d["first_qualified_at"] = entry.get("first_qualified_at")
+    d["first_top5_at"] = entry.get("first_top5_at")
+    d["first_rank1_at"] = entry.get("first_rank1_at")
+    d["first_alerted_at"] = entry.get("first_alerted_at")
+    d["top5_streak_minutes"] = entry.get("top5_streak_minutes", 0)
+    d["alert_event_id"] = entry.get("alert_event_id")
+    d["alert_created_at"] = entry.get("alert_created_at")
+    d["alert_delivered_at"] = entry.get("alert_delivered_at")
+    d["alert_acknowledged_at"] = entry.get("alert_acknowledged_at")
+    d["delivery_status"] = entry.get("delivery_status", "PENDING")
+    d["claimed_by"] = entry.get("claimed_by")
+    d["claimed_at"] = entry.get("claimed_at")
+    d["should_alert"] = should_alert
+    d["alert_count"] = entry.get("alert_count", 0)
+    d["bell_rang"] = should_alert
+    return Suggestion(**d)
+
+
+def enforce_candidate_lifecycle_and_mutual_exclusion(
+    session_date: str,
+    market_clock_ist: str,
+    bullish: list[Suggestion],
+    bearish: list[Suggestion],
+    now_epoch: float | None = None,
+    is_trading_session: bool | None = None,
+) -> tuple[list[Suggestion], list[Suggestion]]:
+    if now_epoch is None:
+        now_epoch = _time.time()
+
+    with _lifecycle_file_lock():
+        state = _load_lifecycle_state()
+
+        # Check if date is a weekend (Saturday=5, Sunday=6)
+        is_weekend = False
+        try:
+            is_weekend = datetime.fromisoformat(session_date).weekday() >= 5
+        except Exception:
+            pass
+
+        if is_trading_session is False or is_weekend:
+            # Rule 7: Weekend / holiday / closed market refresh must NOT create a fake new session
+            # Keep previous active session candidates intact
+            if state.get("candidates"):
+                cands_store = state.get("candidates", {})
+            else:
+                cands_store = {}
+        else:
+            if state.get("session_date") != session_date:
+                state = {"session_date": session_date, "candidates": {}}
+            cands_store: dict[str, dict[str, Any]] = state.get("candidates", {})
+
+        # Step 1: Evidence-Based Mutual Exclusion between Bullish and Bearish (Rule 8 & Concern 3)
+        bull_map = {item.symbol: item for item in bullish}
+        bear_map = {item.symbol: item for item in bearish}
+        overlap_symbols = set(bull_map.keys()) & set(bear_map.keys())
+
+        for sym in overlap_symbols:
+            b_item = bull_map[sym]
+            br_item = bear_map[sym]
+            evidence = evaluate_direction_evidence(b_item, br_item)
+            if evidence >= 0:
+                del bear_map[sym]
+                _invalidate_lifecycle_entry(cands_store, sym, "bearish", market_clock_ist, now_epoch, "Direction reversed to Bullish (Evidence resolved)")
+            else:
+                del bull_map[sym]
+                _invalidate_lifecycle_entry(cands_store, sym, "bullish", market_clock_ist, now_epoch, "Direction reversed to Bearish (Evidence resolved)")
+
+        # Step 2: Check Direction Reversals against historical session state
+        for sym in list(bull_map.keys()):
+            opposite_key = f"{sym}_bearish"
+            if opposite_key in cands_store and not cands_store[opposite_key].get("is_invalidated"):
+                _invalidate_lifecycle_entry(cands_store, sym, "bearish", market_clock_ist, now_epoch, "Direction reversed to Bullish")
+
+        for sym in list(bear_map.keys()):
+            opposite_key = f"{sym}_bullish"
+            if opposite_key in cands_store and not cands_store[opposite_key].get("is_invalidated"):
+                _invalidate_lifecycle_entry(cands_store, sym, "bullish", market_clock_ist, now_epoch, "Direction reversed to Bearish")
+
+        # Step 3: Process Bullish Candidates Lifecycle
+        final_bullish = []
+        for rank, item in enumerate(bull_map.values(), start=1):
+            enriched_item = _process_candidate_lifecycle(
+                cands_store=cands_store,
+                item=item,
+                side="bullish",
+                rank=rank,
+                market_clock_ist=market_clock_ist,
+                now_epoch=now_epoch,
+            )
+            final_bullish.append(enriched_item)
+
+        # Step 4: Process Bearish Candidates Lifecycle
+        final_bearish = []
+        for rank, item in enumerate(bear_map.values(), start=1):
+            enriched_item = _process_candidate_lifecycle(
+                cands_store=cands_store,
+                item=item,
+                side="bearish",
+                rank=rank,
+                market_clock_ist=market_clock_ist,
+                now_epoch=now_epoch,
+            )
+            final_bearish.append(enriched_item)
+
+        # Mark candidates not present in this snapshot as not currently active
+        active_keys = {f"{sym}_bullish" for sym in bull_map} | {f"{sym}_bearish" for sym in bear_map}
+        for k, v in cands_store.items():
+            if k not in active_keys:
+                v["is_active"] = False
+                v["consecutive_top5_scans"] = 0
+                v["top5_streak_minutes"] = 0
+
+        state["candidates"] = cands_store
+        if not is_weekend and is_trading_session is not False:
+            state["session_date"] = session_date
+        _save_lifecycle_state(state)
+
+        return final_bullish, final_bearish
+
+
+# ── Tracked breakouts (pinned once alerted, tracked until a real outcome) ───
+# A stock that rings the bell gets pinned here for the rest of the session and
+# keeps being checked directly, independent of whether it stays in NSE's live
+# top-20 gainers/losers. Pure frozen snapshot, captured once at the moment
+# the bell rings - no live re-checking. The trader monitors it manually from
+# here on; this is the permanent record of what the alert actually showed.
+TRACKED_BREAKOUTS_PATH = INPUT_DIR / "tracked_breakouts.json"
+MAX_TRACKED_BREAKOUTS = 20
+DAILY_TOP5_STATE_PATH = INPUT_DIR / "daily_top5.json"
+INSTANT_TRIGGERS_PATH = INPUT_DIR / "instant_triggers.json"
+MAX_INSTANT_TRIGGERS = 40
+TOP5_ELIGIBLE_STATE_PATH = INPUT_DIR / "top5_eligible_state.json"
+
+
+def _load_tracked_state() -> dict[str, Any]:
+    try:
+        return json.loads(TRACKED_BREAKOUTS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"session_date": None, "items": []}
+
+
+def _save_tracked_state(state: dict[str, Any]) -> None:
+    try:
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
+        TRACKED_BREAKOUTS_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[tracked] save skipped: {exc}", file=sys.stderr)
+
+
+def update_tracked_breakouts(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        session_date = payload.get("session_date")
+        state = _load_tracked_state()
+        if state.get("session_date") != session_date:
+            state = {"session_date": session_date, "items": []}
+
+        # Purge any pre-market entries that were recorded before market open (09:15:00)
+        clock_str = payload.get("market_clock_ist") or ""
+        state["items"] = [
+            it for it in state.get("items", [])
+            if not (it.get("alert_time_ist") and it.get("alert_time_ist") < "09:15:00")
+        ]
+        items: list[dict[str, Any]] = state["items"]
+
+        if clock_str and clock_str < "09:15:00":
+            return list(reversed(items))
+
+        by_key = {(it["symbol"], it["side"]) for it in items}
+
+        # Pin every fresh bell-ringing candidate from this scan that isn't
+        # already tracked - a one-time, frozen snapshot of the row exactly as
+        # the F&O table showed it at that moment. Never touched again.
+        for side_name in ("bullish", "bearish"):
+            for row in payload.get(side_name, []) or []:
+                if not row.get("bell_rang"):
+                    continue
+                key = (row.get("symbol"), side_name)
+                if key in by_key:
+                    continue
+                zone_time = row.get("demand_fresh_time") or row.get("supply_zone_time")
+                zone_minutes = _parse_time_minutes(zone_time)
+                tracked_entry = {
+                    "symbol": row.get("symbol"),
+                    "side": side_name,
+                    "lot_size": row.get("lot_size"),
+                    "setup": row.get("setup"),
+                    "alert_time_ist": (
+                        f"{zone_minutes // 60:02d}:{zone_minutes % 60:02d}:00" if zone_minutes >= 0
+                        else row.get("breakout_time") or payload.get("market_clock_ist")
+                    ),
+                    "is_demand_fresh": row.get("is_demand_fresh", False),
+                    "demand_fresh_time": row.get("demand_fresh_time"),
+                    "demand_zone": row.get("demand_zone"),
+                    "is_supply_zone": row.get("is_supply_zone", False),
+                    "supply_zone_time": row.get("supply_zone_time"),
+                    "supply_zone": row.get("supply_zone"),
+                    "alert_price": row.get("ltp"),
+                    "percent_change": row.get("percent_change"),
+                    "volume": row.get("volume"),
+                    "vc_ranking": row.get("vc_ranking"),
+                    "mp_score": row.get("mp_score"),
+                    "five_min_status": row.get("five_min_status"),
+                    "breakout_time": row.get("breakout_time"),
+                    "is_breakout": row.get("is_breakout"),
+                    "rally_score": row.get("one_side_rally_score"),
+                    "action_status": row.get("status"),
+                    "entry": row.get("entry"),
+                    "stop_loss": row.get("stop_loss"),
+                    "target": row.get("target"),
+                }
+                items.append(tracked_entry)
+                _log_event_to_db("tracked_breakout", session_date, row.get("symbol"), side_name, tracked_entry)
+                by_key.add(key)
+
+        items = items[-MAX_TRACKED_BREAKOUTS:]
+        state["items"] = items
+        _save_tracked_state(state)
+        return list(reversed(items))  # most recently alerted first
+    except Exception as exc:  # noqa: BLE001 - must never break a scan
+        print(f"[tracked] update skipped: {exc}", file=sys.stderr)
+        return []
+
+
+def compute_sector_alignment(market_universe: list[dict[str, Any]]) -> dict[str, float]:
+    """For each symbol: what % of its own sector peers (in the broader
+    OI-confirmed universe) are moving in the SAME direction as it is today.
+    High = the whole sector is behind the move, not just one stock alone."""
+    by_sector: dict[str, list[dict[str, Any]]] = {}
+    for row in market_universe:
+        by_sector.setdefault(get_sector(row["symbol"]), []).append(row)
+
+    alignment: dict[str, float] = {}
+    for rows in by_sector.values():
+        for row in rows:
+            own_pct = row.get("percent_change")
+            if not own_pct:
+                continue
+            peers = [r for r in rows if r["symbol"] != row["symbol"] and r.get("percent_change")]
+            if not peers:
+                alignment[row["symbol"]] = 50.0  # no peers to compare against - neutral
+                continue
+            same_direction = sum(1 for p in peers if (p["percent_change"] > 0) == (own_pct > 0))
+            alignment[row["symbol"]] = round((same_direction / len(peers)) * 100, 1)
+    return alignment
+
+
+def _clamp100(value: float) -> float:
+    return round(max(0.0, min(100.0, value)), 1)
+
+
+def score_daily_top5_factors(
+    item: Suggestion,
+    side: str,
+    index_context: dict[str, dict[str, Any]],
+    sector_alignment: dict[str, float],
+) -> dict[str, Any]:
+    """Twelve equal-weighted, transparent factors (no hidden tuning) scored
+    0-100 each, from data the scanner already computes for this row. The
+    composite (plain average) decides the Daily Top 5 - a separate axis from
+    Rank (pure %-change) and Rally Score/Priority Rally (the 6-component,
+    blocker-gated score used for Action Status)."""
+    is_bullish = side == "bullish"
+
+    trend_score = 100.0 if (item.ema_trend == "bullish") == is_bullish else 0.0
+    strength_score = float(item.one_side_rally_score)
+    momentum_score = _clamp100(abs(item.move_from_open_percent or 0) / 5 * 100)
+    volume_score = _clamp100((item.vc_ranking / 3) * 100)
+    velocity_score = _clamp100((item.rvol_5m / 3) * 100)
+
+    nifty_pct = (index_context.get("NIFTY 50") or {}).get("percent_change") or 0.0
+    stock_pct = item.percent_change or 0.0
+    rs_raw = (stock_pct - nifty_pct) if is_bullish else (nifty_pct - stock_pct)
+    relative_strength_score = _clamp100((rs_raw / 3) * 100)
+
+    sector_alignment_score = sector_alignment.get(item.symbol, 50.0)
+    market_direction_score = _clamp100(((nifty_pct if is_bullish else -nifty_pct) / 1.0) * 100)
+    liquidity_score = _clamp100(((item.value_lakhs or 0) / 5000) * 100)
+    volatility_score = _clamp100(((item.day_range_percent or 0) / 4) * 100)
+
+    if item.range_position_percent is None:
+        support_resistance_score = 50.0
+    else:
+        support_resistance_score = (
+            item.range_position_percent if is_bullish else (100 - item.range_position_percent)
+        )
+
+    st = (item.five_min_status or "").lower()
+    if item.is_breakout:
+        price_action_score = 100.0
+    elif "near" in st:
+        price_action_score = 65.0
+    else:
+        price_action_score = 35.0
+
+    factors = {
+        "Trend": trend_score,
+        "Strength": strength_score,
+        "Momentum": momentum_score,
+        "Volume": volume_score,
+        "Velocity": velocity_score,
+        "Relative Strength": relative_strength_score,
+        "Sector Alignment": sector_alignment_score,
+        "Market Direction": market_direction_score,
+        "Liquidity": liquidity_score,
+        "Volatility": volatility_score,
+        "Support & Resistance": support_resistance_score,
+        "Price Action": price_action_score,
+    }
+    composite = round(sum(factors.values()) / len(factors), 1)
+    return {"factors": factors, "composite": composite}
+
+
+def compute_daily_top5(
+    bullish: list[Suggestion],
+    bearish: list[Suggestion],
+    index_context: dict[str, dict[str, Any]],
+    market_universe: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    sector_alignment = compute_sector_alignment(market_universe)
+    result: dict[str, list[dict[str, Any]]] = {}
+    for side_name, items in (("bullish", bullish), ("bearish", bearish)):
+        scored = []
+        for item in items:
+            bo_min = _parse_clock_to_minutes(item.breakout_time)
+            if bo_min is not None and bo_min > DAILY_TOP5_MAX_BREAKOUT_MINUTES:
+                continue  # breakout happened too late in the session - skip
+            breakdown = score_daily_top5_factors(item, side_name, index_context, sector_alignment)
+            entry_timing = "EARLY IGNITION ⚡" if (bo_min is not None and bo_min <= 9 * 60 + 45) else "CONTINUATION 🔄"
+            entry_price = round(float(item.entry or item.ltp or 0), 2)
+            scored.append({
+                "symbol": item.symbol,
+                "sector": get_sector(item.symbol),
+                "lot_size": item.lot_size,
+                "ltp": item.ltp,
+                "entry_price": entry_price,
+                "percent_change": item.percent_change,
+                "entry_timing": entry_timing,
+                "setup": item.setup,
+                "breakout_time": item.breakout_time,
+                "five_min_status": item.five_min_status,
+                "composite_score": breakdown["composite"],
+                "factors": breakdown["factors"],
+            })
+        scored.sort(key=lambda x: x["composite_score"], reverse=True)
+        result[side_name] = scored[:5]
+    return result
+
+
+def _current_top5_window_start(now_ist: datetime) -> str | None:
+    """The start (HH:MM) of the current DAILY_TOP5_WINDOW_MINUTES-wide window,
+    anchored at DAILY_TOP5_LOCK_TIME (09:30). None before that anchor - the
+    system is still waiting for the opening range to settle."""
+    anchor = now_ist.replace(
+        hour=DAILY_TOP5_LOCK_TIME.hour, minute=DAILY_TOP5_LOCK_TIME.minute,
+        second=0, microsecond=0,
+    )
+    if now_ist < anchor:
+        return None
+    elapsed_min = int((now_ist - anchor).total_seconds() // 60)
+    window_index = elapsed_min // DAILY_TOP5_WINDOW_MINUTES
+    window_start = anchor + timedelta(minutes=window_index * DAILY_TOP5_WINDOW_MINUTES)
+    return window_start.strftime("%H:%M")
+
+
+def _load_daily_top5_state() -> dict[str, Any]:
+    try:
+        return json.loads(DAILY_TOP5_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"session_date": None, "window_start_ist": None, "locked_at_ist": None,
+                 "top5": {"bullish": [], "bearish": []}}
+
+
+def _save_daily_top5_state(state: dict[str, Any]) -> None:
+    try:
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
+        DAILY_TOP5_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[daily_top5] save skipped: {exc}", file=sys.stderr)
+
+
+def update_daily_top5(
+    payload: dict[str, Any],
+    bullish: list[Suggestion],
+    bearish: list[Suggestion],
+    index_context: dict[str, dict[str, Any]],
+    market_universe: list[dict[str, Any]],
+    now_ist: datetime,
+) -> dict[str, Any]:
+    """Waits until DAILY_TOP5_LOCK_TIME (09:30 IST) for the opening range to
+    settle, then re-locks a fresh 5-per-side pick every
+    DAILY_TOP5_WINDOW_MINUTES on the 12-factor scorecard. Stable within a
+    window (no per-scan flicker), rolling across the day - so a breakout at
+    any time gets its own window instead of being invisible all day."""
+    try:
+        session_date = payload.get("session_date")
+        state = _load_daily_top5_state()
+        if state.get("session_date") != session_date:
+            state = {"session_date": session_date, "window_start_ist": None, "locked_at_ist": None,
+                     "top5": {"bullish": [], "bearish": []}}
+
+        window_start = _current_top5_window_start(now_ist)
+        if window_start is not None and window_start != state.get("window_start_ist"):
+            state["top5"] = compute_daily_top5(bullish, bearish, index_context, market_universe)
+            state["window_start_ist"] = window_start
+            state["locked_at_ist"] = now_ist.strftime("%H:%M:%S")
+            _save_daily_top5_state(state)
+            for side_name in ("bullish", "bearish"):
+                for entry in state["top5"].get(side_name, []):
+                    _log_event_to_db(
+                        "daily_top5", session_date, entry.get("symbol"), side_name,
+                        {**entry, "window_start_ist": window_start, "locked_at_ist": state["locked_at_ist"]},
+                    )
+
+        window_end_ist = None
+        if state.get("window_start_ist"):
+            h, m = map(int, state["window_start_ist"].split(":"))
+            window_end = now_ist.replace(hour=h, minute=m, second=0, microsecond=0) + timedelta(minutes=DAILY_TOP5_WINDOW_MINUTES)
+            window_end_ist = window_end.strftime("%H:%M")
+
+        # Backfill entry_price and entry_timing if missing from an earlier snapshot
+        for side_name in ("bullish", "bearish"):
+            for entry in state["top5"].get(side_name, []):
+                if entry.get("entry_price") is None:
+                    entry["entry_price"] = entry.get("ltp")
+                if entry.get("entry_timing") is None:
+                    bo_min = _parse_clock_to_minutes(entry.get("breakout_time"))
+                    entry["entry_timing"] = "EARLY IGNITION ⚡" if (bo_min is not None and bo_min <= 9 * 60 + 45) else "CONTINUATION 🔄"
+
+        return {
+            "locked": state.get("window_start_ist") is not None,
+            "locked_at_ist": state.get("locked_at_ist"),
+            "window_start_ist": state.get("window_start_ist"),
+            "window_end_ist": window_end_ist,
+            "window_minutes": DAILY_TOP5_WINDOW_MINUTES,
+            "lock_time_ist": DAILY_TOP5_LOCK_TIME.strftime("%H:%M"),
+            "bullish": state["top5"]["bullish"],
+            "bearish": state["top5"]["bearish"],
+        }
+    except Exception as exc:  # noqa: BLE001 - must never break a scan
+        print(f"[daily_top5] update skipped: {exc}", file=sys.stderr)
+        return {"locked": False, "locked_at_ist": None, "window_start_ist": None, "window_end_ist": None,
+                "window_minutes": DAILY_TOP5_WINDOW_MINUTES, "lock_time_ist": DAILY_TOP5_LOCK_TIME.strftime("%H:%M"),
+                "bullish": [], "bearish": []}
+
+
+def score_instant_trigger_factors(
+    item: Suggestion,
+    side: str,
+    index_context: dict[str, dict[str, Any]],
+    sector_alignment: dict[str, float],
+) -> dict[str, Any]:
+    """Five INSTANT-only factors - everything knowable the moment a breakout
+    candle closes, nothing that needs the day to accumulate. Deliberately
+    excludes Strength/Momentum/day-RVOL (those are lagging, see Daily Top 5) -
+    this is what lets Instant Triggers fire ~30 min earlier than the Bell,
+    at the cost of skipping the "hold above the level" confirmation."""
+    is_bullish = side == "bullish"
+
+    st = (item.five_min_status or "").lower()
+    if item.is_breakout:
+        price_action_score = 100.0
+    elif "near" in st:
+        price_action_score = 65.0
+    else:
+        price_action_score = 35.0
+
+    if item.range_position_percent is None:
+        support_resistance_score = 50.0
+    else:
+        support_resistance_score = (
+            item.range_position_percent if is_bullish else (100 - item.range_position_percent)
+        )
+
+    # Fresh money (Long buildup / Short buildup) tends to hold better than
+    # buildup driven by the opposite side closing out (Short covering / Long
+    # unwinding), which can fizzle once that closing pressure is done.
+    setup = item.setup or ""
+    if is_bullish:
+        oi_setup_score = 100.0 if setup == "Long buildup" else 55.0 if setup == "Short covering" else 50.0
+    else:
+        oi_setup_score = 100.0 if setup == "Short buildup" else 55.0 if setup == "Long unwinding" else 50.0
+
+    nifty_pct = (index_context.get("NIFTY 50") or {}).get("percent_change") or 0.0
+    market_direction_score = _clamp100(((nifty_pct if is_bullish else -nifty_pct) / 1.0) * 100)
+    sector_score = sector_alignment.get(item.symbol, 50.0)
+    sector_index_alignment_score = round((market_direction_score + sector_score) / 2, 1)
+
+    volume_surge_score = _clamp100((item.rvol_5m / 3) * 100)
+
+    factors = {
+        "Price Action": price_action_score,
+        "Support & Resistance": support_resistance_score,
+        "OI Setup Quality": oi_setup_score,
+        "Sector/Index Alignment": sector_index_alignment_score,
+        "Volume Surge (this candle)": volume_surge_score,
+    }
+    composite = round(sum(factors.values()) / len(factors), 1)
+    return {"factors": factors, "composite": composite}
+
+
+def _load_instant_triggers_state() -> dict[str, Any]:
+    try:
+        return json.loads(INSTANT_TRIGGERS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"session_date": None, "items": []}
+
+
+def _save_instant_triggers_state(state: dict[str, Any]) -> None:
+    try:
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
+        INSTANT_TRIGGERS_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[instant_triggers] save skipped: {exc}", file=sys.stderr)
+
+
+def update_instant_triggers(
+    payload: dict[str, Any],
+    bullish: list[Suggestion],
+    bearish: list[Suggestion],
+    index_context: dict[str, dict[str, Any]],
+    market_universe: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Fires the moment is_breakout flips True - NOT gated by score=100 or
+    Priority Rally like the Bell. Scored on 5 instant-only factors. Pinned
+    once per (symbol, side) the first time seen this session (same
+    once-per-day convention as Tracked Breakouts), then frozen - except for
+    an `upgraded_to_priority` flag that flips on later if the slower Rally
+    Score independently confirms the same move."""
+    try:
+        from scanner_telemetry import signal_id
+        session_date = payload.get("session_date")
+        state = _load_instant_triggers_state()
+        if state.get("session_date") != session_date:
+            state = {"session_date": session_date, "items": []}
+
+        # Purge any pre-market entries that were recorded before market open (09:15:00)
+        clock_str = payload.get("market_clock_ist") or ""
+        state["items"] = [
+            it for it in state.get("items", [])
+            if not (it.get("triggered_at_ist") and it.get("triggered_at_ist") < "09:15:00")
+        ]
+        items: list[dict[str, Any]] = state["items"]
+
+        if clock_str and clock_str < "09:15:00":
+            return list(reversed(items))
+
+        by_key = {(it["symbol"], it["side"]): it for it in items}
+        sector_alignment = compute_sector_alignment(market_universe)
+
+        for side_name, candidates in (("bullish", bullish), ("bearish", bearish)):
+            for item in candidates:
+                key = (item.symbol, side_name)
+                existing = by_key.get(key)
+
+                if existing is not None:
+                    existing.setdefault("signal_id", signal_id(session_date, item.symbol, side_name, existing.get("setup")))
+                    if not existing.get("upgraded_to_priority") and item.status == "Priority Rally" and item.bell_rang:
+                        existing["upgraded_to_priority"] = True
+                        existing["upgraded_at_ist"] = payload.get("market_clock_ist")
+                        existing["signal_id"] = signal_id(session_date, item.symbol, side_name, existing.get("setup"))
+                        existing["qualified_at_ist"] = datetime.now(INDIA_TZ).isoformat(timespec="milliseconds")
+                        existing["snapshot_id"] = payload.get("snapshot_id")
+                        _log_event_to_db("instant_trigger", session_date, item.symbol, side_name, existing)
+                    continue
+
+                if not (item.is_breakout or item.is_block_surge):
+                    continue  # only pin on a confirmed breakout or institutional block surge, not Near BO/BD
+
+                breakdown = score_instant_trigger_factors(item, side_name, index_context, sector_alignment)
+                is_upgraded = bool(item.status == "Priority Rally" and item.bell_rang)
+                new_item = {
+                    "signal_id": signal_id(session_date, item.symbol, side_name, item.setup),
+                    "snapshot_id": payload.get("snapshot_id"),
+                    "detected_at_ist": datetime.now(INDIA_TZ).isoformat(timespec="milliseconds"),
+                    "qualified_at_ist": datetime.now(INDIA_TZ).isoformat(timespec="milliseconds") if is_upgraded else None,
+                    "symbol": item.symbol,
+                    "side": side_name,
+                    "lot_size": item.lot_size,
+                    "setup": item.setup,
+                    "breakout_time": item.breakout_time,
+                    "triggered_at_ist": payload.get("market_clock_ist"),
+                    "price_at_trigger": item.ltp,
+                    "percent_change_at_trigger": item.percent_change,
+                    "instant_score": breakdown["composite"],
+                    "factors": breakdown["factors"],
+                    "rally_score_at_trigger": item.one_side_rally_score,
+                    "is_block_surge": item.is_block_surge,
+                    "block_surge_turnover_cr": item.block_surge_turnover_cr,
+                    "block_surge_rvol": item.block_surge_rvol,
+                    "upgraded_to_priority": is_upgraded,
+                    "upgraded_at_ist": payload.get("market_clock_ist") if is_upgraded else None,
+                }
+                items.append(new_item)
+                by_key[key] = new_item
+                _log_event_to_db("instant_trigger", session_date, item.symbol, side_name, new_item)
+
+        items = items[-MAX_INSTANT_TRIGGERS:]
+        state["items"] = items
+        _save_instant_triggers_state(state)
+        return list(reversed(items))  # most recently triggered first
+    except Exception as exc:  # noqa: BLE001 - must never break a scan
+        print(f"[instant_triggers] update skipped: {exc}", file=sys.stderr)
+        return []
+
+
+OUTCOME_TRACKER_STATE_PATH = INPUT_DIR / "outcome_tracker_state.json"
+OUTCOME_LOG_DIR = INPUT_DIR / "outcome_log"
+OUTCOME_CHECKPOINTS_MINUTES = (15, 30, 60)
+MAX_PENDING_OUTCOMES = 200
+
+
+def _load_outcome_tracker_state() -> dict[str, Any]:
+    # Postgres is the durable source of truth - a local-file-only state gets
+    # silently wiped whenever the process restarts (Render's ephemeral
+    # filesystem on every redeploy/idle-sleep, or just not running
+    # continuously), losing whatever was still pending mid-day and, worse,
+    # leaving a stale local file that gets re-flushed as a duplicate the next
+    # time it IS loaded. Try Postgres first; fall back to the local file only
+    # if the database is unavailable.
+    try:
+        import db_adapter
+        if db_adapter.DATABASE_URL:
+            conn = db_adapter.get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT session_date, items FROM outcome_tracker_pending_state WHERE id = 1")
+            row = cur.fetchone()
+            cur.close()
+            if row is not None:
+                session_date, items = row
+                return {
+                    "session_date": str(session_date) if session_date else None,
+                    "items": items or [],
+                }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[outcome_tracker] postgres load skipped: {exc}", file=sys.stderr)
+
+    try:
+        return json.loads(OUTCOME_TRACKER_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"session_date": None, "items": []}
+
+
+def _save_outcome_tracker_state(state: dict[str, Any]) -> None:
+    try:
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
+        OUTCOME_TRACKER_STATE_PATH.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[outcome_tracker] local save skipped: {exc}", file=sys.stderr)
+
+    try:
+        import db_adapter
+        if db_adapter.DATABASE_URL:
+            conn = db_adapter.get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO outcome_tracker_pending_state (id, session_date, items, updated_at) "
+                "VALUES (1, %s, %s::jsonb, NOW()) "
+                "ON CONFLICT (id) DO UPDATE SET "
+                "session_date = EXCLUDED.session_date, items = EXCLUDED.items, updated_at = NOW()",
+                (state.get("session_date"), json.dumps(state.get("items", []), default=str)),
+            )
+            conn.commit()
+            cur.close()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[outcome_tracker] postgres save skipped: {exc}", file=sys.stderr)
+
+
+def _flush_outcome_log(session_date: str | None, items: list[dict[str, Any]]) -> None:
+    if not session_date or not items:
+        return
+    try:
+        OUTCOME_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        path = OUTCOME_LOG_DIR / f"{session_date}.jsonl"
+        with path.open("a", encoding="utf-8") as f:
+            for it in items:
+                f.write(json.dumps(it) + "\n")
+                _log_event_to_db("outcome", session_date, it.get("symbol"), it.get("side"), it)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[outcome_tracker] flush skipped: {exc}", file=sys.stderr)
+
+
+def update_outcome_tracker(
+    payload: dict[str, Any],
+    bullish: list[Suggestion],
+    bearish: list[Suggestion],
+    market_universe: list[dict[str, Any]],
+    instant_triggers: list[dict[str, Any]],
+) -> None:
+    """Silent background logging only - never shown in the UI, no payload
+    field. For every Instant Trigger, records price/%-change at +15/+30/+60
+    minutes after the trigger plus a continuously-updated "latest seen"
+    value, so continuation factors (does volume-holding predict a bigger
+    move? does OI accel? does sector breadth?) can be checked empirically
+    later instead of guessed. A finished day's items are appended to
+    inputs/outcome_log/<session_date>.jsonl when the next session starts."""
+    try:
+        session_date = payload.get("session_date")
+        now_min = _parse_clock_to_minutes(payload.get("market_clock_ist"))
+        state = _load_outcome_tracker_state()
+
+        if state.get("session_date") != session_date:
+            # New day: whatever was pending from the previous session is done -
+            # flush it to that day's permanent log before resetting.
+            _flush_outcome_log(state.get("session_date"), state.get("items", []))
+            state = {"session_date": session_date, "items": []}
+
+        items: list[dict[str, Any]] = state["items"]
+        watched_keys = {(it["symbol"], it["side"]) for it in items}
+
+        for trig in instant_triggers:
+            key = (trig["symbol"], trig["side"])
+            if key in watched_keys or len(items) >= MAX_PENDING_OUTCOMES:
+                continue
+            trigger_min = _parse_clock_to_minutes(trig.get("triggered_at_ist"))
+            if trigger_min is None:
+                continue
+            items.append({
+                "signal_id": trig.get("signal_id"),
+                "origin_snapshot_id": trig.get("snapshot_id"),
+                "symbol": trig["symbol"],
+                "side": trig["side"],
+                "session_date": session_date,
+                "setup": trig.get("setup"),
+                "trigger_time_ist": trig.get("triggered_at_ist"),
+                "trigger_minute": trigger_min,
+                "trigger_price": trig.get("price_at_trigger"),
+                "trigger_percent_change": trig.get("percent_change_at_trigger"),
+                "instant_score": trig.get("instant_score"),
+                "instant_factors": trig.get("factors"),
+                "rally_score_at_trigger": trig.get("rally_score_at_trigger"),
+                "checkpoints": {f"t{m}": None for m in OUTCOME_CHECKPOINTS_MINUTES},
+                "latest_price": trig.get("price_at_trigger"),
+                "latest_percent_change": trig.get("percent_change_at_trigger"),
+                "latest_seen_ist": trig.get("triggered_at_ist"),
+            })
+            watched_keys.add(key)
+
+        if now_min is not None:
+            bullish_by_symbol = {s.symbol: s for s in bullish}
+            bearish_by_symbol = {s.symbol: s for s in bearish}
+            universe_by_symbol = {r["symbol"]: r for r in market_universe}
+
+            for it in items:
+                live = (
+                    bullish_by_symbol.get(it["symbol"])
+                    or bearish_by_symbol.get(it["symbol"])
+                    or universe_by_symbol.get(it["symbol"])
+                )
+                if live is None:
+                    continue
+                ltp = live.ltp if hasattr(live, "ltp") else live.get("ltp")
+                pct = live.percent_change if hasattr(live, "percent_change") else live.get("percent_change")
+                if ltp is None:
+                    continue
+                it["latest_price"] = ltp
+                it["latest_percent_change"] = pct
+                it["latest_seen_ist"] = payload.get("market_clock_ist")
+
+                trigger_price = it.get("trigger_price")
+                for m in OUTCOME_CHECKPOINTS_MINUTES:
+                    ckey = f"t{m}"
+                    if it["checkpoints"].get(ckey) is not None:
+                        continue
+                    if now_min < it["trigger_minute"] + m:
+                        continue
+                    return_pct = (
+                        round(((ltp - trigger_price) / trigger_price) * 100, 2)
+                        if trigger_price else None
+                    )
+                    it["checkpoints"][ckey] = {
+                        "price": ltp,
+                        "percent_change": pct,
+                        "return_from_trigger_pct": return_pct,
+                        "recorded_at_ist": payload.get("market_clock_ist"),
+                    }
+
+        state["items"] = items
+        _save_outcome_tracker_state(state)
+    except Exception as exc:  # noqa: BLE001 - must never break a scan
+        print(f"[outcome_tracker] update skipped: {exc}", file=sys.stderr)
+
+
+# Top 5 Eligible: the three gates a stock must clear. MIN_ELIGIBLE_RALLY_SCORE
+# and MIN_PULLBACK_SINCE_BO_PCT come from the candle-level dive, then an
+# explicit direction change on request: eligibility now REQUIRES more than
+# this much pullback since breakout (not less) - the opposite of the
+# original "shallow pullback = stronger runner" finding from that dive.
+# NOT yet validated across many sessions either way, treat as a first cut.
+MIN_ELIGIBLE_RALLY_SCORE = 80
+MIN_PULLBACK_SINCE_BO_PCT = 1.0
+
+
+def _pullback_since_breakout_pct(symbol: str, breakout_time: str | None, side: str) -> float | None:
+    """Max drawdown (%) from the post-breakout running high (bullish) or
+    running low (bearish), using only candles from breakout_time onward.
+    Returns None if there aren't at least 2 such candles yet - too soon
+    after the breakout to judge, not automatically disqualified."""
+    if not breakout_time:
+        return None
+    candles = _CANDLE_CACHE.get(symbol, (None, []))[1]
+    if not candles:
+        return None
+    bo_min = _parse_clock_to_minutes(breakout_time)
+    if bo_min is None:
+        return None
+    since = [
+        c for c in candles
+        if (lambda dt: dt.hour * 60 + dt.minute)(datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ)) >= bo_min
+    ]
+    if len(since) < 2:
+        return None
+    if side == "bullish":
+        running_extreme = since[0]["high"]
+        max_dd = 0.0
+        for c in since:
+            running_extreme = max(running_extreme, c["high"])
+            max_dd = max(max_dd, (running_extreme - c["low"]) / running_extreme * 100)
+    else:
+        running_extreme = since[0]["low"]
+        max_dd = 0.0
+        for c in since:
+            running_extreme = min(running_extreme, c["low"])
+            max_dd = max(max_dd, (c["high"] - running_extreme) / running_extreme * 100)
+    return round(max_dd, 2)
+
+
+def compute_top5_eligible(
+    bullish: list[Suggestion],
+    bearish: list[Suggestion],
+) -> dict[str, list[dict[str, Any]]]:
+    """Live, recomputed every scan (no locking/pinning) - a short, harder-
+    gated list meant to actually trade, not just watch. Three gates, all
+    required: confirmed breakout, Rally Score >= 80, pullback since
+    breakout <= 1.5%. A stock too fresh to judge the pullback on is simply
+    not listed yet, not excluded - it can appear a few candles later."""
+    result: dict[str, list[dict[str, Any]]] = {}
+    for side_name, items in (("bullish", bullish), ("bearish", bearish)):
+        eligible = []
+        for item in items:
+            if not item.is_breakout:
+                continue
+            if item.one_side_rally_score < MIN_ELIGIBLE_RALLY_SCORE:
+                continue
+            # Same 2:45 PM cutoff as Daily Top 5 - a breakout this late has too
+            # few post-breakout candles to judge the pullback reliably anyway.
+            bo_min = _parse_clock_to_minutes(item.breakout_time)
+            if bo_min is not None and bo_min > DAILY_TOP5_MAX_BREAKOUT_MINUTES:
+                continue
+            pullback = _pullback_since_breakout_pct(item.symbol, item.breakout_time, side_name)
+            if pullback is None or pullback <= MIN_PULLBACK_SINCE_BO_PCT:
+                continue
+            eligible.append({
+                "symbol": item.symbol,
+                "lot_size": item.lot_size,
+                "setup": item.setup,
+                "breakout_time": item.breakout_time,
+                "ltp": item.ltp,
+                "percent_change": item.percent_change,
+                "rally_score": item.one_side_rally_score,
+                "status": item.status,
+                "vc_ranking": item.vc_ranking,
+                "pullback_since_bo_pct": pullback,
+            })
+        # Rank by move SIZE among the quality-gated survivors, not by score -
+        # sorting by score alone let a barely-moved but "clean" stock (e.g.
+        # MCX at -0.73%) outrank a genuinely bigger mover (LTM at -2.26%)
+        # just because its score happened to hit 100. Score/pullback/breakout
+        # already did their job as pass/fail gates above.
+        eligible.sort(key=lambda x: -abs(x["percent_change"] or 0))
+        result[side_name] = eligible[:5]
+    return result
+
+
+def _load_top5_eligible_state() -> dict[str, Any]:
+    try:
+        return json.loads(TOP5_ELIGIBLE_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"session_date": None, "first_seen": {}}
+
+
+def _save_top5_eligible_state(state: dict[str, Any]) -> None:
+    try:
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
+        TOP5_ELIGIBLE_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[top5_eligible] save skipped: {exc}", file=sys.stderr)
+
+
+def annotate_top5_eligible_since(
+    top5_eligible: dict[str, list[dict[str, Any]]],
+    session_date: str | None,
+    market_clock_ist: str | None,
+) -> dict[str, list[dict[str, Any]]]:
+    """The eligible list itself is live/unpinned (can shrink, grow, or drop a
+    name entirely as pullback changes scan to scan) - this only remembers
+    the first clock time each (symbol, side) was EVER seen eligible today,
+    so the UI can show "listed since HH:MM" without pinning the list itself."""
+    try:
+        state = _load_top5_eligible_state()
+        if state.get("session_date") != session_date:
+            state = {"session_date": session_date, "first_seen": {}}
+
+        first_seen: dict[str, str] = state["first_seen"]
+        changed = False
+        for side_name, items in top5_eligible.items():
+            for it in items:
+                key = f"{it['symbol']}_{side_name}"
+                if key not in first_seen:
+                    first_seen[key] = market_clock_ist
+                    changed = True
+                it["eligible_since_ist"] = first_seen[key]
+
+        if changed:
+            state["first_seen"] = first_seen
+            _save_top5_eligible_state(state)
+        return top5_eligible
+    except Exception as exc:  # noqa: BLE001 - must never break a scan
+        print(f"[top5_eligible] annotate skipped: {exc}", file=sys.stderr)
+        return top5_eligible
+
+
+def compute_pmh_pml_filter(
+    bullish: list[Suggestion],
+    bearish: list[Suggestion],
+) -> dict[str, list[dict[str, Any]]]:
+    """Live, recomputed every scan (no locking) - a stock qualifies as a real
+    gainer/loser only if it's ALSO holding beyond today's opening-range
+    high/low (PMH/PML - the same first-6-candle level the chart draws as the
+    blue PMH/PML lines) AND beyond yesterday's close, not just showing a
+    positive/negative %-change. Shows every qualifying candidate, not capped
+    to 5 - this is a filter, not a ranked shortlist."""
+    result: dict[str, list[dict[str, Any]]] = {}
+    for side_name, items in (("bullish", bullish), ("bearish", bearish)):
+        qualifying = []
+        for item in items:
+            candles = _CANDLE_CACHE.get(item.symbol, (None, []))[1]
+            if not candles:
+                continue
+            base = candles[:6]
+            orb_high = max(c["high"] for c in base)
+            orb_low = min(c["low"] for c in base)
+            ltp = item.ltp
+            prev_close = item.prev_close
+            if ltp is None:
+                continue
+            if side_name == "bullish":
+                level = orb_high
+                passes_level = ltp >= level * (1 - PMH_PML_TOLERANCE_PCT / 100)
+                passes_prev = prev_close is not None and ltp > prev_close
+            else:
+                level = orb_low
+                passes_level = ltp <= level * (1 + PMH_PML_TOLERANCE_PCT / 100)
+                passes_prev = prev_close is not None and ltp < prev_close
+            if not (passes_level and passes_prev):
+                continue
+            qualifying.append({
+                "symbol": item.symbol,
+                "lot_size": item.lot_size,
+                "setup": item.setup,
+                "ltp": ltp,
+                "percent_change": item.percent_change,
+                "orb_level": round(level, 2),
+                "prev_close": round(prev_close, 2) if prev_close is not None else None,
+                "rally_score": item.one_side_rally_score,
+                "status": item.status,
+                "five_min_status": item.five_min_status,
+                "breakout_time": item.breakout_time,
+                "vc_ranking": item.vc_ranking,
+            })
+        result[side_name] = qualifying
+    return result
+
+
+def build_payload(top: int, *, require_current_session: bool = False) -> dict[str, Any]:
+    import scanner_telemetry
+    import scanner_trace
+    scan_id = scanner_telemetry.new_scan()
+    decision_audit: list[dict[str, Any]] = []
     now_ist = datetime.now(INDIA_TZ)
+    scanner_trace.begin(scan_id, now_ist.isoformat())
     errors: list[str] = []
-    gainers, losers, variation_errors = fetch_top_gainers_losers()
+
+    # The three upstream NSE reads are independent - run them concurrently.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+        f_var = ex.submit(fetch_top_gainers_losers)
+        f_oi = ex.submit(fetch_change_in_oi)
+        f_idx = ex.submit(fetch_index_context)
+        gainers, losers, variation_errors = f_var.result()
+        oi_by_symbol, oi_errors = f_oi.result()
+        index_context, index_errors = f_idx.result()
     errors.extend(variation_errors)
-    oi_by_symbol, oi_errors = fetch_change_in_oi()
     errors.extend(oi_errors)
-    index_context, index_errors = fetch_index_context()
     errors.extend(index_errors)
 
-    bullish, gainer_stock_overlap = build_suggestions(gainers, oi_by_symbol, side="bullish", top=top, index_context=index_context)
-    bearish, loser_stock_overlap = build_suggestions(losers, oi_by_symbol, side="bearish", top=top, index_context=index_context)
+    # Widen intake beyond NSE's top-20 gainers/losers entirely: every F&O
+    # stock with lot size < LOT_SCAN_THRESHOLD is checked directly via its own
+    # quote+candles, regardless of whether NSE's top-20 OR its (dynamic,
+    # can-narrow-during-the-day) OI-spurts feed happens to include it. The
+    # stock's own lot size is a fixed, always-known fact - not something NSE
+    # decides moment to moment - so this makes NSE's lists an OPTIONAL extra
+    # signal (still used for OI/setup classification when available) rather
+    # than the sole gatekeeper for whether we ever look at a stock at all.
+    shared_candles: dict[str, list[dict[str, Any]]] = {}
+    known_symbols = {r["symbol"] for r in gainers} | {r["symbol"] for r in losers}
+    extra_symbols = [
+        sym for sym, lot in load_fo_lot_sizes().items()
+        if sym not in known_symbols
+        and sym not in INDEX_LIKE_SYMBOLS
+        and 0 < lot <= MAX_ALLOWED_LOT_SIZE
+    ]
+    if extra_symbols:
+        extra_rows = fetch_extra_candidates(extra_symbols, shared_candles)
+        for row in extra_rows:
+            (gainers if row["side"] == "gainer" else losers).append(row)
+
+    # Warm the 5-minute candle cache once for the union of both sides'
+    # candidates, so bullish and bearish do not each pay a separate fetch wait.
+    union_symbols = {
+        row["symbol"]
+        for row in (*gainers, *losers)
+        if _passes_base_filter(row["symbol"], oi_by_symbol)
+    }
+    if union_symbols:
+        bulk_fetch_candles(sorted(union_symbols), shared_candles)
+
+    if require_current_session and not any(
+        bars and datetime.fromtimestamp(bars[-1]["timestamp"], INDIA_TZ).date() == now_ist.date()
+        for bars in shared_candles.values()
+    ):
+        raise LiveDataError("Today's completed stock candles are unavailable. Keeping the last verified session.")
+
+    market_universe_rows = list((*gainers, *losers))
+    bullish, gainer_stock_overlap = build_suggestions(
+        gainers, oi_by_symbol, side="bullish", top=top,
+        index_context=index_context, candles_by_symbol=shared_candles, audit=decision_audit,
+        market_universe=market_universe_rows, scan_session_date=now_ist.date(),
+    )
+    bearish, loser_stock_overlap = build_suggestions(
+        losers, oi_by_symbol, side="bearish", top=top,
+        index_context=index_context, candles_by_symbol=shared_candles, audit=decision_audit,
+        market_universe=market_universe_rows, scan_session_date=now_ist.date(),
+    )
+    # Enforce candidate lifecycle rules and mutual exclusion
+    session_date = now_ist.date().isoformat()
+    market_clock_ist = now_ist.strftime("%H:%M:%S")
+    bullish, bearish = enforce_candidate_lifecycle_and_mutual_exclusion(
+        session_date=session_date,
+        market_clock_ist=market_clock_ist,
+        bullish=bullish,
+        bearish=bearish,
+    )
     gainers_with_oi = sum(
         1 for row in gainers
-        if row["symbol"] in oi_by_symbol
-        and row["symbol"] not in INDEX_LIKE_SYMBOLS
-        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+        if row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and 0 < get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
     )
     losers_with_oi = sum(
         1 for row in losers
-        if row["symbol"] in oi_by_symbol
-        and row["symbol"] not in INDEX_LIKE_SYMBOLS
-        and get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
+        if row["symbol"] not in INDEX_LIKE_SYMBOLS
+        and 0 < get_fo_lot_size(row["symbol"]) <= MAX_ALLOWED_LOT_SIZE
     )
     oi_matched = gainers_with_oi + losers_with_oi
 
-    return {
+    # Broader snapshot for sector-level aggregation: every OI-confirmed F&O
+    # stock with a valid lot size and price move, BEFORE the strict rally-
+    # score/blocker filtering that narrows things down to bullish/bearish
+    # "breakout candidates". Reuses rows already fetched above (top-20 +
+    # widened OI-spurts pool) - no extra network cost. Lets the Sector
+    # Analysis view show every sector's real state, not just sectors that
+    # happen to have a stock breaking out right now.
+    matched_universe_rows = [
+        row for row in (*gainers, *losers)
+        if _passes_base_filter(row["symbol"], oi_by_symbol)
+    ]
+    # RVOL: same activity-ratio-vs-median formula build_suggestions uses,
+    # just computed across this whole broader pool instead of only the
+    # narrower breakout-candidate pool - so the numbers mean the same thing.
+    _universe_activities = [
+        calc_stock_activity(r, oi_by_symbol.get(r["symbol"])) for r in matched_universe_rows
+    ]
+    _pos_acts = sorted(a for a in _universe_activities if a > 0)
+    if _pos_acts:
+        _mid = len(_pos_acts) // 2
+        _median_act = _pos_acts[_mid] if len(_pos_acts) % 2 else (_pos_acts[_mid - 1] + _pos_acts[_mid]) / 2.0
+    else:
+        _median_act = 1.0
+
+    market_universe = []
+    for row in matched_universe_rows:
+        symbol = row["symbol"]
+        activity = calc_stock_activity(row, oi_by_symbol.get(symbol))
+        vc_ranking = round(max(0.1, activity / _median_act), 2) if _median_act > 0 else 1.0
+        range_pos = day_range_position(row)
+        market_universe.append({
+            "symbol": symbol,
+            "percent_change": row.get("percent_change"),
+            "ltp": row.get("ltp"),
+            "volume": row.get("volume"),
+            "lot_size": get_fo_lot_size(symbol),
+            "vc_ranking": vc_ranking,
+            "range_position_percent": None if range_pos is None else round(range_pos * 100, 1),
+        })
+
+    payload = {
         "ok": True,
         "data_mode": "real",
         "generated_at_ist": now_ist.isoformat(timespec="seconds"),
+        "snapshot_id": scan_id,
+        "scanner_config": {"min_one_side_score": MIN_ONE_SIDE_SCORE,
+                           "min_vc_ranking": MIN_VC_RANKING,
+                           "max_lot_size": MAX_ALLOWED_LOT_SIZE,
+                           "pmh_pml_tolerance_pct": PMH_PML_TOLERANCE_PCT,
+                           "max_suggestions_per_side": top},
         "session_date": now_ist.date().isoformat(),
         "market_clock_ist": now_ist.strftime("%H:%M:%S"),
         "analysis_phase": phase_for_time(now_ist),
@@ -1385,7 +4442,44 @@ def build_payload(top: int) -> dict[str, Any]:
         "bullish": [item.to_dict() for item in bullish],
         "bearish": [item.to_dict() for item in bearish],
         "warnings": errors,
+        "market_universe": market_universe,
     }
+    payload["tracked_breakouts"] = update_tracked_breakouts(payload)
+    payload["daily_top5"] = update_daily_top5(payload, bullish, bearish, index_context, market_universe, now_ist)
+    payload["instant_triggers"] = update_instant_triggers(payload, bullish, bearish, index_context, market_universe)
+    update_outcome_tracker(payload, bullish, bearish, market_universe, payload["instant_triggers"])
+    payload["top5_eligible"] = annotate_top5_eligible_since(
+        compute_top5_eligible(bullish, bearish),
+        payload.get("session_date"), payload.get("market_clock_ist"),
+    )
+    payload["pmh_pml_filter"] = compute_pmh_pml_filter(bullish, bearish)
+    # Collect recently invalidated candidates so frontend displays explicit exit/cut-loss alert
+    try:
+        lifecycle_state = _load_lifecycle_state()
+        invalidated_items = []
+        for k, v in lifecycle_state.get("candidates", {}).items():
+            if v.get("is_invalidated"):
+                invalidated_items.append({
+                    "symbol": v.get("symbol"),
+                    "side": v.get("side"),
+                    "invalidated_at": v.get("invalidated_at"),
+                    "reason": v.get("invalidation_reason"),
+                    "ltp": v.get("ltp"),
+                    "percent_change": v.get("percent_change"),
+                })
+        payload["invalidated_candidates"] = invalidated_items
+    except Exception:
+        payload["invalidated_candidates"] = []
+    try:
+        replay = scanner_trace.replay_inputs(sys.modules[__name__], gainers, losers, oi_by_symbol,
+            index_context, shared_candles, scanner_trace.finish_capture(), extra_symbols)
+        replay["missing_extra_candidates"] = sorted(set(extra_symbols)-{r["symbol"] for r in gainers+losers})
+        replay["missing_candidate_note"] = "requested but no normalized row returned; consult source failures/timeouts"
+        scanner_telemetry.prepare_snapshot(payload, decision_audit, scan_id, replay=replay)
+    except Exception as exc:
+        print(f"[scanner-telemetry] scan logging skipped: {exc}", file=sys.stderr)
+        scanner_trace.health("trace_failed", snapshot_id=scan_id, error_type=type(exc).__name__)
+    return payload
 
 
 def error_payload(exc: Exception) -> dict[str, Any]:
@@ -1420,20 +4514,325 @@ def error_payload(exc: Exception) -> dict[str, Any]:
             "one_side_min_score": MIN_ONE_SIDE_SCORE,
         },
         "index_context": {},
+        "tracked_breakouts": [],
+        "market_universe": [],
+        "daily_top5": {"locked": False, "locked_at_ist": None, "window_start_ist": None,
+                        "window_end_ist": None, "window_minutes": DAILY_TOP5_WINDOW_MINUTES,
+                        "lock_time_ist": DAILY_TOP5_LOCK_TIME.strftime("%H:%M"),
+                        "bullish": [], "bearish": []},
+        "instant_triggers": [],
+        "top5_eligible": {"bullish": [], "bearish": []},
+        "pmh_pml_filter": {"bullish": [], "bearish": []},
+        "invalidated_candidates": [],
     }
+
+
+def build_premarket_reset_payload(now_ist: datetime) -> dict[str, Any]:
+    """Called once, shortly before market open (see the background scanner in
+    serve_nifty50_app.py), to actually clear yesterday's leftover picks
+    instead of leaving the last real scan's full numbers on screen looking
+    "live" until the first 9:15+ scan completes (which can take 30+ seconds).
+    Resets the per-feature state files to today/empty and returns an honest,
+    empty payload shaped like build_payload()'s real output - the dashboard
+    should look freshly ready, not like yesterday's close."""
+    session_date = now_ist.date().isoformat()
+
+    _save_tracked_state({"session_date": session_date, "items": []})
+    _save_daily_top5_state({
+        "session_date": session_date, "window_start_ist": None, "locked_at_ist": None,
+        "top5": {"bullish": [], "bearish": []},
+    })
+    _save_instant_triggers_state({"session_date": session_date, "items": []})
+    _save_top5_eligible_state({"session_date": session_date, "first_seen": {}})
+    _save_lifecycle_state({"session_date": session_date, "candidates": {}})
+    # Deliberately NOT touching the Outcome Tracker's pending state - those
+    # items are still waiting on in-progress +15/30/60min checks from the
+    # prior session and must be left alone to finish naturally.
+
+    return {
+        "ok": True,
+        "data_mode": "real",
+        "generated_at_ist": now_ist.isoformat(timespec="seconds"),
+        "session_date": session_date,
+        "market_clock_ist": now_ist.strftime("%H:%M:%S"),
+        "analysis_phase": phase_for_time(now_ist),
+        "strategy_name": "One-Side Rally Stock Suggestion Index",
+        "source": {},
+        "index_context": {},
+        "coverage": {
+            "gainers_loaded": 0, "losers_loaded": 0, "oi_symbols_loaded": 0,
+            "gainers_with_oi_match": 0, "losers_with_oi_match": 0, "top_rows_with_oi_match": 0,
+            "gainer_stock_overlap_before_rally_filter": 0, "loser_stock_overlap_before_rally_filter": 0,
+            "max_suggestions_per_side": DEFAULT_SUGGESTIONS_PER_SIDE, "one_side_min_score": MIN_ONE_SIDE_SCORE,
+        },
+        "summary": {"bullish_candidates": 0, "bearish_candidates": 0, "priority_bullish": 0, "priority_bearish": 0},
+        "bullish": [],
+        "bearish": [],
+        "warnings": [],
+        "market_universe": [],
+        "tracked_breakouts": [],
+        "daily_top5": {"locked": False, "locked_at_ist": None, "window_start_ist": None,
+                        "window_end_ist": None, "window_minutes": DAILY_TOP5_WINDOW_MINUTES,
+                        "lock_time_ist": DAILY_TOP5_LOCK_TIME.strftime("%H:%M"),
+                        "bullish": [], "bearish": []},
+        "instant_triggers": [],
+        "top5_eligible": {"bullish": [], "bearish": []},
+        "pmh_pml_filter": {"bullish": [], "bearish": []},
+        "invalidated_candidates": [],
+    }
+
+
+def _has_signal(payload: dict[str, Any]) -> bool:
+    return bool(payload.get("ok")) and bool(payload.get("bullish") or payload.get("bearish"))
+
+
+# ── Remote log mirror (Neon Postgres) ───────────────────────────────────────
+# Every local log below also mirrors its key events to a "scanner_event_log"
+# table in Postgres (via db_adapter.py, DATABASE_URL from .env), so they're
+# traceable even when not running/watching this app locally. Local JSON/JSONL
+# files stay the source of truth; this is a best-effort mirror only - a DB
+# hiccup must never break a scan, same philosophy as every local log here.
+def _log_event_to_db(
+    event_type: str,
+    session_date: str | None,
+    symbol: str | None,
+    side: str | None,
+    payload: dict[str, Any],
+) -> None:
+    try:
+        import db_adapter
+        if not db_adapter.DATABASE_URL:
+            return
+        conn = db_adapter.get_db_connection()
+        cur = conn.cursor()
+        if event_type == "outcome":
+            # A stuck/stale local outcome_tracker_state.json (e.g. after a
+            # container restart wipes tracking mid-day) can get re-flushed on
+            # a later day's session-rollover, writing the same logical
+            # (date, symbol, side, trigger_time) outcome again. Upsert on
+            # that natural key instead of blindly inserting, backed by
+            # idx_outcome_dedup, so re-flushes overwrite rather than pile up.
+            cur.execute(
+                "INSERT INTO scanner_event_log (event_type, session_date, symbol, side, payload) "
+                "VALUES (%s, %s, %s, %s, %s::jsonb) "
+                "ON CONFLICT (event_type, session_date, symbol, side, (payload->>'trigger_time_ist')) "
+                "WHERE event_type = 'outcome' "
+                "DO UPDATE SET payload = EXCLUDED.payload, created_at = NOW()",
+                (event_type, session_date, symbol, side, json.dumps(payload, default=str)),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO scanner_event_log (event_type, session_date, symbol, side, payload) "
+                "VALUES (%s, %s, %s, %s, %s::jsonb)",
+                (event_type, session_date, symbol, side, json.dumps(payload, default=str)),
+            )
+        conn.commit()
+        cur.close()
+    except Exception as exc:  # noqa: BLE001 - must never break a scan
+        print(f"[db_log] {event_type} skipped: {exc}", file=sys.stderr)
+
+
+# ── Silent scan history logger ──────────────────────────────────────────────
+# Every real scan's candidates are appended to a local, gitignored, append-only
+# JSONL log - one file per session date. Nothing here touches the UI or the
+# served snapshot; it exists purely so a later question like "do rank 6-20
+# breakouts actually work out?" can be answered from real data instead of a
+# guess. Logging is best-effort: it must never break or slow down a scan.
+SCAN_HISTORY_DIR = INPUT_DIR / "scan_history"
+
+
+def log_scan_snapshot(payload: dict[str, Any]) -> None:
+    try:
+        session_date = payload.get("session_date") or datetime.now(INDIA_TZ).date().isoformat()
+        logged_at = payload.get("generated_at_ist") or datetime.now(INDIA_TZ).isoformat(timespec="seconds")
+        lines: list[str] = []
+        for side_name in ("bullish", "bearish"):
+            for row in payload.get(side_name, []) or []:
+                lines.append(json.dumps({
+                    "logged_at_ist": logged_at,
+                    "session_date": session_date,
+                    "side": side_name,
+                    "symbol": row.get("symbol"),
+                    "rank": row.get("rank"),
+                    "score": row.get("one_side_rally_score"),
+                    "status": row.get("status"),
+                    "five_min_status": row.get("five_min_status"),
+                    "is_breakout": row.get("is_breakout"),
+                    "breakout_time": row.get("breakout_time"),
+                    "percent_change": row.get("percent_change"),
+                    "ltp": row.get("ltp"),
+                    "entry": row.get("entry"),
+                    "stop_loss": row.get("stop_loss"),
+                    "target": row.get("target"),
+                    "lot_size": row.get("lot_size"),
+                    "setup": row.get("setup"),
+                    "vc_ranking": row.get("vc_ranking"),
+                    "rvol_5m": row.get("rvol_5m"),
+                    "range_position_percent": row.get("range_position_percent"),
+                }, ensure_ascii=False))
+        if not lines:
+            return
+        SCAN_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = SCAN_HISTORY_DIR / f"{session_date}.jsonl"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    except Exception as exc:  # noqa: BLE001 - logging must never break a scan
+        print(f"[scan-history] log skipped: {exc}", file=sys.stderr)
+
+
+# ── Discovery-delay log ─────────────────────────────────────────────────────
+# The dashboard now only DISPLAYS the top MAX_DISPLAY_ROWS per side (UI-only
+# cap; the scoring/ranking business logic below is untouched and still runs
+# on the full candidate pool). This logs, once per symbol per session, the
+# gap between a stock's real breakout_time (candle-derived origin) and the
+# moment it first reached that visible top tier - so the discovery delay we
+# have been diagnosing by hand all session gets tracked automatically.
+DISCOVERY_LOG_DIR = INPUT_DIR / "discovery_log"
+DISCOVERY_STATE_PATH = INPUT_DIR / "discovery_state.json"
+MAX_DISPLAY_ROWS = 6  # keep in sync with MLAIStockV2.html's MAX_DISPLAY_ROWS
+
+
+def _parse_clock_to_minutes(text: str | None) -> int | None:
+    """'09:20 AM' / '13:30:05' -> minutes since midnight, or None."""
+    if not text:
+        return None
+    text = text.strip()
+    ampm = ""
+    upper = text.upper()
+    if upper.endswith("AM") or upper.endswith("PM"):
+        ampm = upper[-2:]
+        text = text[:-2].strip()
+    parts = text.split(":")
+    if len(parts) < 2:
+        return None
+    try:
+        h, m = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if ampm == "PM" and h != 12:
+        h += 12
+    if ampm == "AM" and h == 12:
+        h = 0
+    return h * 60 + m
+
+
+def _load_discovery_state() -> dict[str, Any]:
+    try:
+        return json.loads(DISCOVERY_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"session_date": None, "logged_keys": []}
+
+
+def _save_discovery_state(state: dict[str, Any]) -> None:
+    try:
+        INPUT_DIR.mkdir(parents=True, exist_ok=True)
+        DISCOVERY_STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[discovery] state save skipped: {exc}", file=sys.stderr)
+
+
+def log_discovery_delays(payload: dict[str, Any]) -> None:
+    """The first time a symbol reaches rank <= MAX_DISPLAY_ROWS this session,
+    write server Top-6 eligibility evidence, not proof of browser visibility.
+    Actual viewport appearances are recorded separately as signal_displayed."""
+    try:
+        session_date = payload.get("session_date")
+        state = _load_discovery_state()
+        if state.get("session_date") != session_date:
+            state = {"session_date": session_date, "logged_keys": []}
+        logged = {tuple(k) for k in state["logged_keys"]}
+
+        now_str = payload.get("market_clock_ist")
+        now_min = _parse_clock_to_minutes(now_str)
+        new_lines: list[str] = []
+        for side_name in ("bullish", "bearish"):
+            for row in payload.get(side_name, []) or []:
+                rank = row.get("rank")
+                if rank is None or rank > MAX_DISPLAY_ROWS:
+                    continue
+                key = (row.get("symbol"), side_name)
+                if key in logged:
+                    continue
+                logged.add(key)
+                bo_min = _parse_clock_to_minutes(row.get("breakout_time"))
+                delay_minutes = (now_min - bo_min) if (bo_min is not None and now_min is not None) else None
+                discovery_entry = {
+                    "signal_id": row.get("signal_id"),
+                    "snapshot_id": payload.get("snapshot_id"),
+                    "evidence_type": "server_top6_eligibility",
+                    "session_date": session_date,
+                    "symbol": row.get("symbol"),
+                    "side": side_name,
+                    "breakout_time": row.get("breakout_time"),
+                    "first_shown_in_top6_at": now_str,
+                    "delay_minutes": delay_minutes,
+                    "rank_when_shown": rank,
+                    "score_when_shown": row.get("one_side_rally_score"),
+                    "status_when_shown": row.get("status"),
+                    "percent_change_when_shown": row.get("percent_change"),
+                    "vc_ranking_when_shown": row.get("vc_ranking"),
+                }
+                new_lines.append(json.dumps(discovery_entry, ensure_ascii=False))
+                _log_event_to_db("discovery", session_date, row.get("symbol"), side_name, discovery_entry)
+
+        if new_lines:
+            DISCOVERY_LOG_DIR.mkdir(parents=True, exist_ok=True)
+            path = DISCOVERY_LOG_DIR / f"{session_date}.jsonl"
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("\n".join(new_lines) + "\n")
+
+        state["logged_keys"] = [list(k) for k in logged]
+        _save_discovery_state(state)
+    except Exception as exc:  # noqa: BLE001 - logging must never break a scan
+        print(f"[discovery] log skipped: {exc}", file=sys.stderr)
 
 
 def main() -> int:
     args = parse_args()
     output = Path(args.output)
     try:
-        payload = build_payload(args.top)
+        payload = build_payload(args.top, require_current_session=args.require_current_session)
         exit_code = 0
     except Exception as exc:  # noqa: BLE001 - the UI needs a clear live-data status
+        import scanner_trace
+        scanner_trace.health("scan_failed", error_type=type(exc).__name__, sources=scanner_trace.finish_capture())
         payload = error_payload(exc)
         exit_code = 1
 
     output.parent.mkdir(parents=True, exist_ok=True)
+
+    # Log every genuine scan's candidates in the background (not the stale-kept
+    # fallback below - that would duplicate an already-logged snapshot under a
+    # new timestamp and corrupt the time series).
+    if _has_signal(payload):
+        log_scan_snapshot(payload)
+        log_discovery_delays(payload)
+
+    # Dispatch NIFTY & SENSEX Demand Fresh alerts to Telegram independently of stock signals
+    try:
+        import notify
+        notify.dispatch_new_fresh_alerts(payload)
+    except Exception as exc:
+        print(f"[telegram] dispatch skipped: {exc}", file=sys.stderr)
+
+    # Never let a failed/empty scan clobber a good snapshot. If this run produced
+    # no usable signal, retain the last good snapshot across the session change.
+    if not _has_signal(payload) and output.exists():
+        try:
+            prev = json.loads(output.read_text(encoding="utf-8"))
+        except Exception:
+            prev = {}
+        if _has_signal(prev):
+            (output.parent / "stock_suggestion_index.error.json").write_text(
+                json.dumps(payload, indent=2), encoding="utf-8"
+            )
+            # Emit the last good snapshot on stdout so callers (server refresh
+            # endpoint / WS broadcast) keep showing real data instead of blank.
+            prev["_stale_kept"] = True
+            prev["_last_scan_error"] = payload.get("message") or payload.get("error")
+            print(json.dumps(prev, indent=2))
+            return exit_code
+
     output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload, indent=2))
     return exit_code
