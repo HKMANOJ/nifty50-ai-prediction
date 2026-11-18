@@ -287,6 +287,100 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
     return sent_this_cycle
 
 
+def dispatch_instant_demand_surge() -> list[str]:
+    """Scan NIFTY and SENSEX 1-minute candles in real time for instant demand surges.
+    Fires the exact minute the impulse candle breaks out of the base, giving an early entry.
+    """
+    sent_this_cycle: list[str] = []
+
+    try:
+        import upstox_provider
+    except Exception as exc:
+        logger.warning("Could not import upstox_provider: %s", exc)
+        return []
+
+    targets = [
+        ("Sensex", "SENSEX", 38),  # Min 38 pts impulse for Sensex
+        ("Nifty", "NIFTY", 14),    # Min 14 pts impulse for Nifty
+    ]
+
+    now_ist = datetime.now(INDIA_TZ)
+    today = now_ist.date()
+
+    for sym_display, sym_code, min_pts in targets:
+        try:
+            u_res = upstox_provider.fetch_5m_candles_with_telemetry(sym_code, full_range=False)
+            c1m = u_res.get("candles_1m") or []
+            if not c1m:
+                continue
+
+            today_c1m = [
+                c for c in c1m
+                if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today
+            ]
+            if len(today_c1m) < 6:
+                continue
+
+            # Look at the latest completed 1-minute candle
+            curr = today_c1m[-1]
+            body = curr["close"] - curr["open"]
+            candle_range = curr["high"] - curr["low"]
+
+            # Must be a solid green candle meeting minimum points
+            if body < min_pts:
+                continue
+
+            # Upper wick must be controlled (< 35% of total range)
+            if candle_range > 0 and (curr["high"] - curr["close"]) / candle_range > 0.35:
+                continue
+
+            # Base of preceding 3 to 8 candles
+            base_candles = today_c1m[-9:-1]
+            if not base_candles:
+                continue
+
+            base_high = max(c["high"] for c in base_candles)
+
+            # Must break out above base_high
+            if curr["close"] > base_high:
+                c_dt = datetime.fromtimestamp(curr["timestamp"], tz=INDIA_TZ)
+                time_str = c_dt.strftime("%I:%M %p").lstrip("0")
+                key = f"{sym_display}_1M_SURGE_{today.isoformat()}_{c_dt.strftime('%H%M')}"
+
+                # Deduplication: Check if already sent or sent within last 12 minutes
+                sent_keys = _load_sent_keys()
+                if key in sent_keys:
+                    continue
+
+                curr_minutes = c_dt.hour * 60 + c_dt.minute
+                recent_sent = False
+                for k in sent_keys:
+                    if k.startswith(f"{sym_display}_1M_SURGE_{today.isoformat()}_"):
+                        try:
+                            hhmm = k.split("_")[-1]
+                            k_min = int(hhmm[:2]) * 60 + int(hhmm[2:])
+                            if abs(curr_minutes - k_min) < 12:
+                                recent_sent = True
+                                break
+                        except Exception:
+                            pass
+                if recent_sent:
+                    continue
+
+                msg = f"⚡ {sym_display} Demand Surge at {time_str} @ {curr['close']:,.0f} (Base: {base_high:,.0f})"
+                ok, reason = send_telegram_text(msg)
+                if ok:
+                    logger.info("✓ Dispatched Instant Demand Surge: %s", msg)
+                    _save_sent_key(key)
+                    sent_this_cycle.append(key)
+                else:
+                    logger.warning("✗ Failed sending Telegram alert for %s: %s", sym_display, reason)
+        except Exception as exc:
+            logger.error("Error evaluating instant demand surge for %s: %s", sym_display, exc)
+
+    return sent_this_cycle
+
+
 if __name__ == "__main__":
     token, chat_id, enabled = get_credentials()
     print("=" * 60)
@@ -310,3 +404,11 @@ if __name__ == "__main__":
         print("✅ Demand Fresh test alert delivered successfully to Telegram!")
     else:
         print("❌ Delivery failed.")
+
+    print("\nSending live test Instant 1-Minute Surge alert...")
+    surge_msg = "⚡ Sensex Demand Surge at 1:50 PM @ 81,920 (Base: 81,875)"
+    s_ok, s_reason = send_telegram_text(surge_msg)
+    if s_ok:
+        print("✅ Instant 1-Minute Surge test alert delivered successfully to Telegram!")
+    else:
+        print(f"❌ Surge delivery failed: {s_reason}")

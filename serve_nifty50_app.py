@@ -362,6 +362,33 @@ def start_background_auto_scanner(interval_seconds: int = 60) -> None:
     print(f"[AUTO-SCANNER] Background 5-min auto-scanner thread active (interval: {interval_seconds}s).")
 
 
+def start_instant_surge_scanner(interval_seconds: int = 30) -> None:
+    """Fast background thread (every 30s during market hours) detecting 1-minute Demand Surges.
+    Dispatches real-time Telegram alerts the exact second an impulse breakout begins.
+    """
+    def _surge_loop() -> None:
+        time.sleep(8)  # Boot grace period
+        while True:
+            try:
+                now_ist = get_ist_now()
+                if is_ist_market_hours(now_ist):
+                    try:
+                        import notify
+                        dispatched = notify.dispatch_instant_demand_surge()
+                        if dispatched:
+                            print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [INSTANT-SURGE] Dispatched 1M alerts: {dispatched}")
+                    except Exception as err:
+                        print(f"[INSTANT-SURGE ERROR] {err}")
+                time.sleep(interval_seconds)
+            except Exception as e:
+                print(f"[INSTANT-SURGE EXCEPTION] {e}")
+                time.sleep(interval_seconds)
+
+    surge_thread = threading.Thread(target=_surge_loop, name="BackgroundInstantSurgeScanner", daemon=True)
+    surge_thread.start()
+    print(f"[INSTANT-SURGE] Background 1-min surge scanner thread active (interval: {interval_seconds}s).")
+
+
 def parse_args() -> argparse.Namespace:
     default_host = os.environ.get("HOST") or ("0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
     parser = argparse.ArgumentParser(description="Serve the live market app with one-click refresh APIs.")
@@ -960,6 +987,15 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 }
                 ok = notify.send_fresh_ob_alert(test_item, is_pe=False, test=True, force=True)
                 self._send_json(HTTPStatus.OK, {"ok": ok, "message": "Test Demand Fresh alert dispatched to Telegram"})
+            except Exception as exc:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
+        if parsed_path.path == "/api/telegram/test_surge":
+            try:
+                import notify
+                msg = "⚡ Sensex Demand Surge at 1:50 PM @ 81,920 (Base: 81,875)"
+                ok, reason = notify.send_telegram_text(msg)
+                self._send_json(HTTPStatus.OK, {"ok": ok, "message": msg, "reason": reason})
             except Exception as exc:
                 self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
             return
@@ -2182,8 +2218,10 @@ def main() -> None:
     except Exception as exc:
         print("[scanner-retention] worker_start_failed", file=sys.stderr)
     
-    # Launch autonomous 60-second background auto-scanner
-    start_background_auto_scanner(interval_seconds=60)
+    # Launch autonomous 5-minute background auto-scanner
+    start_background_auto_scanner(interval_seconds=300)
+    # Launch autonomous 1-minute real-time demand surge scanner
+    start_instant_surge_scanner(interval_seconds=30)
 
     # Bind the private WebSocket listener used by the same-origin /ws proxy.
     try:
