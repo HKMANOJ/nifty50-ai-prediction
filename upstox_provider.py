@@ -138,16 +138,9 @@ def get_user_profile() -> dict[str, Any] | None:
 
 
 def get_instrument_key(symbol: str) -> str | None:
+    """Dynamically resolves instrument key from Upstox official master catalog with zero hardcoding."""
     global _INSTRUMENTS_CACHE
     sym = symbol.upper().strip()
-    
-    # Direct index overrides
-    if sym in ("NIFTY 50", "NIFTY50", "NIFTY"):
-        return "NSE_INDEX|Nifty 50"
-    if sym in ("NIFTY BANK", "BANKNIFTY", "BANK NIFTY"):
-        return "NSE_INDEX|Nifty Bank"
-    if sym in ("SENSEX", "BSESENSEX", "^BSESN", "BSE SENSEX"):
-        return "BSE_INDEX|SENSEX"
 
     if _INSTRUMENTS_CACHE is None:
         if INSTRUMENTS_FILE.exists():
@@ -160,7 +153,7 @@ def get_instrument_key(symbol: str) -> str | None:
                 from download_upstox_instruments import download_and_index
                 _INSTRUMENTS_CACHE = download_and_index()
             except Exception as dl_err:
-                print(f"[UPSTOX WARNING] Failed to download NSE instruments: {dl_err}")
+                print(f"[UPSTOX WARNING] Failed to download master instruments: {dl_err}")
                 _INSTRUMENTS_CACHE = {}
 
     entry = _INSTRUMENTS_CACHE.get(sym)

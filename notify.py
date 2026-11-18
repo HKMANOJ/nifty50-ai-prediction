@@ -287,9 +287,30 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
     return sent_this_cycle
 
 
+def _compute_dynamic_atr(candles_1m: list[dict[str, Any]], default_pts: float = 20.0) -> float:
+    """Dynamically computes the True Range of the session's active 1-minute candles.
+    Adapts thresholds to live market volatility instead of using fixed hardcoded points.
+    """
+    if len(candles_1m) < 5:
+        return default_pts
+    trs = [
+        max(
+            candles_1m[i]["high"] - candles_1m[i]["low"],
+            abs(candles_1m[i]["high"] - candles_1m[i - 1]["close"]),
+            abs(candles_1m[i]["low"] - candles_1m[i - 1]["close"]),
+        )
+        for i in range(1, len(candles_1m))
+    ]
+    valid = [t for t in trs if t > 0.5]
+    if not valid:
+        return default_pts
+    return sum(valid) / len(valid)
+
+
 def dispatch_instant_demand_surge() -> list[str]:
     """Scan NIFTY and SENSEX 1-minute candles in real time for instant demand surges.
     Fires the exact minute the impulse candle breaks out of the base, giving an early entry.
+    All thresholds are computed dynamically from real-time ATR with zero hardcoded prices.
     """
     sent_this_cycle: list[str] = []
 
@@ -300,14 +321,14 @@ def dispatch_instant_demand_surge() -> list[str]:
         return []
 
     targets = [
-        ("Sensex", "SENSEX", 38),  # Min 38 pts impulse for Sensex
-        ("Nifty", "NIFTY", 14),    # Min 14 pts impulse for Nifty
+        ("Sensex", "SENSEX", 25.0),
+        ("Nifty", "NIFTY", 10.0),
     ]
 
     now_ist = datetime.now(INDIA_TZ)
     today = now_ist.date()
 
-    for sym_display, sym_code, min_pts in targets:
+    for sym_display, sym_code, fallback_atr in targets:
         try:
             u_res = upstox_provider.fetch_5m_candles_with_telemetry(sym_code, full_range=False)
             c1m = u_res.get("candles_1m") or []
@@ -321,13 +342,17 @@ def dispatch_instant_demand_surge() -> list[str]:
             if len(today_c1m) < 6:
                 continue
 
+            # Compute dynamic ATR threshold from today's live volatility
+            session_atr = _compute_dynamic_atr(today_c1m, default_pts=fallback_atr)
+            dynamic_min_pts = round(1.2 * session_atr, 1)
+
             # Look at the latest completed 1-minute candle
             curr = today_c1m[-1]
             body = curr["close"] - curr["open"]
             candle_range = curr["high"] - curr["low"]
 
-            # Must be a solid green candle meeting minimum points
-            if body < min_pts:
+            # Must be a solid green candle meeting dynamic ATR threshold
+            if body < dynamic_min_pts:
                 continue
 
             # Upper wick must be controlled (< 35% of total range)
