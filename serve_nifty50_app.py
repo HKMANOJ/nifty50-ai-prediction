@@ -1728,13 +1728,21 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             # 8. Align Institutional Trade Plan with Dashboard Playbook & SMC Active Block Status
             is_bull_side = pct_change >= 0
             if is_bull_side:
-                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
+                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and ob.get("status") == "Fresh" and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
+                if not primary_ob:
+                    primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
                 if not primary_ob:
                     primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
             else:
-                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
+                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and ob.get("status") == "Fresh" and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
+                if not primary_ob:
+                    primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
                 if not primary_ob:
                     primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
+
+            if primary_ob and primary_ob in today_obs:
+                today_obs.remove(primary_ob)
+                today_obs.insert(0, primary_ob)
 
             is_df = bool(primary_ob and (primary_ob.get("type") in ("BULLISH", "+OB") or primary_ob.get("label") == "DEMAND") and primary_ob.get("status") == "Fresh" and is_bull_side)
             if not is_df and scanner_item and scanner_item.get("is_demand_fresh") and is_bull_side:
