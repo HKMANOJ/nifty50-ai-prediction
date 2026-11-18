@@ -3727,7 +3727,7 @@
 
     ctx.save();
 
-    // 1. Draw Primary Frozen Breakout Line (Single clean amber dashed line)
+    // 1. Draw Primary Frozen Breakout / Breakdown Line
     levels.forEach(lvl => {
       const y = series.priceToCoordinate(lvl.price);
       if (y === null) return;
@@ -3736,9 +3736,15 @@
       xStart = Math.max(0, xStart);
       if (xStart > chartPlotWidth) return;
 
+      const isBear = (lvl.side || "").toUpperCase() === "BEARISH";
+      const strokeColor = isBear ? "#ef4444" : "#f59e0b";
+      const tagBg = isBear ? "rgba(254, 242, 242, 0.95)" : "rgba(254, 243, 199, 0.95)";
+      const tagText = isBear ? "#991b1b" : "#92400e";
+      const lblText = `${isBear ? "BD LEVEL" : "BR LEVEL"}: ₹${lvl.price.toFixed(2)}`;
+
       ctx.beginPath();
       ctx.setLineDash([5, 5]);
-      ctx.strokeStyle = "#f59e0b"; // Clean golden amber
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 1.6;
       ctx.moveTo(xStart, y);
       ctx.lineTo(chartPlotWidth, y);
@@ -3746,39 +3752,39 @@
       ctx.setLineDash([]);
 
       // Clean, compact label at right edge
-      const lblText = `BR LEVEL: ₹${lvl.price.toFixed(2)}`;
       ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
       const tw = ctx.measureText(lblText).width;
       const lx = chartPlotWidth - tw - 12;
       const ly = y - 7;
-      ctx.fillStyle = "rgba(254, 243, 199, 0.95)";
+      ctx.fillStyle = tagBg;
       drawPillRect(ctx, lx, ly, tw + 8, 14, 2);
       ctx.fill();
-      ctx.strokeStyle = "#f59e0b";
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 0.8;
       ctx.stroke();
 
-      ctx.fillStyle = "#92400e";
+      ctx.fillStyle = tagText;
       ctx.textAlign = "start";
       ctx.textBaseline = "middle";
       ctx.fillText(lblText, lx + 4, ly + 7);
     });
 
-    // 2. Draw Primary Confirmed BR Marker (Crisp, sharp badge with no text clipping)
+    // 2. Draw Primary Confirmed Marker (Crisp badge: Green BR ▲ or Red BD ▼)
     markers.forEach(m => {
       const x = chart.timeScale().timeToCoordinate(m.time);
       const y = series.priceToCoordinate(m.price);
       if (x === null || y === null || x < 0 || x > chartPlotWidth) return;
 
+      const isBear = (m.side || "").toUpperCase() === "BEARISH";
       const badgeW = 38;
       const badgeH = 16;
       const badgeX = x - badgeW / 2;
-      const badgeY = y - 22; // Well above candle wick
+      const badgeY = isBear ? y + 8 : y - 22; // Above candle for bull breakout, below candle for bear breakdown
 
-      ctx.fillStyle = "#059669"; // Emerald Green
+      ctx.fillStyle = isBear ? "#dc2626" : "#059669";
       drawPillRect(ctx, badgeX, badgeY, badgeW, badgeH, 3);
       ctx.fill();
-      ctx.strokeStyle = "#047857";
+      ctx.strokeStyle = isBear ? "#b91c1c" : "#047857";
       ctx.lineWidth = 1;
       ctx.stroke();
 
@@ -3786,7 +3792,7 @@
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("BR ▲", x, badgeY + badgeH / 2);
+      ctx.fillText(m.text || (isBear ? "BD ▼" : "BR ▲"), x, badgeY + badgeH / 2);
     });
 
     ctx.restore();

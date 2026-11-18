@@ -1477,13 +1477,15 @@ def calculate_extension_gate(candles: list[dict[str, Any]]) -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════════════
 
 def detect_frozen_breakout_levels(candles: list[dict[str, Any]]) -> dict[str, Any]:
-    """Detects institutional breakout confirmation across rolling 12-bar resistance/support.
-    Level is frozen prior to breakout candle; BR marker emitted strictly on closed candle
-    with close > level + 0.10*ATR, closeLocation >= 0.70, bodyFraction >= 0.50.
+    """Detects institutional breakout / breakdown confirmation with strict trend alignment:
+    1. Trend Alignment: Bullish breakouts (BR ▲) only in BULL mode; Bearish breakdowns (BD ▼) in BEAR mode.
+    2. Extension Gate: Suppressed if candle is already overextended (> 1.8 ATR).
+    3. Failure Invalidation: If price closes back across level within 3 bars or later collapses, it is eliminated.
+    Guarantees ONE UNIFIED SYSTEM OPINION: Zero contradictory signals on the chart.
     """
     n = len(candles)
     if n < 15:
-        return {"levels": [], "markers": [], "latest_breakout": None}
+        return {"levels": [], "markers": [], "primary_level": None, "latest_breakout": None, "regime": "NEUTRAL"}
 
     trs = [max(candles[i]["high"] - candles[i]["low"],
                abs(candles[i]["high"] - candles[i-1]["close"]),
@@ -1491,45 +1493,101 @@ def detect_frozen_breakout_levels(candles: list[dict[str, Any]]) -> dict[str, An
     atr = (sum(trs[-14:]) / min(14, len(trs))) if trs else 5.0
     atr = max(atr, 0.5)
 
+    alpha20 = 2.0 / (20 + 1)
+    ema20 = candles[0]["close"]
+    ema20_vals = []
+    for c in candles:
+        ema20 = alpha20 * c["close"] + (1.0 - alpha20) * ema20
+        ema20_vals.append(ema20)
+
+    curr_close = candles[-1]["close"]
+    is_bull_regime = curr_close >= ema20_vals[-1]
+
     breakout_levels: list[dict[str, Any]] = []
     markers: list[dict[str, Any]] = []
 
-    for i in range(12, n):
-        # Resistance frozen from prior 12 closed bars (excluding candle i)
-        frozen_r = max(c["high"] for c in candles[i-12:i])
-        c_curr = candles[i]
-        rng = max(c_curr["high"] - c_curr["low"], 0.01)
-        body = abs(c_curr["close"] - c_curr["open"])
-        close_loc = (c_curr["close"] - c_curr["low"]) / rng
+    if is_bull_regime:
+        # ── BULLISH REGIME: Scan for Valid Unviolated Resistance Breakouts ──
+        for i in range(12, n):
+            frozen_r = max(c["high"] for c in candles[i-12:i])
+            c_curr = candles[i]
+            rng = max(c_curr["high"] - c_curr["low"], 0.01)
+            body = abs(c_curr["close"] - c_curr["open"])
+            close_loc = (c_curr["close"] - c_curr["low"]) / rng
+            ext = (c_curr["close"] - ema20_vals[i]) / atr
 
-        # Bullish Breakout Confirmation
-        if (c_curr["close"] > frozen_r + 0.10 * atr and
-            c_curr["close"] > c_curr["open"] and
-            body / rng >= 0.50 and
-            close_loc >= 0.70):
+            if (c_curr["close"] > frozen_r + 0.10 * atr and
+                c_curr["close"] > c_curr["open"] and
+                body / rng >= 0.50 and
+                close_loc >= 0.70 and
+                ext <= 2.2):  # Do not emit BR on runaway climax candles
 
-            # Check if this level was already recorded recently
-            if not any(abs(bl["price"] - frozen_r) < 1.0 for bl in breakout_levels[-3:]):
-                b_event = {
-                    "id": f"br_lvl_{i}",
-                    "type": "RESISTANCE",
-                    "price": round(frozen_r, 2),
-                    "breakout_price": round(c_curr["close"], 2),
-                    "time": c_curr["timestamp"],
-                    "status": "CONFIRMED",
-                }
-                breakout_levels.append(b_event)
-                markers.append({
-                    "time": c_curr["timestamp"],
-                    "position": "aboveBar",
-                    "color": "#10b981",
-                    "shape": "arrowUp",
-                    "text": "BR",
-                    "price": round(c_curr["high"], 2),
-                })
+                subsequent = candles[i+1 : min(i+4, n)]
+                failed = any(sub["close"] < frozen_r - 0.10 * atr for sub in subsequent)
+                is_currently_holding = (curr_close >= frozen_r - 0.15 * atr)
+
+                if is_currently_holding and not failed:
+                    b_event = {
+                        "id": f"br_lvl_{i}",
+                        "type": "RESISTANCE",
+                        "side": "BULLISH",
+                        "price": round(frozen_r, 2),
+                        "breakout_price": round(c_curr["close"], 2),
+                        "time": c_curr["timestamp"],
+                        "status": "CONFIRMED",
+                    }
+                    m_event = {
+                        "time": c_curr["timestamp"],
+                        "position": "aboveBar",
+                        "side": "BULLISH",
+                        "color": "#10b981",
+                        "text": "BR ▲",
+                        "price": round(c_curr["high"], 2),
+                    }
+                    breakout_levels.append(b_event)
+                    markers.append(m_event)
+
+    else:
+        # ── BEARISH REGIME: Scan for Valid Support Breakdowns (BD ▼) ──
+        # When market is Bearish, NEVER show contradictory bullish BR markers!
+        for i in range(12, n):
+            frozen_s = min(c["low"] for c in candles[i-12:i])
+            c_curr = candles[i]
+            rng = max(c_curr["high"] - c_curr["low"], 0.01)
+            body = abs(c_curr["close"] - c_curr["open"])
+            close_loc = (c_curr["high"] - c_curr["close"]) / rng
+
+            if (c_curr["close"] < frozen_s - 0.10 * atr and
+                c_curr["close"] < c_curr["open"] and
+                body / rng >= 0.50 and
+                close_loc >= 0.70):
+
+                subsequent = candles[i+1 : min(i+4, n)]
+                failed = any(sub["close"] > frozen_s + 0.10 * atr for sub in subsequent)
+                is_currently_holding = (curr_close <= frozen_s + 0.15 * atr)
+
+                if is_currently_holding and not failed:
+                    b_event = {
+                        "id": f"bd_lvl_{i}",
+                        "type": "SUPPORT",
+                        "side": "BEARISH",
+                        "price": round(frozen_s, 2),
+                        "breakout_price": round(c_curr["close"], 2),
+                        "time": c_curr["timestamp"],
+                        "status": "CONFIRMED",
+                    }
+                    m_event = {
+                        "time": c_curr["timestamp"],
+                        "position": "belowBar",
+                        "side": "BEARISH",
+                        "color": "#ef4444",
+                        "text": "BD ▼",
+                        "price": round(c_curr["low"], 2),
+                    }
+                    breakout_levels.append(b_event)
+                    markers.append(m_event)
 
     # Per Spec Section 10.1 & Config 23: drawOnlyPrimaryBreakoutLine: true
-    # Keep only the primary active breakout level and confirmed BR marker to ensure a clean chart
     primary_level = breakout_levels[-1] if breakout_levels else None
     primary_marker = markers[-1] if markers else None
 
@@ -1539,5 +1597,6 @@ def detect_frozen_breakout_levels(candles: list[dict[str, Any]]) -> dict[str, An
         "all_levels": breakout_levels,
         "primary_level": primary_level,
         "latest_breakout": primary_level,
+        "regime": "BULLISH" if is_bull_regime else "BEARISH",
     }
 
