@@ -304,6 +304,15 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                                         broadcast_scanner_update_sync(scan_payload)
                                     except Exception as bc_err:
                                         print(f"[WS BROADCAST ERROR] {bc_err}")
+
+                            # Dispatch real-time NIFTY and SENSEX Demand Fresh alerts to Telegram
+                            try:
+                                import notify
+                                dispatched = notify.dispatch_new_fresh_alerts(scan_payload)
+                                if dispatched:
+                                    print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Dispatched index alerts: {dispatched}")
+                            except Exception as notify_err:
+                                print(f"[AUTO-SCANNER TELEGRAM ERROR] {notify_err}")
                         except Exception as scan_err:
                             scanner_trace.submit_health("scheduled_scan_failed", attempt_id=attempt_id,
                                                         error_type=type(scan_err).__name__)

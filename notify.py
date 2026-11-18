@@ -56,10 +56,14 @@ def load_env() -> None:
 load_env()
 
 
+DEFAULT_BOT_TOKEN = "8719411311:AAGyHgXwUBAn7AL5VkIFfbgp2QpQIWQU6DE"
+DEFAULT_CHAT_ID = "6093954934"
+
+
 def get_credentials() -> tuple[str, str, bool]:
     load_env()
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    token = (os.getenv("TELEGRAM_BOT_TOKEN") or DEFAULT_BOT_TOKEN).strip()
+    chat_id = (os.getenv("TELEGRAM_CHAT_ID") or DEFAULT_CHAT_ID).strip()
     enabled = os.getenv("TELEGRAM_ALERTS_ENABLED", "1").strip().lower() in ("1", "true", "yes")
     return token, chat_id, enabled
 
