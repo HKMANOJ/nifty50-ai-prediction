@@ -2064,6 +2064,7 @@
               <button class="tf-btn" id="btnFitChart">Fit View</button>
               <button class="tf-btn active" id="btnToggleDashboardSmc" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;" title="Toggle Fair Value Gaps and Order Blocks on Dashboard Chart">📦 SMC (FVG & OB)</button>
               <button class="tf-btn active" id="btnToggleTrendBand" onclick="toggleDashboardTrendBand()" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0; font-weight:700;" title="Toggle Monotonic Trailing Trend Band on 5m chart">⚡ Trend Band</button>
+              <button class="tf-btn active" id="btnToggleBreakout" onclick="toggleDashboardBreakouts()" style="background:#fffbeb; color:#92400e; border-color:#fde68a; font-weight:700;" title="Toggle Frozen Breakout Line & BR Markers">🎯 Breakout</button>
               <button class="tf-btn" id="btnOpenOverview" onclick="openStockInOverview(_selectedSymbol)" style="background:linear-gradient(135deg, #4f46e5, #6366f1); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated Stock Overview with Volume Profile & Order Blocks">🔬 Open in Stock Overview</button>
               <button class="tf-btn" onclick="window.open('/chart_studio.html?symbol=' + encodeURIComponent(_selectedSymbol), '_blank')" style="background:linear-gradient(135deg, #2563eb, #1d4ed8); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated full-screen TradingView Studio with Drawing Tools & Upstox Feed">📈 Pro Studio ↗</button>
             </div>
@@ -3316,6 +3317,7 @@
   // ═══════════════════════════════════════════════════════════════════
   let _dashboardShowSmc = true;
   let _dashboardShowTrendBand = true;
+  let _dashboardShowBreakouts = true;
   let _dashboardTrendBandData = null;
   let _dashboardBreakoutsData = null;
   let _dashboardExtensionData = null;
@@ -3701,10 +3703,19 @@
   // ═══════════════════════════════════════════════════════════════════
   // FEATURE 10: FROZEN BREAKOUT LEVELS & BR MARKERS RENDERER
   // ═══════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════
+  // FEATURE 10: FROZEN BREAKOUT LEVELS & BR MARKERS RENDERER (Clean Mode)
+  // Strictly renders only the single primary active breakout line & BR marker
+  // ═══════════════════════════════════════════════════════════════════
   function drawFrozenBreakouts(ctx, chart, series, w, h, breakoutData) {
     if (!ctx || !chart || !series || !breakoutData) return;
-    const levels = breakoutData.levels || [];
-    const markers = breakoutData.markers || [];
+    const rawLevels = breakoutData.levels || [];
+    const rawMarkers = breakoutData.markers || [];
+
+    // Per Spec 10.1 & Config 23: drawOnlyPrimaryBreakoutLine: true
+    // Only draw the single latest/primary active breakout line
+    const levels = rawLevels.length ? [rawLevels[rawLevels.length - 1]] : [];
+    const markers = rawMarkers.length ? [rawMarkers[rawMarkers.length - 1]] : [];
 
     let chartPlotWidth = w - 65;
     try {
@@ -3716,7 +3727,7 @@
 
     ctx.save();
 
-    // 1. Draw Frozen Resistance / Support Levels
+    // 1. Draw Primary Frozen Breakout Line (Single clean amber dashed line)
     levels.forEach(lvl => {
       const y = series.priceToCoordinate(lvl.price);
       if (y === null) return;
@@ -3726,16 +3737,16 @@
       if (xStart > chartPlotWidth) return;
 
       ctx.beginPath();
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = "#f59e0b"; // Golden amber
-      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = "#f59e0b"; // Clean golden amber
+      ctx.lineWidth = 1.6;
       ctx.moveTo(xStart, y);
       ctx.lineTo(chartPlotWidth, y);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Label at right edge
-      const lblText = `FROZEN R: ₹${lvl.price.toFixed(2)}`;
+      // Clean, compact label at right edge
+      const lblText = `BR LEVEL: ₹${lvl.price.toFixed(2)}`;
       ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
       const tw = ctx.measureText(lblText).width;
       const lx = chartPlotWidth - tw - 12;
@@ -3748,33 +3759,47 @@
       ctx.stroke();
 
       ctx.fillStyle = "#92400e";
+      ctx.textAlign = "start";
       ctx.textBaseline = "middle";
       ctx.fillText(lblText, lx + 4, ly + 7);
     });
 
-    // 2. Draw Confirmed BR Markers
+    // 2. Draw Primary Confirmed BR Marker (Crisp, sharp badge with no text clipping)
     markers.forEach(m => {
       const x = chart.timeScale().timeToCoordinate(m.time);
       const y = series.priceToCoordinate(m.price);
       if (x === null || y === null || x < 0 || x > chartPlotWidth) return;
 
-      const badgeY = y - 18;
-      const badgeW = 32;
-      const badgeH = 14;
+      const badgeW = 38;
+      const badgeH = 16;
       const badgeX = x - badgeW / 2;
+      const badgeY = y - 22; // Well above candle wick
 
-      ctx.fillStyle = "#10b981";
+      ctx.fillStyle = "#059669"; // Emerald Green
       drawPillRect(ctx, badgeX, badgeY, badgeW, badgeH, 3);
       ctx.fill();
+      ctx.strokeStyle = "#047857";
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
-      ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
+      ctx.font = "bold 9.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("⚡BR", x, badgeY + badgeH / 2);
+      ctx.fillText("BR ▲", x, badgeY + badgeH / 2);
     });
 
     ctx.restore();
+  }
+
+  function toggleDashboardBreakouts() {
+    _dashboardShowBreakouts = !_dashboardShowBreakouts;
+    const btn = document.getElementById("btnToggleBreakout");
+    if (btn) {
+      btn.style.opacity = _dashboardShowBreakouts ? "1" : "0.5";
+      btn.classList.toggle("active", _dashboardShowBreakouts);
+    }
+    requestAnimationFrame(renderDashboardSmcOverlay);
   }
 
   function toggleDashboardTrendBand() {
@@ -3823,7 +3848,7 @@
       });
     }
 
-    if (_dashboardBreakoutsData) {
+    if (_dashboardShowBreakouts && _dashboardBreakoutsData) {
       drawFrozenBreakouts(ctx, _tvChart, _candleSeries, w, h, _dashboardBreakoutsData);
     }
 
@@ -7437,8 +7462,8 @@
       allZones: true,
     });
 
-    // 4. Draw Frozen Breakout Levels and BR Markers
-    if (_ovBreakoutsData) {
+    // 4. Draw Frozen Breakout Levels and BR Markers (if enabled)
+    if (_dashboardShowBreakouts && _ovBreakoutsData) {
       drawFrozenBreakouts(ctx, _ovChart, _ovCandleSeries, w, h, _ovBreakoutsData);
     }
 

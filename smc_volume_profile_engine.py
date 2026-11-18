@@ -1528,9 +1528,16 @@ def detect_frozen_breakout_levels(candles: list[dict[str, Any]]) -> dict[str, An
                     "price": round(c_curr["high"], 2),
                 })
 
+    # Per Spec Section 10.1 & Config 23: drawOnlyPrimaryBreakoutLine: true
+    # Keep only the primary active breakout level and confirmed BR marker to ensure a clean chart
+    primary_level = breakout_levels[-1] if breakout_levels else None
+    primary_marker = markers[-1] if markers else None
+
     return {
-        "levels": breakout_levels,
-        "markers": markers,
-        "latest_breakout": breakout_levels[-1] if breakout_levels else None,
+        "levels": [primary_level] if primary_level else [],
+        "markers": [primary_marker] if primary_marker else [],
+        "all_levels": breakout_levels,
+        "primary_level": primary_level,
+        "latest_breakout": primary_level,
     }
 
