@@ -390,9 +390,15 @@ def detect_order_blocks_and_structure(
             if not c_is_today and hist_count >= 2:
                 continue
 
-            cand_mid = (cand["top"] + cand["bottom"]) / 2.0
+            cand_top = max(cand["top"], cand["bottom"])
+            cand_bot = min(cand["top"], cand["bottom"])
+            # Skip invalid zero-height auction settlement anomalies
+            if cand_top - cand_bot < 0.5:
+                continue
+
+            # Real physical overlap: only reject if the zones geometrically intersect
             is_overlap = any(
-                abs(cand_mid - ((x["top"] + x["bottom"]) / 2.0)) / max(1.0, cand_mid) < 0.0035
+                max(cand_bot, min(x["top"], x["bottom"])) < min(cand_top, max(x["top"], x["bottom"]))
                 for x in chosen
             )
             if not is_overlap:
