@@ -1633,25 +1633,22 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                         tested_time = None
                         mitigated = False
                         mitigated_time = None
-                        departed = False
                         for c_f in today_candles:
                             if c_f["timestamp"] <= formation_ts:
                                 continue
                             low_f = float(c_f["low"])
                             close_f = float(c_f["close"])
-                            if not departed:
-                                if low_f > dz_high or close_f > dz_high:
-                                    departed = True
-                                continue
-                            if departed and not tested:
-                                retest_thresh = max(1.0, (dz_high - dz_low) * 0.15)
-                                if (low_f <= dz_high - retest_thresh) or (close_f <= dz_high and close_f >= dz_low):
-                                    tested = True
-                                    tested_time = c_f["timestamp"]
+                            # 1. Mitigation first: candle closes below demand base
                             if close_f < dz_low:
                                 mitigated = True
                                 mitigated_time = c_f["timestamp"]
                                 break
+                            # 2. Retest: price enters zone
+                            if not tested:
+                                retest_thresh = max(1.0, (dz_high - dz_low) * 0.15)
+                                if (low_f <= dz_high - retest_thresh) or (close_f <= dz_high and close_f >= dz_low):
+                                    tested = True
+                                    tested_time = c_f["timestamp"]
                         today_obs.insert(0, {
                             "id": "ob_bull_scanner_primary",
                             "type": "BULLISH",
@@ -1699,25 +1696,22 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                         tested_time = None
                         mitigated = False
                         mitigated_time = None
-                        departed = False
                         for c_f in today_candles:
                             if c_f["timestamp"] <= formation_ts:
                                 continue
                             high_f = float(c_f["high"])
                             close_f = float(c_f["close"])
-                            if not departed:
-                                if high_f < sz_low or close_f < sz_low:
-                                    departed = True
-                                continue
-                            if departed and not tested:
-                                retest_thresh = max(1.0, (sz_high - sz_low) * 0.15)
-                                if (high_f >= sz_low + retest_thresh) or (close_f >= sz_low and close_f <= sz_high):
-                                    tested = True
-                                    tested_time = c_f["timestamp"]
+                            # 1. Mitigation first: candle closes above supply roof
                             if close_f > sz_high:
                                 mitigated = True
                                 mitigated_time = c_f["timestamp"]
                                 break
+                            # 2. Retest: price enters zone
+                            if not tested:
+                                retest_thresh = max(1.0, (sz_high - sz_low) * 0.15)
+                                if (high_f >= sz_low + retest_thresh) or (close_f >= sz_low and close_f <= sz_high):
+                                    tested = True
+                                    tested_time = c_f["timestamp"]
                         today_obs.insert(0, {
                             "id": "ob_bear_scanner_primary",
                             "type": "BEARISH",

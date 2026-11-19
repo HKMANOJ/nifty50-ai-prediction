@@ -264,10 +264,9 @@ def detect_order_blocks_and_structure(
             tested = False
             mitigated_time = None
             tested_time = None
-            departed = False
 
-            # Evaluation begins after displacement confirmation
-            eval_start = i + 2 if (c_next is not None and c_next["close"] > c_next["open"]) else i + 1
+            # Evaluation strictly begins on subsequent candles after displacement
+            eval_start = i + 2
 
             for f in range(eval_start, n):
                 c_f = candles[f]
@@ -275,26 +274,18 @@ def detect_order_blocks_and_structure(
                 high_f = float(c_f["high"])
                 close_f = float(c_f["close"])
 
-                # 1. Price must first clearly depart above the demand zone
-                if not departed:
-                    if low_f > ob_top or close_f >= ob_top + (atr * 0.20):
-                        departed = True
-                    elif f > eval_start + 1 and close_f > ob_top:
-                        departed = True
-                    continue  # Continuation bar that establishes departure cannot test itself
-
-                # 2. Retest: only after departure, when price pulls back meaningfully into the zone (at least 15% penetration or candle body inside)
-                if departed and not tested:
-                    retest_threshold = max(1.0, (ob_top - ob_bottom) * 0.15)
-                    if (low_f <= ob_top - retest_threshold) or (close_f <= ob_top and close_f >= ob_bottom):
-                        tested = True
-                        tested_time = c_f["timestamp"]
-
-                # 3. Mitigation: candle closes below demand base, or deeply penetrates
+                # 1. Mitigation evaluated first: candle closes below demand base or deeply penetrates
                 if close_f < ob_bottom or low_f < ob_bottom - (atr * 0.20):
                     mitigated = True
                     mitigated_time = c_f["timestamp"]
                     break
+
+                # 2. Retest: price pulls back meaningfully into the zone (at least 15% penetration or candle body inside)
+                if not tested:
+                    retest_threshold = max(1.0, (ob_top - ob_bottom) * 0.15)
+                    if (low_f <= ob_top - retest_threshold) or (close_f <= ob_top and close_f >= ob_bottom):
+                        tested = True
+                        tested_time = c_f["timestamp"]
 
             order_blocks.append({
                 "id": f"ob_bull_{i}",
@@ -335,9 +326,8 @@ def detect_order_blocks_and_structure(
             tested = False
             mitigated_time = None
             tested_time = None
-            departed = False
 
-            eval_start = i + 2 if (c_next is not None and c_next["close"] < c_next["open"]) else i + 1
+            eval_start = i + 2
 
             for f in range(eval_start, n):
                 c_f = candles[f]
@@ -345,26 +335,18 @@ def detect_order_blocks_and_structure(
                 high_f = float(c_f["high"])
                 close_f = float(c_f["close"])
 
-                # 1. Price must first clearly depart below the supply zone
-                if not departed:
-                    if high_f < ob_bottom or close_f <= ob_bottom - (atr * 0.20):
-                        departed = True
-                    elif f > eval_start + 1 and close_f < ob_bottom:
-                        departed = True
-                    continue  # Continuation bar that establishes departure cannot test itself
-
-                # 2. Retest: only after departure, when price rallies meaningfully into the zone (at least 15% penetration or candle body inside)
-                if departed and not tested:
-                    retest_threshold = max(1.0, (ob_top - ob_bottom) * 0.15)
-                    if (high_f >= ob_bottom + retest_threshold) or (close_f >= ob_bottom and close_f <= ob_top):
-                        tested = True
-                        tested_time = c_f["timestamp"]
-
-                # 3. Mitigation: candle closes above supply roof, or deeply penetrates
+                # 1. Mitigation evaluated first: candle closes above supply roof, or deeply penetrates
                 if close_f > ob_top or high_f > ob_top + (atr * 0.20):
                     mitigated = True
                     mitigated_time = c_f["timestamp"]
                     break
+
+                # 2. Retest: price rallies meaningfully into the zone (at least 15% penetration or candle body inside)
+                if not tested:
+                    retest_threshold = max(1.0, (ob_top - ob_bottom) * 0.15)
+                    if (high_f >= ob_bottom + retest_threshold) or (close_f >= ob_bottom and close_f <= ob_top):
+                        tested = True
+                        tested_time = c_f["timestamp"]
 
             order_blocks.append({
                 "id": f"ob_bear_{i}",
