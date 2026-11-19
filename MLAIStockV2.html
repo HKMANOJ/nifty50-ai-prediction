@@ -3447,10 +3447,6 @@
       // Step D: Anti-Collision Spatial Guard
       // Prevents overlapping opposing zones (e.g. Demand and Bear OB colliding in the same price range).
       // Prioritizes trend-aligned zone, then Freshness, then recency so charts never show double boxes.
-      const isBullTrend = options.isBullish !== undefined 
-        ? options.isBullish 
-        : (typeof _ovIsBullish !== "undefined" ? _ovIsBullish : true);
-
       const sortedByPrio = [...targetObs].sort((a, b) => {
         const aIsBull = (a.type || "").toUpperCase() === "BULLISH";
         const bIsBull = (b.type || "").toUpperCase() === "BULLISH";
