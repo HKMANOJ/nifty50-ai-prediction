@@ -7554,7 +7554,7 @@
       showOb: _ovShowOb,
       showFvg: _ovShowFvg,
       candles: _ovCandlesData,
-      isBullish: _overviewMeta ? (_overviewMeta.percent_change >= 0) : (typeof _ovIsBullish !== "undefined" ? _ovIsBullish : true),
+      isBullish: (typeof _ovIsBullish !== "undefined") ? _ovIsBullish : true,
     });
 
     // 4. Draw Frozen Breakout Levels and BR Markers (if enabled)
