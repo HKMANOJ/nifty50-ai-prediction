@@ -3478,21 +3478,43 @@
         // Crisp tag label inside the box at left
         if (boxWidth >= 30) {
           ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
-          const statusLabel = ob.status ? ` · ${ob.status.toUpperCase()}` : '';
-          const rawTime = ob.formation_time || ob.time;
-          let timeLabel = '';
-          if (rawTime) {
+          
+          // Base origin time of the order block candle
+          const baseTs = ob.time || ob.formation_time;
+          let baseTimeStr = '';
+          if (baseTs) {
             try {
-              const d = new Date(typeof rawTime === "number" ? (rawTime > 1e11 ? rawTime : rawTime * 1000) : rawTime);
+              const d = new Date(typeof baseTs === "number" ? (baseTs > 1e11 ? baseTs : baseTs * 1000) : baseTs);
               if (!isNaN(d.getTime())) {
-                timeLabel = ' ' + d.toLocaleTimeString("en-IN", {
+                baseTimeStr = d.toLocaleTimeString("en-IN", {
                   timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
                 }).toUpperCase();
               }
             } catch(e) {}
           }
-          const fullLabel = `${tagText}${statusLabel}${timeLabel}`;
-          const labelStr = ctx.measureText(fullLabel).width + 14 <= boxWidth ? fullLabel : `${tagText}${statusLabel}`;
+
+          let testTimeStr = '';
+          if (ob.status === "Tested" && ob.tested_time) {
+            try {
+              const d = new Date(typeof ob.tested_time === "number" ? (ob.tested_time > 1e11 ? ob.tested_time : ob.tested_time * 1000) : ob.tested_time);
+              if (!isNaN(d.getTime())) {
+                testTimeStr = d.toLocaleTimeString("en-IN", {
+                  timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
+                }).toUpperCase();
+              }
+            } catch(e) {}
+          }
+
+          let fullLabel = "";
+          if (ob.status === "Fresh") {
+            fullLabel = `${tagText} · FRESH ${baseTimeStr}`;
+          } else if (ob.status === "Tested") {
+            fullLabel = testTimeStr ? `${tagText} · TESTED ${testTimeStr} (BASE ${baseTimeStr})` : `${tagText} · TESTED (BASE ${baseTimeStr})`;
+          } else {
+            fullLabel = `${tagText} · ${ob.status || ''} ${baseTimeStr}`;
+          }
+
+          const labelStr = ctx.measureText(fullLabel).width + 14 <= boxWidth ? fullLabel : `${tagText} · ${(ob.status || '').toUpperCase()}`;
           const textWidth = ctx.measureText(labelStr).width;
 
           // Small translucent pill background for tag to ensure 100% crisp contrast over candles

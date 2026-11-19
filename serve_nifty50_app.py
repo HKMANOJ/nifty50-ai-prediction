@@ -1627,15 +1627,23 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                             best_c = min(today_candles, key=lambda c: abs(float(c.get("low", 0)) - dz_low))
                             formation_ts = best_c["timestamp"]
                         tested = False
+                        tested_time = None
                         mitigated = False
                         mitigated_time = None
+                        departed = False
                         for c_f in today_candles:
                             if c_f["timestamp"] <= formation_ts:
                                 continue
                             low_f = float(c_f["low"])
                             close_f = float(c_f["close"])
-                            if low_f <= dz_high and low_f >= dz_low:
-                                tested = True
+                            if not departed:
+                                if low_f > dz_high or close_f > dz_high:
+                                    departed = True
+                                continue
+                            if departed and not tested:
+                                if low_f <= dz_high and close_f >= dz_low:
+                                    tested = True
+                                    tested_time = c_f["timestamp"]
                             if close_f < dz_low:
                                 mitigated = True
                                 mitigated_time = c_f["timestamp"]
@@ -1648,6 +1656,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                             "bottom": dz_low,
                             "time": formation_ts,
                             "formation_time": formation_ts,
+                            "tested_time": tested_time,
                             "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
                             "mitigated": mitigated,
                             "tested": tested,
@@ -1683,15 +1692,23 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                             best_c = min(today_candles, key=lambda c: abs(float(c.get("high", 0)) - sz_high))
                             formation_ts = best_c["timestamp"]
                         tested = False
+                        tested_time = None
                         mitigated = False
                         mitigated_time = None
+                        departed = False
                         for c_f in today_candles:
                             if c_f["timestamp"] <= formation_ts:
                                 continue
                             high_f = float(c_f["high"])
                             close_f = float(c_f["close"])
-                            if high_f >= sz_low and high_f <= sz_high:
-                                tested = True
+                            if not departed:
+                                if high_f < sz_low or close_f < sz_low:
+                                    departed = True
+                                continue
+                            if departed and not tested:
+                                if high_f >= sz_low and close_f <= sz_high:
+                                    tested = True
+                                    tested_time = c_f["timestamp"]
                             if close_f > sz_high:
                                 mitigated = True
                                 mitigated_time = c_f["timestamp"]
@@ -1704,6 +1721,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                             "bottom": sz_low,
                             "time": formation_ts,
                             "formation_time": formation_ts,
+                            "tested_time": tested_time,
                             "status": "Mitigated" if mitigated else ("Tested" if tested else "Fresh"),
                             "mitigated": mitigated,
                             "tested": tested,

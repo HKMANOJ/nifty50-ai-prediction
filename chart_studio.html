@@ -1925,9 +1925,9 @@
     }
 
     let obTimeStr = "";
-    if (activeOb && (activeOb.formation_time || activeOb.time)) {
+    if (activeOb && (activeOb.time || activeOb.formation_time)) {
       try {
-        const rawT = activeOb.formation_time || activeOb.time;
+        const rawT = activeOb.time || activeOb.formation_time;
         const d = new Date(rawT > 1e11 ? rawT : rawT * 1000);
         if (!isNaN(d.getTime())) {
           obTimeStr = d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true });
