@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>manojLabs | Pro Chart Studio (TradingView & Upstox SMC)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1927,7 +1930,7 @@
     let obTimeStr = "";
     if (activeOb && (activeOb.time || activeOb.formation_time)) {
       try {
-        const rawT = activeOb.time || activeOb.formation_time;
+        const rawT = (isObTested && activeOb.tested_time) ? activeOb.tested_time : (activeOb.time || activeOb.formation_time);
         const d = new Date(rawT > 1e11 ? rawT : rawT * 1000);
         if (!isNaN(d.getTime())) {
           obTimeStr = d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true });

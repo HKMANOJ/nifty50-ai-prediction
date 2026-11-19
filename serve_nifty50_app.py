@@ -676,6 +676,9 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         super().end_headers()
 
     def _deny_private_static(self, path: str) -> bool:
@@ -1641,7 +1644,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                                     departed = True
                                 continue
                             if departed and not tested:
-                                if low_f <= dz_high and close_f >= dz_low:
+                                retest_thresh = max(1.0, (dz_high - dz_low) * 0.15)
+                                if (low_f <= dz_high - retest_thresh) or (close_f <= dz_high and close_f >= dz_low):
                                     tested = True
                                     tested_time = c_f["timestamp"]
                             if close_f < dz_low:
@@ -1706,7 +1710,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                                     departed = True
                                 continue
                             if departed and not tested:
-                                if high_f >= sz_low and close_f <= sz_high:
+                                retest_thresh = max(1.0, (sz_high - sz_low) * 0.15)
+                                if (high_f >= sz_low + retest_thresh) or (close_f >= sz_low and close_f <= sz_high):
                                     tested = True
                                     tested_time = c_f["timestamp"]
                             if close_f > sz_high:

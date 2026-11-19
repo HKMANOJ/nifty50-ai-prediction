@@ -283,9 +283,10 @@ def detect_order_blocks_and_structure(
                         departed = True
                     continue  # Continuation bar that establishes departure cannot test itself
 
-                # 2. Retest: only after departure, when price pulls back into the zone
+                # 2. Retest: only after departure, when price pulls back meaningfully into the zone (at least 15% penetration or candle body inside)
                 if departed and not tested:
-                    if low_f <= ob_top and close_f >= ob_bottom:
+                    retest_threshold = max(1.0, (ob_top - ob_bottom) * 0.15)
+                    if (low_f <= ob_top - retest_threshold) or (close_f <= ob_top and close_f >= ob_bottom):
                         tested = True
                         tested_time = c_f["timestamp"]
 
@@ -352,9 +353,10 @@ def detect_order_blocks_and_structure(
                         departed = True
                     continue  # Continuation bar that establishes departure cannot test itself
 
-                # 2. Retest: only after departure, when price rallies back into the zone
+                # 2. Retest: only after departure, when price rallies meaningfully into the zone (at least 15% penetration or candle body inside)
                 if departed and not tested:
-                    if high_f >= ob_bottom and close_f <= ob_top:
+                    retest_threshold = max(1.0, (ob_top - ob_bottom) * 0.15)
+                    if (high_f >= ob_bottom + retest_threshold) or (close_f >= ob_bottom and close_f <= ob_top):
                         tested = True
                         tested_time = c_f["timestamp"]
 
@@ -380,12 +382,20 @@ def detect_order_blocks_and_structure(
             })
 
     # Filter & Deduplicate: Keep cleanest non-overlapping Order Blocks (up to 3 Bullish DEMAND, up to 3 BEAR OB)
-    # Keep fresh zones visible even if more recent tested zones sit nearby.
+    # Prioritize today's session zones first so active intraday zones are never displaced by historical zones.
+    session_date = datetime.fromtimestamp(candles[-1]["timestamp"], tz=INDIA_TZ).date() if candles else None
+
     def _dedup_obs(obs_subset: list[dict[str, Any]], max_count: int = 3) -> list[dict[str, Any]]:
         if not obs_subset:
             return []
-        priority = {"Fresh": 0, "Tested": 1, "Mitigated": 2}
-        ordered = sorted(obs_subset, key=lambda o: (priority[o["status"]], -o["time"]))
+        def _sort_key(o: dict[str, Any]) -> tuple:
+            o_time = o.get("time") or o.get("formation_time") or 0
+            is_today = 0 if (session_date and datetime.fromtimestamp(o_time, tz=INDIA_TZ).date() == session_date) else 1
+            priority = {"Fresh": 0, "Tested": 1, "Mitigated": 2}
+            prio = priority.get(o.get("status"), 2)
+            return (is_today, prio, -o_time)
+
+        ordered = sorted(obs_subset, key=_sort_key)
 
         chosen: list[dict[str, Any]] = []
         for cand in ordered:
