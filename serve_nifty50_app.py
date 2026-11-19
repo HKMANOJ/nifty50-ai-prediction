@@ -1745,45 +1745,44 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             # 8. Align Institutional Trade Plan with Dashboard Playbook & SMC Active Block Status
             is_bull_side = pct_change >= 0
             if is_bull_side:
-                fresh_bulls = [
+                # Find all unmitigated bullish order blocks from today
+                valid_bulls = [
                     ob for ob in today_obs
-                    if not ob.get("mitigated") and ob.get("status") == "Fresh"
+                    if not ob.get("mitigated")
                     and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")
                 ]
-                if fresh_bulls:
-                    fresh_bulls.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)), reverse=True)
-                    primary_ob = fresh_bulls[0]
+                if valid_bulls:
+                    # Sort primarily by formation recency (newest intraday base first).
+                    # If two bases formed around the same time, prefer Fresh over Tested.
+                    valid_bulls.sort(
+                        key=lambda b: (
+                            b.get("formation_time") or b.get("time", 0),
+                            1 if b.get("status") == "Fresh" else 0
+                        ),
+                        reverse=True
+                    )
+                    primary_ob = valid_bulls[0]
                 else:
-                    tested_bulls = [
-                        ob for ob in today_obs
-                        if not ob.get("mitigated")
-                        and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")
-                    ]
-                    if tested_bulls:
-                        tested_bulls.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)), reverse=True)
-                        primary_ob = tested_bulls[0]
-                    else:
-                        primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
+                    primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
             else:
-                fresh_bears = [
+                valid_bears = [
                     ob for ob in today_obs
-                    if not ob.get("mitigated") and ob.get("status") == "Fresh"
+                    if not ob.get("mitigated")
                     and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))
                 ]
-                if fresh_bears:
-                    fresh_bears.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)), reverse=True)
-                    primary_ob = fresh_bears[0]
+                if valid_bears:
+                    # Sort primarily by formation recency (newest intraday base first).
+                    # If two bases formed around the same time, prefer Fresh over Tested.
+                    valid_bears.sort(
+                        key=lambda b: (
+                            b.get("formation_time") or b.get("time", 0),
+                            1 if b.get("status") == "Fresh" else 0
+                        ),
+                        reverse=True
+                    )
+                    primary_ob = valid_bears[0]
                 else:
-                    tested_bears = [
-                        ob for ob in today_obs
-                        if not ob.get("mitigated")
-                        and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))
-                    ]
-                    if tested_bears:
-                        tested_bears.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)), reverse=True)
-                        primary_ob = tested_bears[0]
-                    else:
-                        primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
+                    primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
 
             if primary_ob and primary_ob in today_obs:
                 today_obs.remove(primary_ob)
@@ -1800,9 +1799,25 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             active_time_str = datetime.fromtimestamp(primary_ob.get("formation_time") or primary_ob.get("time", 0), tz=IST_TZ).strftime("%I:%M %p") if primary_ob else ""
 
             if scanner_item:
-                entry_val = float(scanner_item.get("entry") or ltp)
-                sl_val = float(scanner_item.get("stop_loss") or (entry_val * 0.993 if is_bull_side else entry_val * 1.007))
-                t1_val = float(scanner_item.get("target") or (entry_val * 1.015 if is_bull_side else entry_val * 0.985))
+                entry_val = float(scanner_item.get("entry") or ((primary_ob["top"] if is_bull_side else primary_ob["bottom"]) if primary_ob else ltp))
+                sl_val = (
+                    round(primary_ob["bottom"] * 0.995, 2)
+                    if (primary_ob and is_bull_side)
+                    else (
+                        round(primary_ob["top"] * 1.005, 2)
+                        if (primary_ob and not is_bull_side)
+                        else float(scanner_item.get("stop_loss") or (entry_val * 0.993 if is_bull_side else entry_val * 1.007))
+                    )
+                )
+                t1_val = (
+                    round(max(entry_val * 1.015, primary_ob["top"] * 1.015), 2)
+                    if (primary_ob and is_bull_side)
+                    else (
+                        round(min(entry_val * 0.985, primary_ob["bottom"] * 0.985), 2)
+                        if (primary_ob and not is_bull_side)
+                        else float(scanner_item.get("target") or (entry_val * 1.015 if is_bull_side else entry_val * 0.985))
+                    )
+                )
                 t2_val = round(entry_val * 1.030 if is_bull_side else entry_val * 0.970, 2)
                 be_val = round(entry_val * 1.008 if is_bull_side else entry_val * 0.992, 2)
 

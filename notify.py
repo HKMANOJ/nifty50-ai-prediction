@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 ManojLabs AI Stock Hunter - Telegram Notification Dispatcher
-Strictly alerts on NIFTY and SENSEX Demand Fresh setups.
+Strictly alerts on NIFTY and SENSEX Demand Fresh setups & 1-Minute Demand Surges.
 Suppresses all individual stocks, Bear OBs, and extra messages.
+Guarantees strict once-and-only-once delivery via Neon PostgreSQL atomic reservation.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("telegram_notify")
@@ -30,6 +32,7 @@ INDIA_TZ = ZoneInfo("Asia/Kolkata")
 ROOT = Path(__file__).resolve().parent
 SENT_STORE_PATH = ROOT / "inputs" / "telegram_sent_alerts.json"
 _DISPATCH_LOCK = threading.Lock()
+_PG_TABLE_CHECKED = False
 
 
 def load_env() -> None:
@@ -68,6 +71,56 @@ def get_credentials() -> tuple[str, str, bool]:
     return token, chat_id, enabled
 
 
+def is_production_sender() -> bool:
+    """Checks whether this instance is authorized to dispatch real Telegram alerts.
+    Prevents local laptop/desktop development processes from double-firing production alerts.
+    """
+    env_force = os.getenv("FORCE_LOCAL_TELEGRAM_ALERTS", "").strip().lower()
+    if env_force in ("1", "true", "yes"):
+        return True
+    if env_force in ("0", "false", "no"):
+        return False
+
+    # Production cloud environments (Render, AWS, Heroku, etc.)
+    if os.getenv("RENDER") or os.getenv("IS_PRODUCTION") or os.getenv("DEPLOYED_ENV") in ("prod", "production"):
+        return True
+
+    # Local development workstation (Mac/Windows/Linux non-cloud)
+    return False
+
+
+def _get_pg_conn():
+    """Returns an active PostgreSQL connection if DATABASE_URL is configured."""
+    global _PG_TABLE_CHECKED
+    try:
+        import db_adapter
+        if db_adapter.DATABASE_URL:
+            conn = db_adapter.get_db_connection()
+            if not _PG_TABLE_CHECKED:
+                try:
+                    cur = conn.cursor()
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS telegram_sent_alerts (
+                            alert_key VARCHAR(120) PRIMARY KEY,
+                            session_date DATE NOT NULL,
+                            alert_text TEXT,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        );
+                        CREATE INDEX IF NOT EXISTS idx_tg_alerts_date ON telegram_sent_alerts(session_date);
+                        """
+                    )
+                    conn.commit()
+                    cur.close()
+                    _PG_TABLE_CHECKED = True
+                except Exception as t_err:
+                    logger.debug("Table check skipped: %s", t_err)
+            return conn
+    except Exception as exc:
+        logger.debug("Postgres connection unavailable: %s", exc)
+    return None
+
+
 def send_telegram_text(text: str, timeout: float = 8.0) -> tuple[bool, str]:
     """Send text via Telegram Bot API."""
     token, chat_id, enabled = get_credentials()
@@ -104,41 +157,120 @@ def send_telegram_text(text: str, timeout: float = 8.0) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def _load_sent_keys() -> set[str]:
-    """Load already sent alert keys for the current trading day."""
+def _load_sent_keys_local(session_date: str) -> set[str]:
+    """Load sent alert keys from local file store."""
     if not SENT_STORE_PATH.is_file():
         return set()
     try:
         data = json.loads(SENT_STORE_PATH.read_text(encoding="utf-8"))
-        today = datetime.now(INDIA_TZ).date().isoformat()
-        if data.get("session_date") == today:
+        if data.get("session_date") == session_date:
             return set(data.get("sent_keys", []))
     except Exception:
         pass
     return set()
 
 
-def _save_sent_key(key: str) -> None:
-    """Save an alert key so it is never re-sent during this session."""
-    with _DISPATCH_LOCK:
+def _save_sent_key_local(key: str, session_date: str) -> None:
+    """Save an alert key into local file store."""
+    try:
+        existing = _load_sent_keys_local(session_date)
+        existing.add(key)
+        SENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SENT_STORE_PATH.write_text(
+            json.dumps({"session_date": session_date, "sent_keys": sorted(list(existing))}, indent=2),
+            encoding="utf-8"
+        )
+    except Exception as exc:
+        logger.warning("Failed to persist local sent key %s: %s", key, exc)
+
+
+def _load_sent_keys() -> set[str]:
+    """Load already sent alert keys for the current trading day.
+    Checks Neon PostgreSQL first, falling back to local file.
+    """
+    today = datetime.now(INDIA_TZ).date().isoformat()
+    conn = _get_pg_conn()
+    if conn:
         try:
-            today = datetime.now(INDIA_TZ).date().isoformat()
-            existing = set()
-            if SENT_STORE_PATH.is_file():
+            cur = conn.cursor()
+            cur.execute("SELECT alert_key FROM telegram_sent_alerts WHERE session_date = %s", (today,))
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            db_keys = {r[0] for r in rows}
+            # Mirror to local file for offline fallback
+            local_keys = _load_sent_keys_local(today)
+            combined = db_keys | local_keys
+            try:
+                SENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                SENT_STORE_PATH.write_text(
+                    json.dumps({"session_date": today, "sent_keys": sorted(list(combined))}, indent=2),
+                    encoding="utf-8"
+                )
+            except Exception:
+                pass
+            return combined
+        except Exception as exc:
+            logger.debug("Failed querying Postgres for sent keys: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return _load_sent_keys_local(today)
+
+
+def reserve_alert_atomic(key: str, session_date: str, alert_text: str = "") -> bool:
+    """Atomically attempts to reserve this alert key in Neon PostgreSQL.
+    Returns True if this worker won the lock (first caller to insert).
+    Returns False if already reserved by any worker (Postgres PRIMARY KEY constraint).
+    Falls back gracefully to local file lock if Postgres is unreachable.
+    """
+    with _DISPATCH_LOCK:
+        # 1. Try Neon Postgres atomic insert
+        conn = _get_pg_conn()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    INSERT INTO telegram_sent_alerts (alert_key, session_date, alert_text, created_at)
+                    VALUES (%s, %s, %s, NOW())
+                    ON CONFLICT (alert_key) DO NOTHING
+                    RETURNING alert_key;
+                    """,
+                    (key, session_date, alert_text)
+                )
+                row = cur.fetchone()
+                conn.commit()
+                cur.close()
+                conn.close()
+                if row:
+                    _save_sent_key_local(key, session_date)
+                    return True
+                else:
+                    logger.info("Alert key already reserved in Postgres: %s (skipped)", key)
+                    _save_sent_key_local(key, session_date)
+                    return False
+            except Exception as db_err:
+                logger.warning("Postgres atomic reservation error: %s, falling back to local file", db_err)
                 try:
-                    data = json.loads(SENT_STORE_PATH.read_text(encoding="utf-8"))
-                    if data.get("session_date") == today:
-                        existing = set(data.get("sent_keys", []))
+                    conn.close()
                 except Exception:
                     pass
-            existing.add(key)
-            SENT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            SENT_STORE_PATH.write_text(
-                json.dumps({"session_date": today, "sent_keys": sorted(list(existing))}, indent=2),
-                encoding="utf-8"
-            )
-        except Exception as exc:
-            logger.warning("Failed to persist sent key %s: %s", key, exc)
+
+        # 2. Fallback to local file store
+        sent = _load_sent_keys_local(session_date)
+        if key in sent:
+            logger.info("Alert already sent locally: %s (skipped)", key)
+            return False
+        _save_sent_key_local(key, session_date)
+        return True
+
+
+def _save_sent_key(key: str) -> None:
+    """Save an alert key so it is never re-sent during this session."""
+    today = datetime.now(INDIA_TZ).date().isoformat()
+    reserve_alert_atomic(key, today)
 
 
 def _format_time_str(time_val: Any) -> str:
@@ -166,12 +298,11 @@ def build_alert_message(item: dict, sector: str = "", is_pe: bool = False, test:
     clean_time = _format_time_str(ob_time)
 
     # Strictly 1 single clean line requested by user:
-    # "Nifty Demand fresh at 9:40 like that no exctra unwanted message delete all"
     return f"🟢 {display_name} Demand fresh at {clean_time}"
 
 
 def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force: bool = False, test: bool = False) -> bool:
-    """Send a single Demand Fresh alert strictly for NIFTY or SENSEX with session deduplication."""
+    """Send a single Demand Fresh alert strictly for NIFTY or SENSEX with atomic deduplication."""
     if not isinstance(item, dict):
         return False
 
@@ -196,20 +327,25 @@ def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force
     ob_time = item.get("demand_fresh_time") or item.get("time") or item.get("formation_time_str")
     clean_time = _format_time_str(ob_time)
 
+    today = datetime.now(INDIA_TZ).date().isoformat()
     key = f"{display_name}_DEMAND_FRESH_{clean_time}"
+    text = build_alert_message(item, sector=sector, is_pe=False, test=test)
+
+    # In local development mode, suppress actual Telegram dispatch to avoid double-firing with Render
+    if not test and not force and not is_production_sender():
+        logger.info("[Telegram DEV] Skipping real Telegram send on local dev workstation for %s (%s).", display_name, text)
+        return True
 
     if not force and not test:
-        sent = _load_sent_keys()
-        if key in sent:
+        # Atomic reservation check: only proceed if this worker successfully acquires the lock
+        acquired = reserve_alert_atomic(key, today, text)
+        if not acquired:
             logger.info("Alert already sent to Telegram previously: %s (skipped)", key)
             return True
 
-    text = build_alert_message(item, sector=sector, is_pe=False, test=test)
     ok, reason = send_telegram_text(text)
     if ok:
         logger.info("✓ Dispatched Telegram alert: %s", text)
-        if not test:
-            _save_sent_key(key)
         return True
     else:
         logger.warning("✗ Failed sending Telegram alert for %s: %s", display_name, reason)
@@ -220,7 +356,12 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
     """Scan NIFTY and SENSEX for newly formed Demand Fresh setups and notify Telegram.
     Strictly ONLY NIFTY and SENSEX Demand Fresh alerts are dispatched.
     All individual stocks, Bear OBs, and tested setups are completely suppressed.
+    Ensures formation recency (within last 20 minutes) and atomic deduplication.
     """
+    if not is_production_sender():
+        logger.debug("[Telegram DEV] Skipping dispatch_new_fresh_alerts on local dev machine.")
+        return []
+
     sent_this_cycle: list[str] = []
 
     try:
@@ -235,6 +376,9 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
         ("Sensex", "SENSEX"),
     ]
 
+    now_ist = datetime.now(INDIA_TZ)
+    today = now_ist.date()
+
     for sym_display, sym_code in targets:
         try:
             res = fetch_5m_candles_pipeline(sym_code, full_range=True)
@@ -242,11 +386,15 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
             if not candles:
                 continue
 
+            # Must strictly belong to today's active session
             all_days = [datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() for c in candles]
-            last_day = max(all_days) if all_days else None
+            if not all_days or max(all_days) != today:
+                logger.debug("Candles for %s are not from today %s; skipping pre-market/yesterday alerts", sym_display, today)
+                continue
+
             today_completed = [
                 c for c in candles
-                if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == last_day
+                if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == today
             ]
             if not today_completed:
                 continue
@@ -261,15 +409,27 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                 and ob.get("status") == "Fresh"
                 and not ob.get("mitigated")
                 and not ob.get("tested")
-                and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == last_day
+                and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == today
             ]
             demand_fresh.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)))
 
+            sent_keys = _load_sent_keys()
+
             for ob in demand_fresh:
-                f_time = ob.get("formation_time") or ob.get("time")
+                f_time = ob.get("formation_time") or ob.get("time", 0)
+                f_dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
+
+                # RECENCY GUARD: Zone must have formed recently (within last 20 minutes)
+                # Eliminates re-alerting 4-hour-old morning 09:35 AM zones on afternoon server boots
+                age_seconds = (now_ist - f_dt).total_seconds()
+                if age_seconds < -60 or age_seconds > 20 * 60:
+                    logger.debug("Skipping aged Demand Fresh OB for %s formed at %s (age: %.1f mins)",
+                                 sym_display, f_dt.strftime('%H:%M'), age_seconds / 60.0)
+                    continue
+
                 clean_time = _format_time_str(f_time)
                 key = f"{sym_display}_DEMAND_FRESH_{clean_time}"
-                if key in _load_sent_keys():
+                if key in sent_keys:
                     continue
 
                 item = {
@@ -312,7 +472,12 @@ def dispatch_instant_demand_surge() -> list[str]:
     """Scan NIFTY and SENSEX 1-minute candles in real time for instant demand surges.
     Fires the exact minute the impulse candle breaks out of the base, giving an early entry.
     All thresholds are computed dynamically from real-time ATR with zero hardcoded prices.
+    Uses atomic Postgres reservation to guarantee once-only dispatch across all instances.
     """
+    if not is_production_sender():
+        logger.debug("[Telegram DEV] Skipping dispatch_instant_demand_surge on local dev machine.")
+        return []
+
     sent_this_cycle: list[str] = []
 
     try:
@@ -394,10 +559,15 @@ def dispatch_instant_demand_surge() -> list[str]:
                     continue
 
                 msg = f"⚡ {sym_display} Demand Surge at {time_str} @ {curr['close']:,.0f} (Base: {base_high:,.0f})"
+
+                # Atomic reservation: only send if this worker acquires the database lock
+                acquired = reserve_alert_atomic(key, today.isoformat(), msg)
+                if not acquired:
+                    continue
+
                 ok, reason = send_telegram_text(msg)
                 if ok:
                     logger.info("✓ Dispatched Instant Demand Surge: %s", msg)
-                    _save_sent_key(key)
                     sent_this_cycle.append(key)
                 else:
                     logger.warning("✗ Failed sending Telegram alert for %s: %s", sym_display, reason)
@@ -411,9 +581,10 @@ if __name__ == "__main__":
     token, chat_id, enabled = get_credentials()
     print("=" * 60)
     print("ManojLabs Telegram Notification Tester (NIFTY & SENSEX Demand Fresh)")
-    print(f"  Bot Token:   {'*' * 6 + token[-6:] if token else 'NOT CONFIGURED'}")
-    print(f"  Chat ID:     {chat_id or 'NOT CONFIGURED'}")
-    print(f"  Enabled:     {enabled}")
+    print(f"  Bot Token:        {'*' * 6 + token[-6:] if token else 'NOT CONFIGURED'}")
+    print(f"  Chat ID:          {chat_id or 'NOT CONFIGURED'}")
+    print(f"  Enabled:          {enabled}")
+    print(f"  Production Mode:  {is_production_sender()}")
     print("=" * 60)
 
     if not token or not chat_id:

@@ -4794,12 +4794,8 @@ def main() -> int:
         log_scan_snapshot(payload)
         log_discovery_delays(payload)
 
-    # Dispatch NIFTY & SENSEX Demand Fresh alerts to Telegram independently of stock signals
-    try:
-        import notify
-        notify.dispatch_new_fresh_alerts(payload)
-    except Exception as exc:
-        print(f"[telegram] dispatch skipped: {exc}", file=sys.stderr)
+    # Note: Real-time Telegram alerts for NIFTY & SENSEX Demand Fresh are managed
+    # authoritatively by serve_nifty50_app.py to eliminate dual-dispatcher duplicates.
 
     # Never let a failed/empty scan clobber a good snapshot. If this run produced
     # no usable signal, retain the last good snapshot across the session change.
