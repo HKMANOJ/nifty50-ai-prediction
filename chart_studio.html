@@ -1476,7 +1476,38 @@
         blocksToDraw = [...freshObs, ...testedObs].slice(0, 4);
       }
 
-      blocksToDraw.forEach(ob => {
+      // Anti-Collision Spatial Guard: Resolve colliding opposing zones (e.g. Demand and Bear OB overlapping in price)
+      const isBullTrend = typeof _activeCandles !== "undefined" && _activeCandles.length >= 2 
+        ? (_activeCandles[_activeCandles.length - 1].close >= _activeCandles[0].open) 
+        : true;
+
+      const sortedByPrio = [...blocksToDraw].sort((a, b) => {
+        const aIsBull = (a.type || "").toUpperCase() === "BULLISH";
+        const bIsBull = (b.type || "").toUpperCase() === "BULLISH";
+        const aAlign = (aIsBull === isBullTrend) ? 0 : 1;
+        const bAlign = (bIsBull === isBullTrend) ? 0 : 1;
+        if (aAlign !== bAlign) return aAlign - bAlign;
+        const aFresh = a.status === "Fresh" ? 0 : 1;
+        const bFresh = b.status === "Fresh" ? 0 : 1;
+        if (aFresh !== bFresh) return aFresh - bFresh;
+        return (b.time || 0) - (a.time || 0);
+      });
+
+      const resolvedBlocks = [];
+      sortedByPrio.forEach(cand => {
+        const candTop = Math.max(cand.top, cand.bottom);
+        const candBot = Math.min(cand.top, cand.bottom);
+        const collides = resolvedBlocks.some(kept => {
+          const keptTop = Math.max(kept.top, kept.bottom);
+          const keptBot = Math.min(kept.top, kept.bottom);
+          return Math.max(candBot, keptBot) < Math.min(candTop, keptTop);
+        });
+        if (!collides) {
+          resolvedBlocks.push(cand);
+        }
+      });
+
+      resolvedBlocks.forEach(ob => {
         const yTop = _candleSeries.priceToCoordinate(ob.top);
         const yBot = _candleSeries.priceToCoordinate(ob.bottom);
         if (yTop === null || yBot === null) return;

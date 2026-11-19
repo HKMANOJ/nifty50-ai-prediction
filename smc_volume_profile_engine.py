@@ -392,10 +392,35 @@ def detect_order_blocks_and_structure(
                 break
         return chosen
 
-    filtered_obs = (
-        _dedup_obs([ob for ob in order_blocks if ob["type"] == "BULLISH"], max_count=3) +
-        _dedup_obs([ob for ob in order_blocks if ob["type"] == "BEARISH"], max_count=3)
-    )
+    bull_chosen = _dedup_obs([ob for ob in order_blocks if ob["type"] == "BULLISH"], max_count=3)
+    bear_chosen = _dedup_obs([ob for ob in order_blocks if ob["type"] == "BEARISH"], max_count=3)
+
+    # Cross-type anti-collision: Resolve opposing zone collisions (e.g. Demand and Bear OB directly overlapping)
+    # Prioritizes the prevailing trend-aligned zone, then Freshness, then recency so charts never show colliding double boxes.
+    is_bull_trend = trend.lower().startswith("bull")
+    all_candidates = bull_chosen + bear_chosen
+
+    def _overall_prio(o: dict[str, Any]) -> tuple:
+        o_time = o.get("time") or o.get("formation_time") or 0
+        is_today = 0 if (session_date and datetime.fromtimestamp(o_time, tz=INDIA_TZ).date() == session_date) else 1
+        is_align = 0 if ((o.get("type") in ("BULLISH", "+OB")) == is_bull_trend) else 1
+        stat_prio = 0 if o.get("status") == "Fresh" else (1 if o.get("status") == "Tested" else 2)
+        return (is_today, is_align, stat_prio, -o_time)
+
+    sorted_candidates = sorted(all_candidates, key=_overall_prio)
+    filtered_obs: list[dict[str, Any]] = []
+    for cand in sorted_candidates:
+        cand_top = max(cand["top"], cand["bottom"])
+        cand_bot = min(cand["top"], cand["bottom"])
+        collides = False
+        for kept in filtered_obs:
+            kept_top = max(kept["top"], kept["bottom"])
+            kept_bot = min(kept["top"], kept["bottom"])
+            if max(cand_bot, kept_bot) < min(cand_top, kept_top):
+                collides = True
+                break
+        if not collides:
+            filtered_obs.append(cand)
 
     return {
         "trend": trend,

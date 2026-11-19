@@ -3428,7 +3428,40 @@
         if (freshObs.length > 0) targetObs = freshObs;
       }
 
-      targetObs.forEach(ob => {
+      // Step D: Anti-Collision Spatial Guard
+      // Prevents overlapping opposing zones (e.g. Demand and Bear OB colliding in the same price range).
+      // Prioritizes trend-aligned zone, then Freshness, then recency so charts never show double boxes.
+      const isBullTrend = options.isBullish !== undefined 
+        ? options.isBullish 
+        : (typeof _ovIsBullish !== "undefined" ? _ovIsBullish : true);
+
+      const sortedByPrio = [...targetObs].sort((a, b) => {
+        const aIsBull = (a.type || "").toUpperCase() === "BULLISH";
+        const bIsBull = (b.type || "").toUpperCase() === "BULLISH";
+        const aAlign = (aIsBull === isBullTrend) ? 0 : 1;
+        const bAlign = (bIsBull === isBullTrend) ? 0 : 1;
+        if (aAlign !== bAlign) return aAlign - bAlign;
+        const aFresh = a.status === "Fresh" ? 0 : 1;
+        const bFresh = b.status === "Fresh" ? 0 : 1;
+        if (aFresh !== bFresh) return aFresh - bFresh;
+        return (b.time || 0) - (a.time || 0);
+      });
+
+      const resolvedObs = [];
+      sortedByPrio.forEach(cand => {
+        const candTop = Math.max(cand.top, cand.bottom);
+        const candBot = Math.min(cand.top, cand.bottom);
+        const collides = resolvedObs.some(kept => {
+          const keptTop = Math.max(kept.top, kept.bottom);
+          const keptBot = Math.min(kept.top, kept.bottom);
+          return Math.max(candBot, keptBot) < Math.min(candTop, keptTop);
+        });
+        if (!collides) {
+          resolvedObs.push(cand);
+        }
+      });
+
+      resolvedObs.forEach(ob => {
         const yTop = series.priceToCoordinate(ob.top);
         const yBot = series.priceToCoordinate(ob.bottom);
         if (yTop === null || yBot === null) return;
