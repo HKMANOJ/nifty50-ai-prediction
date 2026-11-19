@@ -1828,25 +1828,43 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 if is_bull_side:
                     trade_plan["demand_zone"] = active_zone_str
                     trade_plan["demand_fresh_time"] = active_time_str
+                    trade_plan["bias"] = "Bullish"
+                    if is_df:
+                        trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Fresh Buy)"
+                        trade_plan["action"] = "BUY ON DEMAND BREAKOUT"
+                    elif is_dt:
+                        trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Tested / Retest Hold)"
+                        trade_plan["action"] = "BUY ON DEMAND RETEST"
+                    else:
+                        trade_plan["setup_name"] = "🟢 5m Long Buildup (Buy)"
+                        trade_plan["action"] = "BUY ON BREAKOUT"
+                    if primary_ob:
+                        sl_val = round(primary_ob['bottom'] * 0.995, 2)
+                        t1_val = round(primary_ob['top'] * 1.015, 2)
+                        t2_val = round(primary_ob['top'] * 1.030, 2)
+                        trade_plan["stop_loss"] = sl_val
+                        trade_plan["target_1"] = t1_val
+                        trade_plan["target_2"] = t2_val
                 else:
                     trade_plan["supply_zone"] = active_zone_str
                     trade_plan["supply_zone_time"] = active_time_str
-                if is_df:
-                    trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Fresh Buy)"
-                    trade_plan["action"] = "BUY ON DEMAND BREAKOUT"
-                    trade_plan["bias"] = "Bullish"
-                elif is_dt:
-                    trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Tested / Retest Hold)"
-                    trade_plan["action"] = "BUY ON DEMAND RETEST"
-                    trade_plan["bias"] = "Bullish"
-                elif is_bf:
-                    trade_plan["setup_name"] = "🔴 5m Bearish Order Block (Fresh Sell)"
-                    trade_plan["action"] = "SELL ON BREAKDOWN"
                     trade_plan["bias"] = "Bearish"
-                elif is_bt:
-                    trade_plan["setup_name"] = "🔴 5m Bearish Order Block (Tested / Supply Rejection)"
-                    trade_plan["action"] = "SELL ON SUPPLY REJECTION"
-                    trade_plan["bias"] = "Bearish"
+                    if is_bf:
+                        trade_plan["setup_name"] = "🔴 5m Bearish Order Block (Fresh Sell)"
+                        trade_plan["action"] = "SELL ON BREAKDOWN"
+                    elif is_bt:
+                        trade_plan["setup_name"] = "🔴 5m Bearish Order Block (Tested / Supply Rejection)"
+                        trade_plan["action"] = "SELL ON SUPPLY REJECTION"
+                    else:
+                        trade_plan["setup_name"] = "🔴 5m Short Buildup (Sell)"
+                        trade_plan["action"] = "SELL ON SUPPLY RALLY"
+                    if primary_ob:
+                        sl_val = round(primary_ob['top'] * 1.005, 2)
+                        t1_val = round(primary_ob['bottom'] * 0.985, 2)
+                        t2_val = round(primary_ob['bottom'] * 0.970, 2)
+                        trade_plan["stop_loss"] = sl_val
+                        trade_plan["target_1"] = t1_val
+                        trade_plan["target_2"] = t2_val
 
                 if active_zone_str:
                     trade_plan["entry_zone"] = active_zone_str
