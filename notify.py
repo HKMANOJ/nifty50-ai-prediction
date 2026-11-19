@@ -251,7 +251,7 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
             if not today_completed:
                 continue
 
-            ob_res = detect_order_blocks_and_structure(today_completed)
+            ob_res = detect_order_blocks_and_structure(candles)
             raw_obs = ob_res.get("order_blocks", [])
 
             # Strictly Demand Fresh only (Bullish, Fresh status, not mitigated, not tested)
@@ -263,6 +263,7 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                 and not ob.get("tested")
                 and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == last_day
             ]
+            demand_fresh.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)))
 
             for ob in demand_fresh:
                 f_time = ob.get("formation_time") or ob.get("time")

@@ -72,7 +72,7 @@ def _get_cached_index_fresh_ob(symbol: str) -> dict[str, Any] | None:
     now_m = time.monotonic()
     if now_m - _INDEX_OB_CACHE["ts"] > 15:
         from stock_suggestion_index import fetch_5m_candles_pipeline, INDIA_TZ
-        from smc_volume_profile_engine import detect_order_blocks_and_structure
+        from smc_volume_profile_engine import detect_order_blocks_and_structure, latest_fresh_order_block
         new_obs: dict[str, Any] = {}
         for sym_key, sym_code in [("NIFTY 50", "NIFTY50"), ("SENSEX", "SENSEX")]:
             try:
@@ -86,16 +86,17 @@ def _get_cached_index_fresh_ob(symbol: str) -> dict[str, Any] | None:
                     c for c in candles
                     if datetime.fromtimestamp(c["timestamp"], tz=INDIA_TZ).date() == last_day
                 ] or candles
-                ob_res = detect_order_blocks_and_structure(today_completed)
-                raw_obs = ob_res.get("order_blocks", [])
-                today_fresh = [
-                    ob for ob in raw_obs
-                    if ob.get("status") == "Fresh" and not ob.get("mitigated")
-                    and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == last_day
-                ]
-                if today_fresh:
-                    demand_obs = [ob for ob in today_fresh if (ob.get("type") == "BULLISH" or ob.get("label") == "DEMAND")]
-                    latest = demand_obs[-1] if demand_obs else today_fresh[-1]
+
+                ltp = candles[-1]["close"]
+                open_p = today_completed[0]["open"] if today_completed else ltp
+                is_bullish = ltp >= open_p
+
+                # Try the trend-aligned side first, then opposing side
+                latest = latest_fresh_order_block(candles, bullish=is_bullish)
+                if not latest:
+                    latest = latest_fresh_order_block(candles, bullish=not is_bullish)
+
+                if latest:
                     f_time = latest.get("formation_time") or latest.get("time")
                     dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
                     new_obs[sym_key] = {
