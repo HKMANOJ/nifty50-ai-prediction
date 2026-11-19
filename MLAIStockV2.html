@@ -5546,6 +5546,7 @@
     const pickCriteria = document.getElementById("topPickCriteria");
 
     // Gate 5: Smart Weighted Scoring Engine (Trend Alignment vs Outlier Override)
+    const idxs = (payload && payload.index_context) || {};
     const _niftyPct = (idxs["NIFTY 50"] || {}).percent_change ?? 0;
 
     // 1. Define base multipliers based on NIFTY trend (+30% bonus for trading with the trend)
