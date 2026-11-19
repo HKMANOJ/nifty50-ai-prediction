@@ -3410,22 +3410,38 @@
         return true;
       });
 
-      // Step B: Directional alignment - in overview or when options.allZones is true, show both Demand and Bear OB
-      if (options.isBullish !== undefined && !options.allZones) {
-        if (options.isBullish) {
-          const bullObs = activeObs.filter(ob => (ob.type || "").toUpperCase() === "BULLISH");
-          if (bullObs.length > 0) activeObs = bullObs;
-        } else {
-          const bearObs = activeObs.filter(ob => (ob.type || "").toUpperCase() === "BEARISH");
-          if (bearObs.length > 0) activeObs = bearObs;
-        }
-      }
+      // Step B & C: Clean Genuine Zone Focus (Anti-Clutter & Counter-Trap Suppression)
+      // When the session is Bullish:
+      // Prioritize the GENUINE FRESH DEMAND zone(s).
+      // Suppress noisy counter-trend Bear OBs and minor internal tested clutter so traders see the real institutional level!
+      const isBullTrend = options.isBullish !== undefined 
+        ? options.isBullish 
+        : (typeof _ovIsBullish !== "undefined" ? _ovIsBullish : true);
 
-      // Step C: Anti-clutter preference - in focused dashboard prefer Fresh morning zones over tested; in overview show all active
       let targetObs = activeObs;
-      if (!options.allZones) {
-        const freshObs = activeObs.filter(ob => ob.status === "Fresh");
-        if (freshObs.length > 0) targetObs = freshObs;
+      if (isBullTrend) {
+        // In a bullish session, filter out counter-trend Bear OB traps that have been tested/violated
+        targetObs = targetObs.filter(ob => {
+          const isBear = (ob.type || "").toUpperCase() === "BEARISH" || (ob.label || "").toUpperCase().includes("BEAR");
+          if (isBear && ob.status === "Tested") return false;
+          return true;
+        });
+        // If genuine Fresh Demand exists, prefer Fresh Demand over minor tested internal noise
+        const freshDemands = targetObs.filter(ob => ((ob.type || "").toUpperCase() === "BULLISH" || (ob.label || "").toUpperCase() === "DEMAND") && ob.status === "Fresh");
+        if (freshDemands.length > 0) {
+          targetObs = targetObs.filter(ob => ob.status === "Fresh" || ob.id === "ob_bull_scanner_primary");
+        }
+      } else {
+        // In a bearish session, filter out counter-trend Demand OB traps
+        targetObs = targetObs.filter(ob => {
+          const isBull = (ob.type || "").toUpperCase() === "BULLISH" || (ob.label || "").toUpperCase() === "DEMAND";
+          if (isBull && ob.status === "Tested") return false;
+          return true;
+        });
+        const freshBears = targetObs.filter(ob => ((ob.type || "").toUpperCase() === "BEARISH" || (ob.label || "").toUpperCase().includes("BEAR")) && ob.status === "Fresh");
+        if (freshBears.length > 0) {
+          targetObs = targetObs.filter(ob => ob.status === "Fresh" || ob.id === "ob_bear_scanner_primary");
+        }
       }
 
       // Step D: Anti-Collision Spatial Guard
@@ -7542,7 +7558,7 @@
       showOb: _ovShowOb,
       showFvg: _ovShowFvg,
       candles: _ovCandlesData,
-      allZones: true,
+      isBullish: _overviewMeta ? (_overviewMeta.percent_change >= 0) : (typeof _ovIsBullish !== "undefined" ? _ovIsBullish : true),
     });
 
     // 4. Draw Frozen Breakout Levels and BR Markers (if enabled)

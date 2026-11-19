@@ -1744,6 +1744,39 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
             # 8. Align Institutional Trade Plan with Dashboard Playbook & SMC Active Block Status
             is_bull_side = pct_change >= 0
+
+            # Clean Genuine Zone Filter:
+            # In a bullish session with a verified Demand Base, eliminate counter-trend Tested Bear OB traps
+            # and minor internal tested pauses so the chart strictly displays genuine institutional levels.
+            if is_bull_side:
+                today_obs = [
+                    ob for ob in today_obs
+                    if not ((ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY")) and ob.get("status") == "Tested")
+                ]
+                has_fresh_demand = any(
+                    (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND") and ob.get("status") == "Fresh"
+                    for ob in today_obs
+                )
+                if has_fresh_demand:
+                    today_obs = [
+                        ob for ob in today_obs
+                        if ob.get("status") == "Fresh" or ob.get("id") == "ob_bull_scanner_primary"
+                    ]
+            else:
+                today_obs = [
+                    ob for ob in today_obs
+                    if not ((ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND") and ob.get("status") == "Tested")
+                ]
+                has_fresh_supply = any(
+                    (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY")) and ob.get("status") == "Fresh"
+                    for ob in today_obs
+                )
+                if has_fresh_supply:
+                    today_obs = [
+                        ob for ob in today_obs
+                        if ob.get("status") == "Fresh" or ob.get("id") == "ob_bear_scanner_primary"
+                    ]
+
             if is_bull_side:
                 # Find all unmitigated bullish order blocks from today
                 valid_bulls = [

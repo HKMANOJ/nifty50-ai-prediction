@@ -1464,22 +1464,28 @@
     // ── 5A. Draw Time-Anchored Order Blocks (Demand & Bear OB) ──
     if (_showSMC && _activeSMC.order_blocks && _activeSMC.order_blocks.length) {
       let blocksToDraw = _activeSMC.order_blocks;
-      if (_cleanProMode) {
-        // In Clean Pro Mode, suppress dead mitigated zones and preserve all active Fresh zones plus closest tested
-        const activeObs = blocksToDraw.filter(ob => ob.status === 'Fresh' || ob.status === 'Tested' || !ob.mitigated);
-        const freshObs = activeObs.filter(ob => ob.status === 'Fresh' || (!ob.mitigated && !ob.tested));
-        const testedObs = activeObs.filter(ob => !freshObs.includes(ob));
-        const currentPrice = _activeCandles[_activeCandles.length - 1]?.close || 0;
-        if (currentPrice > 0) {
-          testedObs.sort((a, b) => Math.abs(((a.top+a.bottom)/2) - currentPrice) - Math.abs(((b.top+b.bottom)/2) - currentPrice));
-        }
-        blocksToDraw = [...freshObs, ...testedObs].slice(0, 4);
-      }
-
-      // Anti-Collision Spatial Guard: Resolve colliding opposing zones (e.g. Demand and Bear OB overlapping in price)
       const isBullTrend = typeof _activeCandles !== "undefined" && _activeCandles.length >= 2 
         ? (_activeCandles[_activeCandles.length - 1].close >= _activeCandles[0].open) 
         : true;
+
+      if (_cleanProMode) {
+        // In Clean Pro Mode, suppress dead mitigated zones, counter-trend tested traps, and noise
+        let activeObs = blocksToDraw.filter(ob => !ob.mitigated);
+        if (isBullTrend) {
+          activeObs = activeObs.filter(ob => !((ob.type === "BEARISH" || (ob.label || "").includes("BEAR")) && ob.status === "Tested"));
+          const freshDemands = activeObs.filter(ob => (ob.type === "BULLISH" || ob.label === "DEMAND") && ob.status === "Fresh");
+          if (freshDemands.length > 0) {
+            activeObs = activeObs.filter(ob => ob.status === "Fresh");
+          }
+        } else {
+          activeObs = activeObs.filter(ob => !((ob.type === "BULLISH" || ob.label === "DEMAND") && ob.status === "Tested"));
+          const freshBears = activeObs.filter(ob => (ob.type === "BEARISH" || (ob.label || "").includes("BEAR")) && ob.status === "Fresh");
+          if (freshBears.length > 0) {
+            activeObs = activeObs.filter(ob => ob.status === "Fresh");
+          }
+        }
+        blocksToDraw = activeObs.slice(0, 3);
+      }
 
       const sortedByPrio = [...blocksToDraw].sort((a, b) => {
         const aIsBull = (a.type || "").toUpperCase() === "BULLISH";
