@@ -258,7 +258,7 @@ def detect_order_blocks_and_structure(
 
         if is_bull_displacement:
             ob_top = round(float(c_prev["high"]), 2)
-            ob_bottom = round(float(c_prev["low"]), 2)
+            ob_bottom = round(float(min(c_prev["low"], c_curr["low"])), 2)
 
             mitigated = False
             tested = False
@@ -282,7 +282,7 @@ def detect_order_blocks_and_structure(
 
                 # 2. Retest: price pulls back meaningfully into the zone (at least 15% penetration or candle body inside)
                 if not tested:
-                    retest_threshold = max(1.0, (ob_top - ob_bottom) * 0.15)
+                    retest_threshold = max(0.05, (ob_top - ob_bottom) * 0.15)
                     if (low_f <= ob_top - retest_threshold) or (close_f <= ob_top and close_f >= ob_bottom):
                         tested = True
                         tested_time = c_f["timestamp"]
@@ -319,7 +319,7 @@ def detect_order_blocks_and_structure(
         )
 
         if is_bear_displacement:
-            ob_top = round(float(c_prev["high"]), 2)
+            ob_top = round(float(max(c_prev["high"], c_curr["high"])), 2)
             ob_bottom = round(float(c_prev["low"]), 2)
 
             mitigated = False
@@ -343,7 +343,7 @@ def detect_order_blocks_and_structure(
 
                 # 2. Retest: price rallies meaningfully into the zone (at least 15% penetration or candle body inside)
                 if not tested:
-                    retest_threshold = max(1.0, (ob_top - ob_bottom) * 0.15)
+                    retest_threshold = max(0.05, (ob_top - ob_bottom) * 0.15)
                     if (high_f >= ob_bottom + retest_threshold) or (close_f >= ob_bottom and close_f <= ob_top):
                         tested = True
                         tested_time = c_f["timestamp"]
@@ -363,11 +363,11 @@ def detect_order_blocks_and_structure(
                 "mitigated_time": mitigated_time,
             })
 
-    # Filter & Deduplicate: Keep cleanest non-overlapping Order Blocks (up to 3 Bullish DEMAND, up to 3 BEAR OB)
+    # Filter & Deduplicate: Keep cleanest non-overlapping Order Blocks
     # Prioritize today's session zones first so active intraday zones are never displaced by historical zones.
     session_date = datetime.fromtimestamp(candles[-1]["timestamp"], tz=INDIA_TZ).date() if candles else None
 
-    def _dedup_obs(obs_subset: list[dict[str, Any]], max_count: int = 3) -> list[dict[str, Any]]:
+    def _dedup_obs(obs_subset: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not obs_subset:
             return []
         def _sort_key(o: dict[str, Any]) -> tuple:
@@ -380,7 +380,16 @@ def detect_order_blocks_and_structure(
         ordered = sorted(obs_subset, key=_sort_key)
 
         chosen: list[dict[str, Any]] = []
+        today_count = 0
+        hist_count = 0
         for cand in ordered:
+            c_time = cand.get("time") or cand.get("formation_time") or 0
+            c_is_today = bool(session_date and datetime.fromtimestamp(c_time, tz=INDIA_TZ).date() == session_date)
+            if c_is_today and today_count >= 5:
+                continue
+            if not c_is_today and hist_count >= 2:
+                continue
+
             cand_mid = (cand["top"] + cand["bottom"]) / 2.0
             is_overlap = any(
                 abs(cand_mid - ((x["top"] + x["bottom"]) / 2.0)) / max(1.0, cand_mid) < 0.0035
@@ -388,12 +397,14 @@ def detect_order_blocks_and_structure(
             )
             if not is_overlap:
                 chosen.append(cand)
-            if len(chosen) >= max_count:
-                break
+                if c_is_today:
+                    today_count += 1
+                else:
+                    hist_count += 1
         return chosen
 
-    bull_chosen = _dedup_obs([ob for ob in order_blocks if ob["type"] == "BULLISH"], max_count=3)
-    bear_chosen = _dedup_obs([ob for ob in order_blocks if ob["type"] == "BEARISH"], max_count=3)
+    bull_chosen = _dedup_obs([ob for ob in order_blocks if ob["type"] == "BULLISH"])
+    bear_chosen = _dedup_obs([ob for ob in order_blocks if ob["type"] == "BEARISH"])
 
     # Cross-type anti-collision: Resolve opposing zone collisions (e.g. Demand and Bear OB directly overlapping)
     # Prioritizes the prevailing trend-aligned zone, then Freshness, then recency so charts never show colliding double boxes.
@@ -440,15 +451,30 @@ def latest_fresh_order_block(
     latest = candles[-1]
     session = datetime.fromtimestamp(latest["timestamp"], INDIA_TZ).date()
     block_type = "BULLISH" if bullish else "BEARISH"
-    for block in reversed(detect_order_blocks_and_structure(candles)["order_blocks"]):
-        if block["type"] != block_type or block["status"] != "Fresh":
-            continue
-        if datetime.fromtimestamp(block["time"], INDIA_TZ).date() != session:
-            continue
-        if (bullish and latest["close"] > block["top"]) or (
-            not bullish and latest["close"] < block["bottom"]
-        ):
+    all_obs = detect_order_blocks_and_structure(candles)["order_blocks"]
+
+    # Filter for session date, side, and unmitigated Fresh status
+    matching = [
+        b for b in all_obs
+        if b.get("type") == block_type
+        and b.get("status") == "Fresh"
+        and not b.get("mitigated")
+        and datetime.fromtimestamp(b.get("time", 0), INDIA_TZ).date() == session
+    ]
+    if not matching:
+        return None
+
+    # Sort strictly chronologically descending (newest formation first)
+    matching.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)), reverse=True)
+
+    for block in matching:
+        # Bullish demand: latest price is holding above the base or actively inside the demand base
+        if bullish and latest["close"] >= block["bottom"]:
             return block
+        # Bearish supply: latest price is below the roof or actively inside the supply ceiling
+        elif not bullish and latest["close"] <= block["top"]:
+            return block
+
     return None
 
 

@@ -1521,6 +1521,8 @@
         if (xStart === null) {
           if (visibleRange && ob.time < visibleRange.from) {
             xStart = 0; // Starts offscreen to the left
+          } else if (!visibleRange && _activeCandles.length && ob.time <= _activeCandles[_activeCandles.length - 1].time) {
+            xStart = 0;
           } else {
             return; // Future / offscreen right
           }

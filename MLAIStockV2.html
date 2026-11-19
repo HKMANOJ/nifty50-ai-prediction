@@ -5394,14 +5394,6 @@
       const bullSyms = new Set(bullPool.map(x => x.symbol));
       for (const mu of (payload.market_universe || [])) {
         if (!bullSyms.has(mu.symbol)) {
-          // Retain ENRIN with its verified session Demand Fresh base (₹3098.00-₹3111.50 at 09:45 AM)
-          if (mu.symbol === "ENRIN") {
-            mu.is_demand_fresh = true;
-            mu.demand_zone = "₹3098.00-₹3111.50 (Fresh)";
-            mu.demand_fresh_time = "09:45 AM";
-            mu.quality_tags = mu.quality_tags || ["🟢 DEMAND · FRESH (₹3098.00-₹3111.50 (Fresh)) [09:45 AM]", "Capital Goods Leader"];
-            mu.setup = mu.setup || "Long buildup";
-          }
           bullPool.push(mu);
         }
       }

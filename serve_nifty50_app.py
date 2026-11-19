@@ -551,10 +551,10 @@ def compute_sector_flow(payload: dict[str, Any]) -> dict[str, Any]:
             vc = match.get("vc_ranking") or s.get("vc_ranking") or 1.0
             rvol = round(float(vc), 1) if isinstance(vc, (int, float)) and vc < 50 else 1.0
 
-        is_df = bool(match.get("is_demand_fresh") or s.get("is_demand_fresh") or sym in {"ENRIN", "CUMMINSIND", "VOLTAS", "POLICYBZR", "AMBER"})
+        is_df = bool(match.get("is_demand_fresh") or s.get("is_demand_fresh"))
         is_sz = bool(match.get("is_supply_zone") or s.get("is_supply_zone"))
-        dz = match.get("demand_zone") or s.get("demand_zone") or ("₹3098.00-₹3111.50 (Fresh)" if sym == "ENRIN" else "")
-        dzt = match.get("demand_fresh_time") or s.get("demand_fresh_time") or ("09:45 AM" if sym == "ENRIN" else "")
+        dz = match.get("demand_zone") or s.get("demand_zone") or ""
+        dzt = match.get("demand_fresh_time") or s.get("demand_fresh_time") or ""
 
         merged = dict(s)
         merged.update(match)
@@ -1587,8 +1587,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             analysis = analyze_stock_overview(symbol, all_candles, completed_candles=candles)
 
             # 6. Intraday Session Overlays (Order Blocks, FVGs, POC, Anchors) matching Dashboard
-            today_completed = today_candles[:-1] if len(today_candles) > 1 else today_candles
-            today_ob_struct = detect_order_blocks_and_structure(today_completed)
+            today_ob_struct = detect_order_blocks_and_structure(candles if candles else today_candles)
             today_obs = [
                 ob for ob in today_ob_struct.get("order_blocks", [])
                 if datetime.fromtimestamp(ob.get("time", 0), tz=IST_TZ).date() == last_day
@@ -1645,7 +1644,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                                 break
                             # 2. Retest: price enters zone
                             if not tested:
-                                retest_thresh = max(1.0, (dz_high - dz_low) * 0.15)
+                                retest_thresh = max(0.05, (dz_high - dz_low) * 0.15)
                                 if (low_f <= dz_high - retest_thresh) or (close_f <= dz_high and close_f >= dz_low):
                                     tested = True
                                     tested_time = c_f["timestamp"]
@@ -1708,7 +1707,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                                 break
                             # 2. Retest: price enters zone
                             if not tested:
-                                retest_thresh = max(1.0, (sz_high - sz_low) * 0.15)
+                                retest_thresh = max(0.05, (sz_high - sz_low) * 0.15)
                                 if (high_f >= sz_low + retest_thresh) or (close_f >= sz_low and close_f <= sz_high):
                                     tested = True
                                     tested_time = c_f["timestamp"]
@@ -1745,17 +1744,45 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             # 8. Align Institutional Trade Plan with Dashboard Playbook & SMC Active Block Status
             is_bull_side = pct_change >= 0
             if is_bull_side:
-                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and ob.get("status") == "Fresh" and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
-                if not primary_ob:
-                    primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
-                if not primary_ob:
-                    primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
+                fresh_bulls = [
+                    ob for ob in today_obs
+                    if not ob.get("mitigated") and ob.get("status") == "Fresh"
+                    and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")
+                ]
+                if fresh_bulls:
+                    fresh_bulls.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)), reverse=True)
+                    primary_ob = fresh_bulls[0]
+                else:
+                    tested_bulls = [
+                        ob for ob in today_obs
+                        if not ob.get("mitigated")
+                        and (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")
+                    ]
+                    if tested_bulls:
+                        tested_bulls.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)), reverse=True)
+                        primary_ob = tested_bulls[0]
+                    else:
+                        primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND")), None)
             else:
-                primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and ob.get("status") == "Fresh" and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
-                if not primary_ob:
-                    primary_ob = next((ob for ob in today_obs if not ob.get("mitigated") and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
-                if not primary_ob:
-                    primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
+                fresh_bears = [
+                    ob for ob in today_obs
+                    if not ob.get("mitigated") and ob.get("status") == "Fresh"
+                    and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))
+                ]
+                if fresh_bears:
+                    fresh_bears.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)), reverse=True)
+                    primary_ob = fresh_bears[0]
+                else:
+                    tested_bears = [
+                        ob for ob in today_obs
+                        if not ob.get("mitigated")
+                        and (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))
+                    ]
+                    if tested_bears:
+                        tested_bears.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)), reverse=True)
+                        primary_ob = tested_bears[0]
+                    else:
+                        primary_ob = next((ob for ob in today_obs if (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY"))), None)
 
             if primary_ob and primary_ob in today_obs:
                 today_obs.remove(primary_ob)
@@ -1820,7 +1847,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     "rule": scanner_item.get("trade_plan") or "Enter on confirmed sweet spot retest.",
                 }
             else:
-                trade_plan = analysis.get("trade_plan", {})
+                trade_plan = dict(analysis.get("trade_plan", {}))
                 trade_plan["is_demand_fresh"] = is_df
                 trade_plan["is_demand_tested"] = is_dt
                 trade_plan["is_bear_ob_fresh"] = is_bf
@@ -1828,6 +1855,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 if is_bull_side:
                     trade_plan["demand_zone"] = active_zone_str
                     trade_plan["demand_fresh_time"] = active_time_str
+                    trade_plan["supply_zone"] = ""
+                    trade_plan["supply_zone_time"] = ""
                     trade_plan["bias"] = "Bullish"
                     if is_df:
                         trade_plan["setup_name"] = "🟢 5m Institutional Demand Base (Fresh Buy)"
@@ -1838,16 +1867,26 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     else:
                         trade_plan["setup_name"] = "🟢 5m Long Buildup (Buy)"
                         trade_plan["action"] = "BUY ON BREAKOUT"
-                    if primary_ob:
-                        sl_val = round(primary_ob['bottom'] * 0.995, 2)
-                        t1_val = round(primary_ob['top'] * 1.015, 2)
-                        t2_val = round(primary_ob['top'] * 1.030, 2)
-                        trade_plan["stop_loss"] = sl_val
-                        trade_plan["target_1"] = t1_val
-                        trade_plan["target_2"] = t2_val
+
+                    entry_val = primary_ob["top"] if primary_ob else ltp
+                    sl_val = round(primary_ob["bottom"] * 0.995, 2) if primary_ob else round(ltp * 0.993, 2)
+                    t1_val = round(max(entry_val * 1.015, (primary_ob["top"] * 1.015) if primary_ob else (entry_val * 1.015)), 2)
+                    t2_val = round(max(entry_val * 1.030, (primary_ob["top"] * 1.030) if primary_ob else (entry_val * 1.030)), 2)
+                    be_val = round(entry_val * 1.008, 2)
+
+                    trade_plan["entry"] = round(entry_val, 2)
+                    trade_plan["entry_zone"] = active_zone_str or f"₹{entry_val:.2f}"
+                    trade_plan["stop_loss"] = sl_val
+                    trade_plan["target"] = t1_val
+                    trade_plan["target_1"] = t1_val
+                    trade_plan["target_2"] = t2_val
+                    trade_plan["be_lock"] = be_val
+                    trade_plan["rr_ratio"] = "1 : 3+ Risk/Reward"
                 else:
                     trade_plan["supply_zone"] = active_zone_str
                     trade_plan["supply_zone_time"] = active_time_str
+                    trade_plan["demand_zone"] = ""
+                    trade_plan["demand_fresh_time"] = ""
                     trade_plan["bias"] = "Bearish"
                     if is_bf:
                         trade_plan["setup_name"] = "🔴 5m Bearish Order Block (Fresh Sell)"
@@ -1858,21 +1897,32 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     else:
                         trade_plan["setup_name"] = "🔴 5m Short Buildup (Sell)"
                         trade_plan["action"] = "SELL ON SUPPLY RALLY"
-                    if primary_ob:
-                        sl_val = round(primary_ob['top'] * 1.005, 2)
-                        t1_val = round(primary_ob['bottom'] * 0.985, 2)
-                        t2_val = round(primary_ob['bottom'] * 0.970, 2)
-                        trade_plan["stop_loss"] = sl_val
-                        trade_plan["target_1"] = t1_val
-                        trade_plan["target_2"] = t2_val
+
+                    entry_val = primary_ob["bottom"] if primary_ob else ltp
+                    sl_val = round(primary_ob["top"] * 1.005, 2) if primary_ob else round(ltp * 1.007, 2)
+                    t1_val = round(min(entry_val * 0.985, (primary_ob["bottom"] * 0.985) if primary_ob else (entry_val * 0.985)), 2)
+                    t2_val = round(min(entry_val * 0.970, (primary_ob["bottom"] * 0.970) if primary_ob else (entry_val * 0.970)), 2)
+                    be_val = round(entry_val * 0.992, 2)
+
+                    trade_plan["entry"] = round(entry_val, 2)
+                    trade_plan["entry_zone"] = active_zone_str or f"₹{entry_val:.2f}"
+                    trade_plan["stop_loss"] = sl_val
+                    trade_plan["target"] = t1_val
+                    trade_plan["target_1"] = t1_val
+                    trade_plan["target_2"] = t2_val
+                    trade_plan["be_lock"] = be_val
+                    trade_plan["rr_ratio"] = "1 : 3+ Risk/Reward"
 
                 if active_zone_str:
-                    trade_plan["entry_zone"] = active_zone_str
                     ob_desc = f"{'Fresh' if (is_df or is_bf) else 'Tested'} {'Demand OB' if is_bull_side else 'Bear OB'}"
-                    sl_val = float(trade_plan.get('stop_loss') or (ltp * 0.993 if is_bull_side else ltp * 1.007))
                     trade_plan["rule"] = (
                         f"Institutional Structure: Defending {ob_desc} ({active_zone_str}). "
                         f"Enter on confirmed wick rejection with Stop Loss strictly at ₹{sl_val:,.2f}."
+                    )
+                else:
+                    trade_plan["rule"] = (
+                        f"Institutional Structure: {'Bullish expansion above POC' if is_bull_side else 'Bearish distribution below POC'}. "
+                        f"Stop Loss strictly at ₹{sl_val:,.2f}."
                     )
 
             ext_gate = analysis.get("extension_gate", {})

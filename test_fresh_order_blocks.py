@@ -85,7 +85,7 @@ class FreshOrderBlockTests(unittest.TestCase):
             with self.subTest(bullish=bullish):
                 bars = demand_candles()
                 untouched = bars + [candle(i, 107, 108, 104, 107) for i in range(5, 15)]
-                tested = untouched + [candle(15, 107, 107, 101, 104)]
+                tested = untouched + [candle(15, 107, 107, 100.5, 104)]
                 breached = tested + [candle(16, 104, 104, 98, 102)]
                 for sample, expected in [(untouched, "Fresh"), (tested, "Tested"), (breached, "Mitigated")]:
                     if not bullish:
