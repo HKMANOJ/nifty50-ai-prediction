@@ -59,8 +59,8 @@ def load_env() -> None:
 load_env()
 
 
-DEFAULT_BOT_TOKEN = "8719411311:AAGyHgXwUBAn7AL5VkIFfbgp2QpQIWQU6DE"
-DEFAULT_CHAT_ID = "6093954934"
+DEFAULT_BOT_TOKEN = ""
+DEFAULT_CHAT_ID = ""
 
 
 def get_credentials() -> tuple[str, str, bool]:
