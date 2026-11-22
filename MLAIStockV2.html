@@ -909,6 +909,23 @@
       margin-top: 8px;
     }
 
+    /* 5-Row Institutional Order Flow Footprint Summary Bar */
+    .fp-summary-col {
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: transform 0.1s ease, filter 0.15s ease;
+    }
+    .fp-summary-col:hover {
+      filter: brightness(1.22);
+    }
+    .fp-summary-col.fp-col-selected {
+      outline: 2px solid #a855f7 !important;
+      outline-offset: -1px;
+      z-index: 15;
+      box-shadow: 0 0 12px rgba(168, 85, 247, 0.75) !important;
+    }
+
     .ov-pills-scroll {
       display: flex;
       align-items: center;
@@ -2398,6 +2415,7 @@
             <button class="tf-btn active" id="btnOvToggleFvg" style="background:#ecfdf5; color:#047857; border-color:#a7f3d0; font-weight:700;">📦 FVG (50% CE)</button>
             <button class="tf-btn" id="btnOvToggleLiq" style="background:#fef2f2; color:#b91c1c; border-color:#fecaca; font-weight:700; opacity:0.5;">🎯 Liquidity</button>
             <button class="tf-btn" id="btnOvToggleCvd" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:700; opacity:0.5;">📈 CVD</button>
+            <button class="tf-btn active" id="btnOvToggleFpSummary" style="background:#f0fdf4; color:#166534; border-color:#86efac; font-weight:700;">📊 Flow Bar (5-Row)</button>
             <button class="tf-btn" id="btnOvToggleFp" style="background:#fdf2f8; color:#be185d; border-color:#fbcfe8; font-weight:700;">👣 Footprint</button>
             <button class="tf-btn" id="btnOvToggleMtf" style="background:#fdf4ff; color:#a21caf; border-color:#f0abfc; font-weight:700; opacity:0.5;">⚡ MTF Matrix</button>
           </div>
@@ -2463,6 +2481,44 @@
 
           <!-- Chart Container -->
           <div id="ovTvChartContainer"></div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- 5-ROW INSTITUTIONAL ORDER FLOW FOOTPRINT SUMMARY BAR -->
+        <!-- (Volume, Delta, Cum Delta, Open Interest, OI Change) -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <div id="ovFootprintSummaryContainer" style="display:block; background:#0b1120; border:1px solid #1e293b; border-radius:10px; padding:10px 12px; margin-top:6px; box-shadow:0 4px 14px rgba(0,0,0,0.25);">
+          <!-- Header Bar -->
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid #1e293b;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="background:#2563eb; color:#fff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; letter-spacing:0.5px;">📊 ORDER FLOW SUMMARY BAR</span>
+              <span style="font-size:11px; color:#94a3b8; font-weight:600;">5-Row Synchronized Flow (Volume · Delta · Cum Delta · OI · OI Change)</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span id="ovFpSummaryInspectedLabel" style="font-size:11px; color:#38bdf8; font-family:var(--font-mono); font-weight:700;">Click any bar to inspect ladder</span>
+              <button type="button" onclick="scrollFootprintSummaryToLatest()" style="background:#1e293b; border:1px solid #334155; color:#cbd5e1; border-radius:4px; padding:2px 8px; font-size:11px; cursor:pointer; font-weight:700;">⚡ Latest Candle</button>
+              <button type="button" onclick="toggleFootprintSummaryBar()" id="btnToggleFpSummaryBar" style="background:none; border:1px solid #334155; color:#94a3b8; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:11px;">▲ Minimize</button>
+            </div>
+          </div>
+
+          <!-- Horizontal Scrollable 5-Row Table -->
+          <div id="ovFpSummaryScroll" style="overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; border-radius:6px; border:1px solid #1e293b; background:#0f172a;">
+            <div id="ovFpSummaryGrid" style="display:inline-block; min-width:100%; font-family:var(--font-mono); font-size:11px;">
+              <!-- Populated dynamically via renderFootprintSummaryTable() -->
+            </div>
+          </div>
+
+          <!-- Legend / Instructions Footer -->
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-top:6px; font-size:10px; color:#64748b;">
+            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+              <span><b style="color:#60a5fa;">■ Volume</b>: Traded Contracts/Shares</span>
+              <span><b style="color:#34d399;">■ Delta</b>: Net Aggressive Market Buyers vs Sellers</span>
+              <span><b style="color:#a78bfa;">■ Cum</b>: Cumulative Session Volume Delta (CVD)</span>
+              <span><b style="color:#fbbf24;">■ Open Int</b>: Total Open Interest</span>
+              <span><b style="color:#34d399;">■ OI Chng</b>: Fresh Buildup / Unwinding</span>
+            </div>
+            <span style="color:#a855f7; font-weight:700;">💡 Click any column to open its detailed Bid/Ask Footprint Ladder</span>
+          </div>
         </div>
 
         <!-- CVD (Cumulative Volume Delta) Sub-Chart -->
@@ -3523,6 +3579,56 @@
         ctx.lineWidth = 1.5;
         ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
 
+        // Feature 1: Internal VPOC Sniper Entry Line (Line B)
+        // High-volume absorption / distribution level inside the base candle
+        const vpocVal = ob.vpoc || (isBull ? (ob.bottom + (ob.top - ob.bottom) * 0.40) : (ob.top - (ob.top - ob.bottom) * 0.40));
+        const yVpoc = series.priceToCoordinate(vpocVal);
+        if (yVpoc !== null && yVpoc >= boxY && yVpoc <= boxY + boxHeight) {
+          ctx.save();
+          ctx.strokeStyle = isBull ? "#eab308" : "#38bdf8"; // bright amber gold / cyan
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([4, 3]);
+          ctx.beginPath();
+          ctx.moveTo(boxX, yVpoc);
+          ctx.lineTo(boxX + boxWidth, yVpoc);
+          ctx.stroke();
+
+          // Right-aligned VPOC sniper tag
+          if (boxWidth >= 75) {
+            ctx.setLineDash([]);
+            ctx.font = "bold 8px 'JetBrains Mono', monospace";
+            const vpocText = `🎯 VPOC ₹${vpocVal.toFixed(1)}`;
+            const vpocW = ctx.measureText(vpocText).width + 6;
+            const vpocX = boxX + boxWidth - vpocW - 4;
+            ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
+            ctx.fillRect(vpocX, yVpoc - 6, vpocW, 12);
+            ctx.strokeStyle = isBull ? "#eab308" : "#38bdf8";
+            ctx.lineWidth = 0.8;
+            ctx.strokeRect(vpocX, yVpoc - 6, vpocW, 12);
+            ctx.fillStyle = isBull ? "#fef08a" : "#bae6fd";
+            ctx.textBaseline = "middle";
+            ctx.fillText(vpocText, vpocX + 3, yVpoc);
+          }
+          ctx.restore();
+        }
+
+        // Feature 2: Breakout Trigger Line (Line A) across Candle 1's wick
+        if (isFresh && boxWidth >= 40) {
+          const triggerPrice = isBull ? ob.top : ob.bottom;
+          const yTrigger = series.priceToCoordinate(triggerPrice);
+          if (yTrigger !== null) {
+            ctx.save();
+            ctx.strokeStyle = isBull ? "#06b6d4" : "#f43f5e";
+            ctx.lineWidth = 1.0;
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath();
+            ctx.moveTo(boxX, yTrigger);
+            ctx.lineTo(boxX + Math.min(boxWidth, 120), yTrigger);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
         // Crisp tag label inside the box at left
         if (boxWidth >= 30) {
           ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
@@ -3554,12 +3660,15 @@
           }
 
           let fullLabel = "";
+          const gradeTag = (ob.grade === "A+" || ob.id.includes("bull_scanner") || ob.id.includes("bear_scanner")) ? " ⭐ A+ FLOW" : "";
+          const defenseTag = ob.retest_defense === "DEFENDED" ? " 🛡️ DEFENDED" : "";
+
           if (ob.status === "Fresh") {
-            fullLabel = `${tagText} · FRESH ${baseTimeStr}`;
+            fullLabel = `${tagText} · FRESH ${baseTimeStr}${gradeTag}`;
           } else if (ob.status === "Tested") {
-            fullLabel = testTimeStr ? `${tagText} · TESTED ${testTimeStr} (BASE ${baseTimeStr})` : `${tagText} · TESTED (BASE ${baseTimeStr})`;
+            fullLabel = testTimeStr ? `${tagText} · TESTED ${testTimeStr}${defenseTag} (BASE ${baseTimeStr})` : `${tagText} · TESTED${defenseTag} (BASE ${baseTimeStr})`;
           } else {
-            fullLabel = `${tagText} · ${ob.status || ''} ${baseTimeStr}`;
+            fullLabel = `${tagText} · ${ob.status || ''} ${baseTimeStr}${gradeTag}`;
           }
 
           const labelStr = ctx.measureText(fullLabel).width + 14 <= boxWidth ? fullLabel : `${tagText} · ${(ob.status || '').toUpperCase()}`;
@@ -6954,6 +7063,7 @@
 
     document.getElementById("btnOvToggleVp")?.addEventListener("click", (e) => {
       _ovShowVp = !_ovShowVp;
+      updateVolumeProfilePriceLines();
       requestAnimationFrame(renderVolumeProfileCanvas);
       e.target.style.opacity = _ovShowVp ? "1" : "0.5";
     });
@@ -6988,6 +7098,11 @@
         initCvdChart();
         renderCvdData();
       }
+    });
+
+    // ── 5-Row Order Flow Summary Bar Toggle ──
+    document.getElementById("btnOvToggleFpSummary")?.addEventListener("click", () => {
+      toggleFootprintSummaryBar();
     });
 
     // ── Footprint Toggle ──
@@ -7281,6 +7396,7 @@
     const drawer = document.getElementById("ovFootprintDrawer");
     if (drawer) drawer.style.display = "block";
     updateFpLiveBadge();
+    highlightFootprintSummaryColumn(fp.time);
 
     // Header info
     const d = new Date(fp.time * 1000);
@@ -7457,6 +7573,209 @@
     requestAnimationFrame(renderVolumeProfileCanvas);
   }
 
+  // ═════════════════════════════════════════════════════════════════════
+  // 5-ROW INSTITUTIONAL ORDER FLOW FOOTPRINT SUMMARY BAR LOGIC
+  // (Volume, Delta, Cum Delta, Open Interest, OI Change)
+  // ═════════════════════════════════════════════════════════════════════
+  let _ovFootprintSummaryBars = [];
+  let _ovShowFpSummary = true;
+
+  function toggleFootprintSummaryBar() {
+    _ovShowFpSummary = !_ovShowFpSummary;
+    const container = document.getElementById("ovFootprintSummaryContainer");
+    const btn = document.getElementById("btnOvToggleFpSummary");
+    const toggleBtn = document.getElementById("btnToggleFpSummaryBar");
+    if (container) container.style.display = _ovShowFpSummary ? "block" : "none";
+    if (btn) btn.style.opacity = _ovShowFpSummary ? "1" : "0.5";
+    if (toggleBtn) toggleBtn.textContent = _ovShowFpSummary ? "▲ Minimize" : "▼ Expand";
+  }
+
+  function formatFpMetric(val, showSign = false) {
+    if (val === null || val === undefined || isNaN(val)) return "—";
+    const num = Number(val);
+    const abs = Math.abs(num);
+    const sign = showSign ? (num > 0 ? "+" : (num < 0 ? "-" : "")) : (num < 0 ? "-" : "");
+    if (abs >= 10000000) return `${sign}${(abs / 10000000).toFixed(2)}Cr`;
+    if (abs >= 1000000) return `${sign}${(abs / 1000000).toFixed(2)}M`;
+    if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(1)}K`;
+    return `${sign}${Math.round(abs)}`;
+  }
+
+  function formatFpTime(timeVal) {
+    if (!timeVal) return "--:--";
+    let dt;
+    if (typeof timeVal === "number") {
+      dt = new Date(timeVal > 1e11 ? timeVal : timeVal * 1000);
+    } else {
+      dt = new Date(String(timeVal).replace(" ", "T"));
+    }
+    if (isNaN(dt.getTime())) return "--:--";
+    return dt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+
+  function renderFootprintSummaryTable(summaryBars) {
+    _ovFootprintSummaryBars = summaryBars || [];
+    const container = document.getElementById("ovFootprintSummaryContainer");
+    const grid = document.getElementById("ovFpSummaryGrid");
+    if (!container || !grid) return;
+
+    if (!summaryBars || summaryBars.length === 0) {
+      grid.innerHTML = `
+        <div style="padding: 18px 24px; text-align:center; color:#94a3b8; font-style:italic;">
+          No order flow footprint summary available for this session.
+        </div>
+      `;
+      return;
+    }
+
+    // Build the flex columns layout matching the authentic GoCharting/ATAS reference
+    let html = `
+      <div style="display:flex; align-items:stretch; min-width:max-content; position:relative;">
+        <!-- Left Sticky Label Column -->
+        <div style="position:sticky; left:0; z-index:20; width:92px; flex-shrink:0; background:#0f172a; box-shadow:3px 0 8px rgba(0,0,0,0.5); border-right:1px solid #334155;">
+          <div style="height:26px; display:flex; align-items:center; padding:0 8px; font-size:10px; font-weight:800; color:#93c5fd; background:#172554; border-bottom:1px solid #1e3a8a;">
+            🟦 Volume
+          </div>
+          <div style="height:26px; display:flex; align-items:center; padding:0 8px; font-size:10px; font-weight:800; color:#86efac; background:#064e3b; border-bottom:1px solid #065f46;">
+            🟩 Delta ▲
+          </div>
+          <div style="height:26px; display:flex; align-items:center; padding:0 8px; font-size:10px; font-weight:800; color:#c7d2fe; background:#312e81; border-bottom:1px solid #3730a3;">
+            📈 Cum ▲
+          </div>
+          <div style="height:26px; display:flex; align-items:center; padding:0 8px; font-size:10px; font-weight:800; color:#fde68a; background:#78350f; border-bottom:1px solid #92400e;">
+            🟨 Open Int
+          </div>
+          <div style="height:26px; display:flex; align-items:center; padding:0 8px; font-size:10px; font-weight:800; color:#fbcfe8; background:#831843; border-bottom:1px solid #9d174d;">
+            ⚡ OI Chng
+          </div>
+          <div style="height:24px; display:flex; align-items:center; padding:0 8px; font-size:10px; font-weight:800; color:#94a3b8; background:#0f172a;">
+            🕒 Time
+          </div>
+        </div>
+
+        <!-- Data Columns (1 per candle) -->
+        ${summaryBars.map((b) => {
+          const isPosDelta = (b.net_delta || 0) >= 0;
+          const isPosCum = (b.cum_delta || 0) >= 0;
+          const isPosOi = (b.oi_change || 0) >= 0;
+
+          const volStr = formatFpMetric(b.total_vol || b.volume || 0);
+          const deltaStr = formatFpMetric(b.net_delta || 0, true);
+          const cumStr = formatFpMetric(b.cum_delta || 0, true);
+          const oiStr = formatFpMetric(b.oi || 0);
+          const oiChgStr = formatFpMetric(b.oi_change || 0, true);
+          const timeLabel = formatFpTime(b.time);
+
+          const isSelected = _ovSelectedFootprintTime && (Number(_ovSelectedFootprintTime) === Number(b.time));
+
+          return `
+            <div class="fp-summary-col ${isSelected ? 'fp-col-selected' : ''}"
+                 data-time="${b.time}"
+                 onclick="selectFootprintSummaryBar(${b.time})"
+                 title="Candle ${timeLabel} IST\nVol: ${volStr}\nDelta: ${deltaStr}\nCum Delta: ${cumStr}\nOI: ${oiStr}\nOI Change: ${oiChgStr}"
+                 style="width:74px; flex-shrink:0; display:flex; flex-direction:column; cursor:pointer; transition:all .15s ease; border-right:1px solid rgba(255,255,255,0.08); user-select:none;">
+              
+              <!-- 1. Volume (Blue) -->
+              <div style="height:26px; background:#1e40af; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border-bottom:1px solid #1e3a8a;">
+                ${volStr}
+              </div>
+
+              <!-- 2. Delta (Green/Red) -->
+              <div style="height:26px; background:${isPosDelta ? '#15803d' : '#b91c1c'}; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border-bottom:1px solid rgba(0,0,0,0.2);">
+                ${deltaStr}
+              </div>
+
+              <!-- 3. Cum Delta (Teal/Crimson) -->
+              <div style="height:26px; background:${isPosCum ? '#047857' : '#991b1b'}; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border-bottom:1px solid rgba(0,0,0,0.2);">
+                ${cumStr}
+              </div>
+
+              <!-- 4. Open Interest (Amber/Orange) -->
+              <div style="height:26px; background:#c2410c; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border-bottom:1px solid rgba(0,0,0,0.2);">
+                ${oiStr}
+              </div>
+
+              <!-- 5. OI Change (Emerald/Rose) -->
+              <div style="height:26px; background:${isPosOi ? '#166534' : '#9f1239'}; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border-bottom:1px solid rgba(0,0,0,0.2);">
+                ${oiChgStr}
+              </div>
+
+              <!-- 6. Time (IST) -->
+              <div style="height:24px; background:#0f172a; color:#94a3b8; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700;">
+                ${timeLabel}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+
+    grid.innerHTML = html;
+
+    // Scroll to latest candle or currently selected candle
+    setTimeout(() => {
+      if (_ovSelectedFootprintTime) {
+        highlightFootprintSummaryColumn(_ovSelectedFootprintTime);
+      } else {
+        scrollFootprintSummaryToLatest();
+      }
+    }, 100);
+  }
+
+  function selectFootprintSummaryBar(targetTime) {
+    _ovSelectedFootprintTime = targetTime;
+    highlightFootprintSummaryColumn(targetTime);
+
+    const tsStr = String(targetTime);
+    let fp = (_ovFootprintData && _ovFootprintData[tsStr]) ? _ovFootprintData[tsStr] : null;
+    if (!fp && _ovCandlesData) {
+      const c = _ovCandlesData.find(x => Number(x.time) === Number(targetTime));
+      if (c) {
+        fp = {
+          time: c.time, open: c.open, high: c.high, low: c.low, close: c.close,
+          total_vol: c.volume || 0, net_delta: 0, levels: []
+        };
+      }
+    }
+
+    _ovShowFootprint = true;
+    const btnFp = document.getElementById("btnOvToggleFp");
+    if (btnFp) btnFp.style.opacity = "1";
+    if (fp) {
+      openFootprintInspector(fp);
+    }
+    requestAnimationFrame(renderVolumeProfileCanvas);
+  }
+
+  function highlightFootprintSummaryColumn(targetTime) {
+    if (!targetTime) return;
+    const cols = document.querySelectorAll(".fp-summary-col");
+    cols.forEach(col => {
+      const t = col.getAttribute("data-time");
+      if (Number(t) === Number(targetTime)) {
+        col.classList.add("fp-col-selected");
+        col.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+
+        const bar = _ovFootprintSummaryBars.find(b => Number(b.time) === Number(targetTime));
+        const lbl = document.getElementById("ovFpSummaryInspectedLabel");
+        if (lbl && bar) {
+          const tStr = formatFpTime(bar.time);
+          const isPos = (bar.net_delta || 0) >= 0;
+          lbl.innerHTML = `Inspected: <b style="color:#ffffff;">${tStr} IST</b> · Vol: <b>${formatFpMetric(bar.total_vol || 0)}</b> · Δ: <b style="color:${isPos ? '#34d399' : '#f87171'};">${formatFpMetric(bar.net_delta || 0, true)}</b>`;
+        }
+      } else {
+        col.classList.remove("fp-col-selected");
+      }
+    });
+  }
+
+  function scrollFootprintSummaryToLatest() {
+    const scrollContainer = document.getElementById("ovFpSummaryScroll");
+    if (scrollContainer) {
+      scrollContainer.scrollLeft = scrollContainer.scrollWidth;
+    }
+  }
+
   let _ovAutoRefreshTimer = null;
   function initOverviewView() {
     initOverviewChart();
@@ -7492,6 +7811,49 @@
   }
 
   let _lastVpData = null;
+
+  function updateVolumeProfilePriceLines() {
+    _ovPriceLines.forEach(l => {
+      try { _ovCandleSeries.removePriceLine(l); } catch(e) {}
+    });
+    _ovPriceLines = [];
+
+    if (!_ovShowVp || !_lastVpData || !_ovCandleSeries) return;
+
+    if (_lastVpData.poc) {
+      const pocLine = _ovCandleSeries.createPriceLine({
+        price: _lastVpData.poc,
+        color: '#a855f7',
+        lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle.Solid,
+        axisLabelVisible: true,
+        title: 'POC',
+      });
+      _ovPriceLines.push(pocLine);
+    }
+    if (_lastVpData.vah) {
+      const vahLine = _ovCandleSeries.createPriceLine({
+        price: _lastVpData.vah,
+        color: '#2563eb',
+        lineWidth: 1.5,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'VAH',
+      });
+      _ovPriceLines.push(vahLine);
+    }
+    if (_lastVpData.val) {
+      const valLine = _ovCandleSeries.createPriceLine({
+        price: _lastVpData.val,
+        color: '#2563eb',
+        lineWidth: 1.5,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'VAL',
+      });
+      _ovPriceLines.push(valLine);
+    }
+  }
 
   function renderVolumeProfileCanvas() {
     const canvas = document.getElementById("ovVolumeProfileCanvas");
@@ -7771,48 +8133,9 @@
         setOvVolumeHeight(_ovVolHeightMode);
       }
 
-      // Clear existing price lines
-      _ovPriceLines.forEach(l => {
-        try { _ovCandleSeries.removePriceLine(l); } catch(e) {}
-      });
-      _ovPriceLines = [];
-
-      // Add POC line
-      if (vp.poc) {
-        const pocLine = _ovCandleSeries.createPriceLine({
-          price: vp.poc,
-          color: '#a855f7',
-          lineWidth: 2,
-          lineStyle: LightweightCharts.LineStyle.Solid,
-          axisLabelVisible: true,
-          title: 'POC',
-        });
-        _ovPriceLines.push(pocLine);
-      }
-
-      // Add VAH / VAL lines
-      if (vp.vah) {
-        const vahLine = _ovCandleSeries.createPriceLine({
-          price: vp.vah,
-          color: '#2563eb',
-          lineWidth: 2,
-          lineStyle: LightweightCharts.LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: 'VAH',
-        });
-        _ovPriceLines.push(vahLine);
-      }
-      if (vp.val) {
-        const valLine = _ovCandleSeries.createPriceLine({
-          price: vp.val,
-          color: '#2563eb',
-          lineWidth: 2,
-          lineStyle: LightweightCharts.LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: 'VAL',
-        });
-        _ovPriceLines.push(valLine);
-      }
+      // Store Volume Profile and update POC, VAH, VAL horizontal lines
+      _lastVpData = vp || null;
+      updateVolumeProfilePriceLines();
 
       // Store Order Block data for clean rectangular box rendering on canvas (Pro Stock Hunter SMC mapping)
       _ovObData = (ms && ms.order_blocks) || [];
@@ -7821,7 +8144,6 @@
       _ovExtensionData = data.extension_gate || null;
 
       // Render Left Volume Profile, Order Blocks & FVG on Canvas (Mathematically aligned to price scale)
-      _lastVpData = vp;
       setTimeout(() => {
         renderVolumeProfileCanvas();
       }, 80);
@@ -7836,6 +8158,8 @@
 
       // ── Store Footprint Data (for candle-click inspector & chart overlay) ──
       _ovFootprintData = data.footprints || {};
+      const summaryBars = data.footprint_summary || (_ovFootprintData ? _ovFootprintData._summary : null) || [];
+      renderFootprintSummaryTable(summaryBars);
       if (_ovShowFootprint && _ovCandlesData.length && _ovFootprintData) {
         const latestTime = String(_ovCandlesData[_ovCandlesData.length - 1].time);
         if (_ovFootprintData[latestTime]) {
@@ -8201,27 +8525,29 @@
             const v = vals[idx];
             const isUp = v >= 0;
             const isSelected = _sectorFilter === sec.name;
+            const isTop1 = (idx === 0 && isUp);
             const barH = Math.max(Math.round((Math.abs(v) / maxVal) * 52), 4);
             const valLabel = _sectorChartMetric === "rvol"
               ? `${sec.avgRvol.toFixed(1)}x`
               : `${isUp ? "+" : ""}${v.toFixed(2)}%`;
             const icon = SECTOR_ICONS[sec.name] || "📦";
-            const colBg = isSelected ? "#eff6ff" : "transparent";
-            const colBorder = isSelected ? "2px solid #2563eb" : "1px solid transparent";
-            const colShadow = isSelected ? "box-shadow: 0 4px 12px rgba(37,99,235,0.18);" : "";
-            const barColor = isUp ? "#10b981" : "#ef4444";
-            const textCol = isUp ? "#059669" : "#dc2626";
+            const colBg = isSelected ? "#eff6ff" : (isTop1 ? "#ecfdf5" : "transparent");
+            const colBorder = isSelected ? "2px solid #2563eb" : (isTop1 ? "2px solid #059669" : "1px solid transparent");
+            const colShadow = isSelected ? "box-shadow: 0 4px 12px rgba(37,99,235,0.18);" : (isTop1 ? "box-shadow: 0 4px 12px rgba(6,78,59,0.25);" : "");
+            const barColor = isTop1 ? "#064e3b" : (isUp ? "#10b981" : "#ef4444");
+            const textCol = isTop1 ? "#064e3b" : (isUp ? "#059669" : "#dc2626");
 
             return `
               <div onclick="filterSectorTable('${sec.name}')"
-                   style="flex:0 0 54px; width:54px; display:flex; flex-direction:column; align-items:center; cursor:pointer; border-radius:8px; padding:4px 2px; background:${colBg}; border:${colBorder}; ${colShadow} transition:all .15s ease;"
-                   title="${sec.name}: ${valLabel} (${sec.count} stocks, Leader: ${sec.leader ? sec.leader.symbol : '—'})">
+                   style="flex:0 0 56px; width:56px; display:flex; flex-direction:column; align-items:center; cursor:pointer; border-radius:8px; padding:4px 2px; background:${colBg}; border:${colBorder}; ${colShadow} transition:all .15s ease;"
+                   title="${sec.name}: ${valLabel} ${isTop1 ? '★ HIGHEST MONEY FLOW' : ''} (${sec.count} stocks, Leader: ${sec.leader ? sec.leader.symbol : '—'})">
                 
                 <!-- Upper Zone (Positive Bars) -->
                 <div style="height:54px; width:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center;">
                   ${isUp ? `
+                    ${isTop1 ? `<span style="font-size:7.5px; font-weight:900; background:#064e3b; color:#34d399; padding:1px 3px; border-radius:3px; margin-bottom:2px; letter-spacing:0.3px;">#1 FLOW</span>` : ''}
                     <span style="font-size:9.5px; font-weight:800; font-family:monospace; color:${textCol}; margin-bottom:2px; line-height:1;">${valLabel}</span>
-                    <div style="width:24px; height:${barH}px; background:${barColor}; border-radius:4px 4px 0 0; transition:height .2s ease;"></div>
+                    <div style="width:24px; height:${barH}px; background:${barColor}; border-radius:4px 4px 0 0; transition:height .2s ease; ${isTop1 ? 'border:1px solid #047857; box-shadow:0 0 8px rgba(6,78,59,0.4);' : ''}"></div>
                   ` : `<div style="height:12px;"></div>`}
                 </div>
 
@@ -8238,7 +8564,7 @@
 
                 <!-- Sector Title & Icon -->
                 <div style="margin-top:2px; text-align:center; width:100%;">
-                  <span style="font-size:10px; display:block; font-weight:${isSelected ? '800' : '700'}; color:${isSelected ? '#1d4ed8' : '#334155'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${sec.name}">
+                  <span style="font-size:10px; display:block; font-weight:${isSelected ? '800' : '700'}; color:${isSelected ? '#1d4ed8' : (isTop1 ? '#064e3b' : '#334155')}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${sec.name}">
                     ${sec.name}
                   </span>
                 </div>
@@ -8251,14 +8577,25 @@
     // ── RENDER 2: Sector Waterfall Bar Cards Grid ──
     const tilesGrid = document.getElementById("sectorTilesGrid");
     if (tilesGrid) {
-      tilesGrid.innerHTML = sectorList.map(sec => {
+      tilesGrid.innerHTML = sectorList.map((sec, idx) => {
         const isUp = sec.avgPct >= 0;
         const isSelected = _sectorFilter === sec.name;
-        const bg = isSelected ? "#eff6ff" : (isUp ? "#f0fdf4" : "#fff1f2");
-        const border = isSelected ? "2px solid #2563eb" : (isUp ? "1px solid #bbf7d0" : "1px solid #fecaca");
-        const pctCol = isUp ? "#16a34a" : "#dc2626";
+        const isTop1 = (idx === 0 && isUp);
+        let bg = isSelected ? "#eff6ff" : (isUp ? "#f0fdf4" : "#fff1f2");
+        let border = isSelected ? "2px solid #2563eb" : (isUp ? "1px solid #bbf7d0" : "1px solid #fecaca");
+        let pctCol = isUp ? "#16a34a" : "#dc2626";
+        let shadow = isSelected ? "box-shadow: 0 4px 6px -1px rgba(37,99,235,0.15);" : "";
+        let topBadge = "";
+
+        if (isTop1) {
+          bg = isSelected ? "linear-gradient(135deg, #064e3b 0%, #047857 100%)" : "linear-gradient(135deg, #064e3b 0%, #065f46 100%)";
+          border = "2px solid #10b981";
+          pctCol = "#6ee7b7";
+          shadow = "box-shadow: 0 6px 16px rgba(6,78,59,0.35);";
+          topBadge = `<span style="background:#10b981; color:#064e3b; font-size:8px; font-weight:900; padding:1px 5px; border-radius:3px; letter-spacing:0.4px;">🔥 HIGHEST MONEY FLOW</span>`;
+        }
+
         const icon = SECTOR_ICONS[sec.name] || "📦";
-        const shadow = isSelected ? "box-shadow: 0 4px 6px -1px rgba(37,99,235,0.15);" : "";
         const leaderName = sec.leader ? sec.leader.symbol : "—";
 
         return `
@@ -8267,14 +8604,14 @@
                onmouseover="this.style.transform='translateY(-2px)'"
                onmouseout="this.style.transform=''">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-size:11.5px; font-weight:800; color:#0f172a;">${icon} ${sec.name}</span>
-              <span style="font-size:9.5px; color:#64748b; font-family:monospace;">${sec.count}</span>
+              <span style="font-size:11.5px; font-weight:800; color:${isTop1 ? '#ffffff' : '#0f172a'};">${icon} ${sec.name}</span>
+              ${topBadge ? topBadge : `<span style="font-size:9.5px; color:${isTop1 ? '#d1fae5' : '#64748b'}; font-family:monospace;">${sec.count}</span>`}
             </div>
-            <div style="font-size:12px; font-weight:900; color:${pctCol}; font-family:monospace; margin-top:3px;">
+            <div style="font-size:13px; font-weight:900; color:${pctCol}; font-family:monospace; margin-top:3px;">
               ${isUp ? "+" : ""}${sec.avgPct.toFixed(2)}%
             </div>
-            <div style="font-size:9.5px; color:#64748b; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-              Leader: <b style="color:#0f172a;">${leaderName}</b>
+            <div style="font-size:9.5px; color:${isTop1 ? '#d1fae5' : '#64748b'}; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              Leader: <b style="color:${isTop1 ? '#ffffff' : '#0f172a'};">${leaderName}</b>
             </div>
           </div>`;
       }).join("");
@@ -8284,6 +8621,7 @@
     const currentSec = sectorList.find(s => s.name === _sectorFilter) || (sectorList.length ? sectorList[0] : null);
     if (currentSec) {
       const isUp = currentSec.avgPct >= 0;
+      const isTop1 = (currentSec.name === sectorList[0]?.name && currentSec.avgPct > 0);
       const niftyPct = (payload.index_context && payload.index_context["NIFTY 50"] && typeof payload.index_context["NIFTY 50"].percent_change === 'number')
         ? payload.index_context["NIFTY 50"].percent_change : -0.63;
       const alpha = currentSec.avgPct - niftyPct;
@@ -8292,7 +8630,9 @@
       if (iconEl) iconEl.textContent = SECTOR_ICONS[currentSec.name] || "🏛️";
 
       const titleEl = document.getElementById("activeSectorTitle");
-      if (titleEl) titleEl.textContent = `NIFTY ${currentSec.name.toUpperCase()}`;
+      if (titleEl) {
+        titleEl.innerHTML = `NIFTY ${currentSec.name.toUpperCase()} ${isTop1 ? '<span style="background:#064e3b; color:#34d399; border:1px solid #059669; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; margin-left:8px; vertical-align:middle;">🔥 #1 HIGHEST MONEY FLOW SECTOR</span>' : ''}`;
+      }
 
       const pctBadge = document.getElementById("activeSectorPctBadge");
       if (pctBadge) {

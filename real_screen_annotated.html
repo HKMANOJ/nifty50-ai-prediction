@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Real Screen Order Block Marking Guide - manojLabs AI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0b0f19;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", sans-serif;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    .header-card {
+      max-width: 1100px;
+      width: 100%;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 18px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+    }
+    .header-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 6px;
+      background: rgba(16,185,129,0.2);
+      color: #34d399;
+      border: 1px solid #10b981;
+    }
+    .stage-container {
+      position: relative;
+      max-width: 1100px;
+      width: 100%;
+      background: #020617;
+      border: 2px solid #38bdf8;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.6);
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .legend-grid {
+      max-width: 1100px;
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    .legend-card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .legend-card h3 {
+      font-size: 14px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-card p {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #94a3b8;
+    }
+    .legend-card .code-val {
+      color: #f1f5f9;
+      font-family: monospace;
+      font-weight: 700;
+      background: #1e293b;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-card">
+    <div>
+      <div class="header-title">
+        🎯 Real Screen Marking: Candle 1, Candle 2, Trigger Line & VPOC Sniper Entry
+      </div>
+      <div style="font-size:12px; color:#94a3b8; margin-top:4px;">
+        Annotated directly on your real SENSEX chart (<span class="code-val">83,919.71 BULL</span>) from your live session
+      </div>
+    </div>
+    <div class="badge">SMC + 5-ROW ORDER FLOW CONVERGENCE</div>
+  </div>
+
+  <div class="stage-container">
+    <canvas id="screenCanvas" width="1024" height="665"></canvas>
+  </div>
+
+  <div class="legend-grid">
+    <div class="legend-card" style="border-top: 3px solid #38bdf8;">
+      <h3 style="color:#38bdf8;">📌 1. Candle 1 & Wick High (Line A)</h3>
+      <p>
+        <strong style="color:#e2e8f0;">Candle 1 (Base Origin at 11:50 AM):</strong> Where institutions absorb supply. Its upper wick ends at <span class="code-val">₹83,280</span>.
+        <br><br>
+        <strong style="color:#38bdf8;">Line A (Cyan Solid Line):</strong> Marked at Candle 1's wick high. <strong>Candle 2 crosses & closes above this line</strong> to confirm the breakout!
+      </p>
+    </div>
+
+    <div class="legend-card" style="border-top: 3px solid #10b981;">
+      <h3 style="color:#10b981;">🎯 2. Demand Box & VPOC Sniper (Line B)</h3>
+      <p>
+        <strong style="color:#e2e8f0;">Demand Box (Green Zone):</strong> Encloses Candle 1's full base (<span class="code-val">₹83,165 - ₹83,280</span> = 115 pts).
+        <br><br>
+        <strong style="color:#10b981;">Line B (Yellow Dotted Line):</strong> Fine internal line at <span class="code-val">₹83,240</span> where peak volume was traded. Limit Buy entry on retest with half the risk!
+      </p>
+    </div>
+
+    <div class="legend-card" style="border-top: 3px solid #a855f7;">
+      <h3 style="color:#c084fc;">⚡ 3. 5-Row Order Flow Footprint</h3>
+      <p>
+        <strong style="color:#e2e8f0;">Institutional Conviction:</strong>
+        Instead of guessing single candles, the bottom bar tracks <strong>Delta (+39.7K)</strong> and <strong>OI Change (+15.9K)</strong>.
+        <br><br>
+        When price dips to Line B, positive Delta confirms <strong>Institutional Defense</strong> (<span class="code-val">🛡️ DEFENDED</span>).
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('screenCanvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.src = '/user_real_screen.jpg';
+
+    img.onload = () => {
+      // 1. Draw base user screenshot
+      ctx.drawImage(img, 0, 0, 1024, 665);
+
+      // 2. High-precision annotations on the 11:50 AM Breakout Region
+      // Coordinates on the 1024x665 image:
+      // 11:50 AM base candle: x ≈ 532, y_high ≈ 210, y_low ≈ 224
+      // DEMAND box: x: 532 to 935, y: 210 to 226
+
+      const c1_x = 533;
+      const c1_wick_high_y = 209;
+      const c1_low_y = 226;
+      const c2_x = 548;
+      const c2_top_y = 186;
+
+      // Draw Dimming Mask over irrelevant parts to make the 11:50 AM breakout POP OUT
+      ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+      ctx.fillRect(0, 0, 1024, 665);
+
+      // Cut out the spotlight on the Chart and 11:50 AM Demand Zone
+      ctx.save();
+      // Draw highlighted window over the chart
+      ctx.drawImage(img, 175, 120, 780, 520, 175, 120, 780, 520);
+
+      // --- ANNOTATION 1: CANDLE 1 (BASE ORIGIN) ---
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.strokeRect(c1_x - 8, c1_wick_high_y - 6, 16, (c1_low_y - c1_wick_high_y) + 12);
+
+      // Callout for Candle 1
+      drawCallout(ctx, c1_x - 8, c1_low_y + 10, c1_x - 70, c1_low_y + 60, "CANDLE 1 (Base Origin 11:50 AM)", "Where Smart Money accumulated base", "#f59e0b");
+
+      // --- ANNOTATION 2: LINE A (BREAKOUT TRIGGER LINE - WICK HIGH) ---
+      ctx.strokeStyle = "#00f0ff";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(c1_x - 5, c1_wick_high_y);
+      ctx.lineTo(c2_x + 60, c1_wick_high_y);
+      ctx.stroke();
+
+      // Callout for Line A
+      drawCallout(ctx, c2_x + 30, c1_wick_high_y, c2_x + 70, c1_wick_high_y - 45, "LINE A: Breakout Trigger (Wick High ₹83,280)", "Candle 2 crosses above this to CONFIRM Demand!", "#00f0ff");
+
+      // --- ANNOTATION 3: CANDLE 2 (BREAKOUT EXPANSION) ---
+      ctx.strokeStyle = "#10b981";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.strokeRect(c2_x - 7, c2_top_y - 6, 15, (c1_wick_high_y - c2_top_y) + 18);
+
+      // Callout for Candle 2
+      drawCallout(ctx, c2_x + 4, c2_top_y - 6, c2_x + 20, c2_top_y - 65, "CANDLE 2: Breakout Expansion", "Blasts and closes cleanly above Line A", "#10b981");
+
+      // --- ANNOTATION 4: LINE B (VPOC SNIPER ENTRY LINE INSIDE DEMAND BOX) ---
+      const vpoc_y = c1_wick_high_y + 8; // ~83,240 inside the box
+      ctx.strokeStyle = "#ffeb3b";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath();
+      ctx.moveTo(c1_x, vpoc_y);
+      ctx.lineTo(925, vpoc_y);
+      ctx.stroke();
+
+      // Callout for Line B (VPOC Sniper)
+      drawCallout(ctx, 740, vpoc_y, 740, vpoc_y + 65, "LINE B: VPOC Sniper Entry (₹83,240)", "Peak volume inside base candle. Retest Limit Buy Entry!", "#ffeb3b");
+
+      // --- ANNOTATION 5: 5-ROW ORDER FLOW FOOTPRINT CONNECTION ---
+      ctx.strokeStyle = "#c084fc";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.strokeRect(485, 455, 450, 115);
+
+      drawCallout(ctx, 600, 455, 420, 420, "5-ROW FOOTPRINT CONFIRMATION", "+Delta & +OI Change prove institutional buying, not retail hype!", "#c084fc");
+
+      ctx.restore();
+    };
+
+    function drawCallout(ctx, startX, startY, endX, endY, title, subtitle, color) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.fillStyle = color;
+
+      // Pointer line
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      // Small anchor dot
+      ctx.beginPath();
+      ctx.arc(startX, startY, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Text box
+      ctx.font = "bold 11px -apple-system, sans-serif";
+      const tWidth = Math.max(ctx.measureText(title).width, ctx.measureText(subtitle).width);
+      const boxW = tWidth + 16;
+      const boxH = 34;
+      const boxX = endX > startX ? endX : endX - boxW;
+      const boxY = endY > startY ? endY : endY - boxH;
+
+      ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+      ctx.fillStyle = color;
+      ctx.fillText(title, boxX + 8, boxY + 14);
+
+      ctx.font = "10px -apple-system, sans-serif";
+      ctx.fillStyle = "#cbd5e1";
+      ctx.fillText(subtitle, boxX + 8, boxY + 28);
+
+      ctx.restore();
+    }
+  </script>
+</body>
+</html>

@@ -1223,6 +1223,24 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     self._kick_background_refresh()
         best["_auto_scan_info"] = dict(LAST_AUTO_SCAN_INFO)
         best["sector_flow"] = compute_sector_flow(best)
+
+        # Always inject the freshest live/closing index context (NIFTY 50, SENSEX, BANK NIFTY)
+        # so clients never receive stale morning index values
+        try:
+            with _INDEX_QUOTE_LOCK:
+                cached_quotes = dict(_INDEX_QUOTES.get("quotes", {}))
+            if cached_quotes:
+                best = dict(best)
+                best["index_context"] = cached_quotes
+            else:
+                from stock_suggestion_index import fetch_index_context
+                cur_idx, _ = fetch_index_context()
+                if cur_idx:
+                    best = dict(best)
+                    best["index_context"] = cur_idx
+        except Exception:
+            pass
+
         self._send_json(HTTPStatus.OK, best)
 
     def _kick_background_refresh(self) -> None:
@@ -2047,6 +2065,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "liquidity_pools": analysis.get("liquidity_pools", []),
                 "cvd_series": analysis.get("cvd_series", []),
                 "footprints": analysis.get("footprints", {}),
+                "footprint_summary": analysis.get("footprint_summary") or analysis.get("footprints", {}).get("_summary", []),
                 "mtf_matrix": analysis.get("mtf_matrix", {}),
                 "orb_high": round(orb_high, 2) if orb_high else None,
                 "orb_low": round(orb_low, 2) if orb_low else None,

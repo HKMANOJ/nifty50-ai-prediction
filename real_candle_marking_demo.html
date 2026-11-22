@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Real Candle Marking & Order Flow Visualizer</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700;800;900&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #090d16;
+      font-family: 'Inter', -apple-system, sans-serif;
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 20px;
+      min-height: 100vh;
+    }
+    .card {
+      width: 100%;
+      max-width: 980px;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.45);
+      overflow: hidden;
+    }
+    .header {
+      padding: 16px 20px;
+      background: #0b1120;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 480px;
+      background: #090d16;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="background:#2563eb; color:#fff; font-size:11px; font-weight:800; padding:3px 8px; border-radius:4px; font-family:'JetBrains Mono';">SMC + ORDER FLOW</span>
+        <h2 style="font-size:16px; font-weight:900; letter-spacing:0.3px; color:#ffffff;">REAL CANDLE MARKING: BREAKOUT LINE (A) vs SNIPER ENTRY (B)</h2>
+      </div>
+      <p style="font-size:11.5px; color:#94a3b8; margin-top:4px;">
+        Watch how Candle 1's wick triggers the breakout, and its internal VPOC gives the sniper pullback entry.
+      </p>
+    </div>
+    <div style="display:flex; gap:8px; font-size:11px; font-family:'JetBrains Mono';">
+      <span style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3); padding:3px 8px; border-radius:6px; font-weight:700;">LINE A: Breakout Trigger</span>
+      <span style="background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.3); padding:3px 8px; border-radius:6px; font-weight:800;">LINE B: VPOC Sniper Entry</span>
+    </div>
+  </div>
+
+  <div class="chart-container">
+    <canvas id="chartCanvas" width="980" height="480"></canvas>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("chartCanvas");
+const ctx = canvas.getContext("2d");
+
+// High-DPI Canvas Setup
+const width = 980;
+const height = 480;
+
+// Price Mapping (₹83,140 to ₹83,500)
+const minPrice = 83140;
+const maxPrice = 83520;
+const priceRange = maxPrice - minPrice;
+
+function pToY(price) {
+  const topPad = 35;
+  const botPad = 130; // space for bottom footprint bar
+  const plotH = height - topPad - botPad;
+  return topPad + (1 - (price - minPrice) / priceRange) * plotH;
+}
+
+// Draw Grid Lines & Price Axis
+ctx.strokeStyle = "#172033";
+ctx.lineWidth = 1;
+for (let p = 83150; p <= 83500; p += 50) {
+  const y = pToY(p);
+  ctx.beginPath();
+  ctx.moveTo(40, y);
+  ctx.lineTo(880, y);
+  ctx.stroke();
+
+  ctx.fillStyle = "#64748b";
+  ctx.font = "bold 10px 'JetBrains Mono', monospace";
+  ctx.textAlign = "left";
+  ctx.fillText("₹" + p, 890, y + 3);
+}
+
+// ── 5 Candles Data ──
+const candles = [
+  { time: "09:15 AM", open: 83200, high: 83300, low: 83180, close: 83280, isUp: true, vol: "55.0K", delta: "+18.2K", oi: "+8.4K", label: "CANDLE 1\n(Base Origin)" },
+  { time: "09:20 AM", open: 83280, high: 83410, low: 83270, close: 83390, isUp: true, vol: "92.4K", delta: "+45.1K", oi: "+19.2K", label: "CANDLE 2\n(Breakout!)" },
+  { time: "09:25 AM", open: 83390, high: 83400, low: 83310, close: 83320, isUp: false, vol: "38.1K", delta: "-8.4K", oi: "-2.1K", label: "CANDLE 3\n(Pullback)" },
+  { time: "09:30 AM", open: 83320, high: 83330, low: 83240, close: 83290, isUp: false, vol: "64.5K", delta: "+14.6K", oi: "+11.5K", label: "CANDLE 4\n(Sniper Tap)" },
+  { time: "09:35 AM", open: 83290, high: 83490, low: 83280, close: 83470, isUp: true, vol: "88.2K", delta: "+52.0K", oi: "+22.4K", label: "CANDLE 5\n(Rocket Bounce!)" }
+];
+
+const colWidth = 110;
+const startX = 110;
+
+// ── 1. DRAW DEMAND BOX (Candle 1 Range: 83,180 to 83,300) ──
+const boxTopY = pToY(83300);
+const boxBotY = pToY(83180);
+const boxH = boxBotY - boxTopY;
+const boxLeft = startX - 45;
+const boxRight = startX + 4 * colWidth + 50;
+
+ctx.fillStyle = "rgba(16, 185, 129, 0.12)";
+ctx.fillRect(boxLeft, boxTopY, boxRight - boxLeft, boxH);
+ctx.strokeStyle = "#10b981";
+ctx.lineWidth = 1.5;
+ctx.strokeRect(boxLeft, boxTopY, boxRight - boxLeft, boxH);
+
+// Demand Box Label
+ctx.fillStyle = "#065f46";
+ctx.fillRect(boxLeft, boxTopY, 195, 20);
+ctx.fillStyle = "#34d399";
+ctx.font = "bold 10px 'JetBrains Mono', monospace";
+ctx.textAlign = "left";
+ctx.fillText("🟢 DEMAND · FRESH [★ A+ FLOW]", boxLeft + 8, boxTopY + 14);
+
+// ── 2. DRAW LINE A: BREAKOUT TRIGGER LINE (Candle 1 Wick High: ₹83,300) ──
+const lineAY = pToY(83300);
+ctx.strokeStyle = "#ef4444";
+ctx.lineWidth = 2;
+ctx.beginPath();
+ctx.moveTo(startX, lineAY);
+ctx.lineTo(880, lineAY);
+ctx.stroke();
+
+// Line A Badge
+ctx.fillStyle = "#991b1b";
+ctx.beginPath();
+ctx.roundRect(520, lineAY - 18, 350, 20, 4);
+ctx.fill();
+ctx.strokeStyle = "#f87171";
+ctx.lineWidth = 1;
+ctx.stroke();
+ctx.fillStyle = "#ffffff";
+ctx.font = "bold 9.5px 'JetBrains Mono', monospace";
+ctx.textAlign = "left";
+ctx.fillText("🔴 LINE A: CANDLE 1 WICK HIGH (₹83,300) · BREAKOUT LINE", 530, lineAY - 5);
+
+// ── 3. DRAW LINE B: VPOC SNIPER ENTRY LINE (₹83,240) ──
+const lineBY = pToY(83240);
+ctx.setLineDash([5, 4]);
+ctx.strokeStyle = "#f59e0b";
+ctx.lineWidth = 2;
+ctx.beginPath();
+ctx.moveTo(boxLeft, lineBY);
+ctx.lineTo(boxRight, lineBY);
+ctx.stroke();
+ctx.setLineDash([]); // reset dash
+
+// Line B Badge
+ctx.fillStyle = "#78350f";
+ctx.beginPath();
+ctx.roundRect(boxLeft + 10, lineBY - 9, 320, 18, 4);
+ctx.fill();
+ctx.strokeStyle = "#fbbf24";
+ctx.lineWidth = 1;
+ctx.stroke();
+ctx.fillStyle = "#fef08a";
+ctx.font = "bold 9px 'JetBrains Mono', monospace";
+ctx.textAlign = "left";
+ctx.fillText("🎯 LINE B: VPOC SNIPER ENTRY (₹83,240) · 38K CONTRACTS", boxLeft + 16, lineBY + 4);
+
+// ── 4. DRAW STOP LOSS LINE (₹83,165) ──
+const slY = pToY(83165);
+ctx.setLineDash([4, 4]);
+ctx.strokeStyle = "#dc2626";
+ctx.lineWidth = 1.5;
+ctx.beginPath();
+ctx.moveTo(boxLeft, slY);
+ctx.lineTo(boxRight, slY);
+ctx.stroke();
+ctx.setLineDash([]);
+ctx.fillStyle = "#fca5a5";
+ctx.font = "bold 9px 'JetBrains Mono', monospace";
+ctx.textAlign = "left";
+ctx.fillText("🛑 TIGHT SL: ₹83,165 (Below Base)", boxLeft + 10, slY + 12);
+
+// ── 5. DRAW CANDLESTICKS ──
+candles.forEach((c, i) => {
+  const x = startX + i * colWidth;
+  const yHigh = pToY(c.high);
+  const yLow = pToY(c.low);
+  const yOpen = pToY(c.open);
+  const yClose = pToY(c.close);
+
+  const candleW = 34;
+  const colColor = c.isUp ? "#10b981" : "#ef4444";
+  const wickColor = c.isUp ? "#34d399" : "#f87171";
+
+  // Wick
+  ctx.strokeStyle = wickColor;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, yHigh);
+  ctx.lineTo(x, yLow);
+  ctx.stroke();
+
+  // Body
+  const topY = Math.min(yOpen, yClose);
+  const bodyH = Math.max(4, Math.abs(yClose - yOpen));
+  ctx.fillStyle = colColor;
+  ctx.fillRect(x - candleW / 2, topY, candleW, bodyH);
+  ctx.strokeStyle = c.isUp ? "#059669" : "#dc2626";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - candleW / 2, topY, candleW, bodyH);
+
+  // Time Axis Label
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "bold 10px 'JetBrains Mono', monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(c.time, x, height - 105);
+
+  // Top Label
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "bold 9.5px 'JetBrains Mono', monospace";
+  const lines = c.label.split("\n");
+  ctx.fillText(lines[0], x, yHigh - 16);
+  ctx.fillStyle = c.isUp ? "#34d399" : "#f87171";
+  ctx.fillText(lines[1], x, yHigh - 4);
+});
+
+// ── 6. ANNOTATION CALLOUTS ──
+
+// Callout for Candle 2 Breakout
+const c2X = startX + colWidth;
+ctx.fillStyle = "#1e3a8a";
+ctx.strokeStyle = "#38bdf8";
+ctx.lineWidth = 1;
+ctx.beginPath();
+ctx.roundRect(c2X - 70, pToY(83410) - 34, 140, 24, 6);
+ctx.fill();
+ctx.stroke();
+ctx.fillStyle = "#ffffff";
+ctx.font = "bold 9.5px 'JetBrains Mono', monospace";
+ctx.textAlign = "center";
+ctx.fillText("⚡ CROSSES LINE A!", c2X, pToY(83410) - 18);
+
+// Callout for Candle 4 Sniper Tap
+const c4X = startX + 3 * colWidth;
+ctx.fillStyle = "#78350f";
+ctx.strokeStyle = "#fbbf24";
+ctx.lineWidth = 1.5;
+ctx.beginPath();
+ctx.roundRect(c4X - 85, pToY(83240) + 16, 170, 26, 6);
+ctx.fill();
+ctx.stroke();
+ctx.fillStyle = "#fef08a";
+ctx.font = "bold 9.5px 'JetBrains Mono', monospace";
+ctx.textAlign = "center";
+ctx.fillText("🎯 TAPS LINE B TO THE RUPEE!", c4X, pToY(83240) + 33);
+
+// Arrow from Candle 4 to Rocket
+ctx.strokeStyle = "#10b981";
+ctx.lineWidth = 3;
+ctx.beginPath();
+ctx.moveTo(c4X + 25, pToY(83270));
+ctx.quadraticCurveTo(startX + 3.5 * colWidth, pToY(83380), startX + 4 * colWidth - 10, pToY(83450));
+ctx.stroke();
+// Arrow head
+ctx.fillStyle = "#10b981";
+ctx.beginPath();
+ctx.moveTo(startX + 4 * colWidth - 10, pToY(83450));
+ctx.lineTo(startX + 4 * colWidth - 22, pToY(83440));
+ctx.lineTo(startX + 4 * colWidth - 16, pToY(83460));
+ctx.closePath();
+ctx.fill();
+
+// ── 7. FOOTPRINT ORDER FLOW 5-ROW SUMMARY TABLE AT BOTTOM ──
+const tableTop = height - 90;
+const rowH = 17;
+
+// Left Header
+ctx.fillStyle = "#0b1120";
+ctx.fillRect(20, tableTop, 65, rowH * 5);
+const headers = [
+  { t: "Volume", c: "#93c5fd", bg: "#1e3a8a" },
+  { t: "Delta", c: "#86efac", bg: "#064e3b" },
+  { t: "Cum", c: "#c7d2fe", bg: "#312e81" },
+  { t: "Open Int", c: "#fde68a", bg: "#78350f" },
+  { t: "OI Chg", c: "#fbcfe8", bg: "#831843" }
+];
+headers.forEach((h, r) => {
+  ctx.fillStyle = h.bg;
+  ctx.fillRect(20, tableTop + r * rowH, 65, rowH - 1);
+  ctx.fillStyle = h.c;
+  ctx.font = "bold 8.5px 'JetBrains Mono', monospace";
+  ctx.textAlign = "left";
+  ctx.fillText(h.t, 26, tableTop + r * rowH + 11);
+});
+
+// Values per candle
+candles.forEach((c, i) => {
+  const x = startX + i * colWidth;
+  const isUpDelta = c.delta.startsWith("+");
+  const isUpOi = c.oi.startsWith("+");
+
+  // Vol
+  ctx.fillStyle = "#1e40af";
+  ctx.fillRect(x - 35, tableTop, 70, rowH - 1);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 9px 'JetBrains Mono', monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(c.vol, x, tableTop + 11);
+
+  // Delta
+  ctx.fillStyle = isUpDelta ? "#15803d" : "#b91c1c";
+  ctx.fillRect(x - 35, tableTop + rowH, 70, rowH - 1);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(c.delta, x, tableTop + rowH + 11);
+
+  // Cum
+  ctx.fillStyle = "#047857";
+  ctx.fillRect(x - 35, tableTop + 2 * rowH, 70, rowH - 1);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("+980K", x, tableTop + 2 * rowH + 11);
+
+  // Open Int
+  ctx.fillStyle = "#c2410c";
+  ctx.fillRect(x - 35, tableTop + 3 * rowH, 70, rowH - 1);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("1.65M", x, tableTop + 3 * rowH + 11);
+
+  // OI Chg
+  ctx.fillStyle = isUpOi ? "#166534" : "#9f1239";
+  ctx.fillRect(x - 35, tableTop + 4 * rowH, 70, rowH - 1);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(c.oi, x, tableTop + 4 * rowH + 11);
+});
+
+</script>
+</body>
+</html>
