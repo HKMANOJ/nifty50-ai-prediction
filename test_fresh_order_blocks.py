@@ -155,24 +155,33 @@ class FreshOrderBlockTests(unittest.TestCase):
 
     def test_telegram_single_line_format_and_filters(self):
         import notify
-        # Format checks
+        # Format checks: Bullish Demand Fresh
         nifty_msg = notify.build_alert_message({"symbol": "NIFTY", "demand_fresh_time": "09:40 AM"})
         self.assertEqual(nifty_msg, "🟢 Nifty Demand fresh at 9:40 AM")
 
         sensex_msg = notify.build_alert_message({"symbol": "SENSEX", "demand_fresh_time": "9:40 AM"})
         self.assertEqual(sensex_msg, "🟢 Sensex Demand fresh at 9:40 AM")
 
-        # Non-index stock rejected
-        self.assertFalse(notify.send_fresh_ob_alert({"symbol": "NESTLEIND", "demand_fresh_time": "12:45 PM"}, test=True))
-        self.assertFalse(notify.send_fresh_ob_alert({"symbol": "RELIANCE", "demand_fresh_time": "10:15 AM"}, test=True))
+        # Format checks: Bearish Bear OB Fresh
+        nifty_bear_msg = notify.build_alert_message({"symbol": "NIFTY", "type": "BEARISH", "demand_fresh_time": "11:35 AM"})
+        self.assertEqual(nifty_bear_msg, "🔴 Nifty Bear OB fresh at 11:35 AM")
 
-        # Bear OB / PE rejected
-        self.assertFalse(notify.send_fresh_ob_alert({"symbol": "NIFTY", "is_pe": True, "demand_fresh_time": "01:30 PM"}, test=True))
-        self.assertFalse(notify.send_fresh_ob_alert({"symbol": "SENSEX", "side": "bearish", "demand_fresh_time": "02:00 PM"}, test=True))
+        sensex_bear_msg = notify.build_alert_message({"symbol": "SENSEX", "label": "BEAR OB", "demand_fresh_time": "11:35 AM"})
+        self.assertEqual(sensex_bear_msg, "🔴 Sensex Bear OB fresh at 11:35 AM")
 
-        # Tested / mitigated rejected
-        self.assertFalse(notify.send_fresh_ob_alert({"symbol": "NIFTY", "status": "Tested", "demand_fresh_time": "01:30 PM"}, test=True))
-        self.assertFalse(notify.send_fresh_ob_alert({"symbol": "SENSEX", "mitigated": True, "demand_fresh_time": "01:30 PM"}, test=True))
+        with patch.object(notify, "send_telegram_text", return_value=(True, "")):
+            # Non-index stock rejected (Strictly NIFTY & SENSEX only)
+            self.assertFalse(notify.send_fresh_ob_alert({"symbol": "NESTLEIND", "demand_fresh_time": "12:45 PM"}, test=True))
+            self.assertFalse(notify.send_fresh_ob_alert({"symbol": "RELIANCE", "demand_fresh_time": "10:15 AM"}, test=True))
+
+            # Bear OB / PE alerts are actively ACCEPTED for NIFTY & SENSEX
+            self.assertTrue(notify.send_fresh_ob_alert({"symbol": "NIFTY", "is_pe": True, "demand_fresh_time": "11:35 AM"}, test=True))
+            self.assertTrue(notify.send_fresh_ob_alert({"symbol": "SENSEX", "type": "BEARISH", "demand_fresh_time": "11:35 AM"}, test=True))
+            self.assertTrue(notify.send_fresh_ob_alert({"symbol": "SENSEX", "side": "bearish", "demand_fresh_time": "02:00 PM"}, test=True))
+
+            # Tested / mitigated rejected
+            self.assertFalse(notify.send_fresh_ob_alert({"symbol": "NIFTY", "status": "Tested", "demand_fresh_time": "01:30 PM"}, test=True))
+            self.assertFalse(notify.send_fresh_ob_alert({"symbol": "SENSEX", "mitigated": True, "demand_fresh_time": "01:30 PM"}, test=True))
 
 
 

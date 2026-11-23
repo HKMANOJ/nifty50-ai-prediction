@@ -187,39 +187,55 @@ def detect_order_blocks_and_structure(
     for sw in swings:
         if sw["type"] == "HIGH":
             if last_high is not None and sw["price"] > last_high["price"]:
-                # Bullish BOS
-                bos_list.append({
-                    "time": sw["time"],
-                    "price": sw["price"],
-                    "broken_level": last_high["price"],
-                    "direction": "bullish",
-                    "type": "BOS",
-                })
-                trend = "Bullish"
+                if trend.lower().startswith("bear"):
+                    # Breaking above previous lower high -> Bullish CHoCH (Trend Reversal)
+                    choch_list.append({
+                        "time": sw["time"],
+                        "price": sw["price"],
+                        "broken_level": last_high["price"],
+                        "direction": "bullish",
+                        "type": "CHoCH",
+                    })
+                    trend = "Bullish Reversal"
+                else:
+                    # Bullish BOS (Higher High Continuation)
+                    bos_list.append({
+                        "time": sw["time"],
+                        "price": sw["price"],
+                        "broken_level": last_high["price"],
+                        "direction": "bullish",
+                        "type": "BOS",
+                    })
+                    trend = "Bullish"
             elif last_high is not None and sw["price"] < last_high["price"] and trend == "Bullish":
-                # Potential lower high
+                # Lower high in uptrend -> early warning
                 pass
             last_high = sw
         elif sw["type"] == "LOW":
             if last_low is not None and sw["price"] < last_low["price"]:
-                # Bearish BOS
-                bos_list.append({
-                    "time": sw["time"],
-                    "price": sw["price"],
-                    "broken_level": last_low["price"],
-                    "direction": "bearish",
-                    "type": "BOS",
-                })
-                trend = "Bearish"
+                if trend.lower().startswith("bull"):
+                    # Breaking below previous higher low -> Bearish CHoCH (Trend Reversal)
+                    choch_list.append({
+                        "time": sw["time"],
+                        "price": sw["price"],
+                        "broken_level": last_low["price"],
+                        "direction": "bearish",
+                        "type": "CHoCH",
+                    })
+                    trend = "Bearish Reversal"
+                else:
+                    # Bearish BOS (Lower Low Continuation)
+                    bos_list.append({
+                        "time": sw["time"],
+                        "price": sw["price"],
+                        "broken_level": last_low["price"],
+                        "direction": "bearish",
+                        "type": "BOS",
+                    })
+                    trend = "Bearish"
             elif last_low is not None and sw["price"] > last_low["price"] and trend == "Bearish":
-                # Higher low in downtrend -> Bullish CHoCH setup
-                choch_list.append({
-                    "time": sw["time"],
-                    "price": sw["price"],
-                    "direction": "bullish",
-                    "type": "CHoCH",
-                })
-                trend = "Bullish Reversal"
+                # Higher low in downtrend -> potential base, but structure still bearish until lower high breaks
+                pass
             last_low = sw
 
     # 3. Order Block Detection (Institutional SMC: Demand & Supply Zones)
@@ -466,9 +482,9 @@ def detect_order_blocks_and_structure(
     def _overall_prio(o: dict[str, Any]) -> tuple:
         o_time = o.get("time") or o.get("formation_time") or 0
         is_today = 0 if (session_date and datetime.fromtimestamp(o_time, tz=INDIA_TZ).date() == session_date) else 1
-        is_align = 0 if ((o.get("type") in ("BULLISH", "+OB")) == is_bull_trend) else 1
         stat_prio = 0 if o.get("status") == "Fresh" else (1 if o.get("status") == "Tested" else 2)
-        return (is_today, is_align, stat_prio, -o_time)
+        is_align = 0 if ((o.get("type") in ("BULLISH", "+OB")) == is_bull_trend) else 1
+        return (is_today, stat_prio, is_align, -o_time)
 
     sorted_candidates = sorted(all_candidates, key=_overall_prio)
     filtered_obs: list[dict[str, Any]] = []

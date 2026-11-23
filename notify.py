@@ -290,19 +290,29 @@ def build_alert_message(item: dict, sector: str = "", is_pe: bool = False, test:
     """Format single clean line alert:
     🟢 Nifty Demand fresh at 9:40 AM
     or
-    🟢 Sensex Demand fresh at 9:40 AM
+    🔴 Sensex Bear OB fresh at 11:35 AM
     """
     raw_sym = str(item.get("symbol", "NIFTY")).upper()
     display_name = "Nifty" if "NIFTY" in raw_sym else ("Sensex" if "SENSEX" in raw_sym else raw_sym.title())
     ob_time = item.get("demand_fresh_time") or item.get("time") or item.get("formation_time_str")
     clean_time = _format_time_str(ob_time)
 
-    # Strictly 1 single clean line requested by user:
+    is_bear = (
+        is_pe
+        or item.get("is_pe")
+        or item.get("side") in ("PE", "bearish")
+        or item.get("type") in ("BEARISH", "-OB")
+        or "BEAR" in str(item.get("label", "")).upper()
+        or "SUPPLY" in str(item.get("label", "")).upper()
+    )
+
+    if is_bear:
+        return f"🔴 {display_name} Bear OB fresh at {clean_time}"
     return f"🟢 {display_name} Demand fresh at {clean_time}"
 
 
 def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force: bool = False, test: bool = False) -> bool:
-    """Send a single Demand Fresh alert strictly for NIFTY or SENSEX with atomic deduplication."""
+    """Send a single Demand Fresh or Bear OB Fresh alert strictly for NIFTY or SENSEX with atomic deduplication."""
     if not isinstance(item, dict):
         return False
 
@@ -313,12 +323,7 @@ def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force
         logger.info("Ignoring alert for %s (Strictly NIFTY & SENSEX only)", raw_sym)
         return False
 
-    # STRICT FILTER 2: Demand Fresh only (no Bear OB, no PE, no tested zones)
-    if is_pe or item.get("is_pe") or item.get("side") in ("PE", "bearish") or item.get("type") == "BEARISH":
-        logger.info("Ignoring Bear OB / PE alert for %s (Demand Fresh only)", raw_sym)
-        return False
-
-    # STRICT FILTER 3: Must not be tested or mitigated
+    # STRICT FILTER 2: Must not be tested or mitigated (Fresh only)
     if item.get("is_demand_tested") or item.get("status") in ("Tested", "Mitigated") or item.get("mitigated"):
         logger.info("Ignoring tested/mitigated order block for %s", raw_sym)
         return False
@@ -327,9 +332,19 @@ def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force
     ob_time = item.get("demand_fresh_time") or item.get("time") or item.get("formation_time_str")
     clean_time = _format_time_str(ob_time)
 
+    is_bear = (
+        is_pe
+        or item.get("is_pe")
+        or item.get("side") in ("PE", "bearish")
+        or item.get("type") in ("BEARISH", "-OB")
+        or "BEAR" in str(item.get("label", "")).upper()
+        or "SUPPLY" in str(item.get("label", "")).upper()
+    )
+
     today = datetime.now(INDIA_TZ).date().isoformat()
-    key = f"{display_name}_DEMAND_FRESH_{clean_time}"
-    text = build_alert_message(item, sector=sector, is_pe=False, test=test)
+    action_type = "BEAR_OB" if is_bear else "DEMAND"
+    key = f"{display_name}_{action_type}_FRESH_{clean_time}"
+    text = build_alert_message(item, sector=sector, is_pe=is_bear, test=test)
 
     # In local development mode, suppress actual Telegram dispatch to avoid double-firing with Render
     if not test and not force and not is_production_sender():
@@ -353,10 +368,12 @@ def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force
 
 
 def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
-    """Scan NIFTY and SENSEX for newly formed Demand Fresh setups and notify Telegram.
-    Strictly ONLY NIFTY and SENSEX Demand Fresh alerts are dispatched.
-    All individual stocks, Bear OBs, and tested setups are completely suppressed.
-    Ensures formation recency (within last 20 minutes) and atomic deduplication.
+    """Scan NIFTY and SENSEX for newly formed Fresh Order Blocks (Demand Fresh & Bear OB Fresh) and notify Telegram.
+    Strictly ONLY NIFTY and SENSEX alerts are dispatched (individual stocks remain suppressed).
+    Applies Trend Regime Guard (ORB 5H / ORB 5L, % change, and ATR) to eliminate counter-trend traps:
+      - In confirmed Bear regimes (e.g. crashing below ORB 5L), minor Demand bounces are suppressed as bull traps.
+      - In confirmed Bull regimes (e.g. rallying above ORB 5H), minor Bear pullbacks are suppressed as bear traps.
+    Ensures formation recency (within last 20 minutes) and atomic database deduplication.
     """
     if not is_production_sender():
         logger.debug("[Telegram DEV] Skipping dispatch_new_fresh_alerts on local dev machine.")
@@ -399,10 +416,27 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
             if not today_completed:
                 continue
 
+            # ── TREND REGIME GUARD & OPENING RANGE LEVELS ──
+            orb_5h = float(today_completed[0]["high"])
+            orb_5l = float(today_completed[0]["low"])
+            open_price = float(today_completed[0]["open"])
+            ltp = float(today_completed[-1]["close"])
+            pct_change = (ltp - open_price) / open_price * 100.0
+
+            # Dynamic session 5m ATR
+            base_ranges = [float(c["high"]) - float(c["low"]) for c in today_completed[:min(14, len(today_completed))]]
+            atr = sum(base_ranges) / len(base_ranges) if base_ranges else (25.0 if sym_display == "Nifty" else 75.0)
+
+            # Confirmed Trend Regimes:
+            # Bear Regime: Price below ORB 5L and down > 0.35% (or > 1.2x ATR below open)
+            is_confirmed_bear = (ltp < orb_5l) and (pct_change < -0.35 or ltp < open_price - 1.2 * atr)
+            # Bull Regime: Price above ORB 5H and up > 0.35% (or > 1.2x ATR above open)
+            is_confirmed_bull = (ltp > orb_5h) and (pct_change > +0.35 or ltp > open_price + 1.2 * atr)
+
             ob_res = detect_order_blocks_and_structure(candles)
             raw_obs = ob_res.get("order_blocks", [])
 
-            # Strictly Demand Fresh only (Bullish, Fresh status, not mitigated, not tested)
+            # Separate Bullish Demand Fresh vs Bearish Supply / Bear OB Fresh
             demand_fresh = [
                 ob for ob in raw_obs
                 if (ob.get("type") == "BULLISH" or ob.get("label") == "DEMAND")
@@ -411,16 +445,24 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                 and not ob.get("tested")
                 and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == today
             ]
-            demand_fresh.sort(key=lambda b: (b.get("formation_time") or b.get("time", 0)))
+
+            bear_fresh = [
+                ob for ob in raw_obs
+                if (ob.get("type") == "BEARISH" or ob.get("label") in ("BEAR OB", "SUPPLY"))
+                and ob.get("status") == "Fresh"
+                and not ob.get("mitigated")
+                and not ob.get("tested")
+                and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == today
+            ]
 
             sent_keys = _load_sent_keys()
 
+            # 1. EVALUATE DEMAND FRESH CANDIDATES
             for ob in demand_fresh:
                 f_time = ob.get("formation_time") or ob.get("time", 0)
                 f_dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
 
                 # RECENCY GUARD: Zone must have formed recently (within last 20 minutes)
-                # Eliminates re-alerting 4-hour-old morning 09:35 AM zones on afternoon server boots
                 age_seconds = (now_ist - f_dt).total_seconds()
                 if age_seconds < -60 or age_seconds > 20 * 60:
                     logger.debug("Skipping aged Demand Fresh OB for %s formed at %s (age: %.1f mins)",
@@ -432,6 +474,15 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                 if key in sent_keys:
                     continue
 
+                ob_top = float(ob.get("top") or 0.0)
+
+                # TRAP GUARD: If market is in confirmed Bear Regime and zone formed below ORB 5L,
+                # this is a classic dead-cat bounce / counter-trend trap. Suppress!
+                if is_confirmed_bear and ob_top < orb_5l:
+                    logger.info("🛡️ [TRAP GUARD] Suppressed %s Demand Fresh at %s (Market in Bear Regime: %.2f%%, below ORB 5L %.1f)",
+                                sym_display, clean_time, pct_change, orb_5l)
+                    continue
+
                 item = {
                     "symbol": sym_display,
                     "demand_fresh_time": clean_time,
@@ -439,11 +490,52 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                     "bottom": ob.get("bottom"),
                     "status": "Fresh",
                     "mitigated": False,
+                    "type": "BULLISH",
                 }
                 if send_fresh_ob_alert(item, is_pe=False):
                     sent_this_cycle.append(key)
+
+            # 2. EVALUATE BEAR OB FRESH CANDIDATES
+            for ob in bear_fresh:
+                f_time = ob.get("formation_time") or ob.get("time", 0)
+                f_dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
+
+                # RECENCY GUARD: Zone must have formed recently (within last 20 minutes)
+                age_seconds = (now_ist - f_dt).total_seconds()
+                if age_seconds < -60 or age_seconds > 20 * 60:
+                    logger.debug("Skipping aged Bear OB for %s formed at %s (age: %.1f mins)",
+                                 sym_display, f_dt.strftime('%H:%M'), age_seconds / 60.0)
+                    continue
+
+                clean_time = _format_time_str(f_time)
+                key = f"{sym_display}_BEAR_OB_FRESH_{clean_time}"
+                if key in sent_keys:
+                    continue
+
+                ob_bottom = float(ob.get("bottom") or 0.0)
+
+                # TRAP GUARD: If market is in confirmed Bull Regime and zone formed above ORB 5H,
+                # this is a counter-trend dip. Suppress!
+                if is_confirmed_bull and ob_bottom > orb_5h:
+                    logger.info("🛡️ [TRAP GUARD] Suppressed %s Bear OB at %s (Market in Bull Regime: %.2f%%, above ORB 5H %.1f)",
+                                sym_display, clean_time, pct_change, orb_5h)
+                    continue
+
+                item = {
+                    "symbol": sym_display,
+                    "demand_fresh_time": clean_time,
+                    "top": ob.get("top"),
+                    "bottom": ob.get("bottom"),
+                    "status": "Fresh",
+                    "mitigated": False,
+                    "type": "BEARISH",
+                    "is_pe": True,
+                }
+                if send_fresh_ob_alert(item, is_pe=True):
+                    sent_this_cycle.append(key)
+
         except Exception as exc:
-            logger.error("Error evaluating index demand fresh for %s: %s", sym_display, exc)
+            logger.error("Error evaluating index fresh alerts for %s: %s", sym_display, exc)
 
     return sent_this_cycle
 
@@ -469,8 +561,14 @@ def _compute_dynamic_atr(candles_1m: list[dict[str, Any]], default_pts: float = 
 
 
 def dispatch_instant_demand_surge() -> list[str]:
-    """Scan NIFTY and SENSEX 1-minute candles in real time for instant demand surges.
+    """Scan NIFTY and SENSEX 1-minute candles in real time for instant breakouts & breakdowns.
     Fires the exact minute the impulse candle breaks out of the base, giving an early entry.
+    Dual-directional:
+      - Demand Surge (⚡ Green impulse breakout) in Bull / Neutral regimes.
+      - Bear Breakdown Surge (⚡ Red impulse breakdown) in Bear / Neutral regimes.
+    Trend Regime Guard:
+      - In confirmed Bear regimes (e.g. crashing below ORB 5L), counter-trend Demand Surges are suppressed to prevent traps.
+      - In confirmed Bull regimes (e.g. rallying above ORB 5H), counter-trend Bear Surges are suppressed.
     All thresholds are computed dynamically from real-time ATR with zero hardcoded prices.
     Uses atomic Postgres reservation to guarantee once-only dispatch across all instances.
     """
@@ -508,22 +606,26 @@ def dispatch_instant_demand_surge() -> list[str]:
             if len(today_c1m) < 6:
                 continue
 
+            # ── TREND REGIME FROM 1-MINUTE CANDLES ──
+            orb_5h = max(c["high"] for c in today_c1m[:min(5, len(today_c1m))])
+            orb_5l = min(c["low"] for c in today_c1m[:min(5, len(today_c1m))])
+            open_p = float(today_c1m[0]["open"])
+            ltp = float(today_c1m[-1]["close"])
+            pct_chg = (ltp - open_p) / open_p * 100.0
+
             # Compute dynamic ATR threshold from today's live volatility
             session_atr = _compute_dynamic_atr(today_c1m, default_pts=fallback_atr)
             dynamic_min_pts = round(1.2 * session_atr, 1)
 
+            is_bear_regime = (ltp < orb_5l) and (pct_chg < -0.35 or ltp < open_p - 1.2 * session_atr)
+            is_bull_regime = (ltp > orb_5h) and (pct_chg > +0.35 or ltp > open_p + 1.2 * session_atr)
+
             # Look at the latest completed 1-minute candle
             curr = today_c1m[-1]
-            body = curr["close"] - curr["open"]
             candle_range = curr["high"] - curr["low"]
-
-            # Must be a solid green candle meeting dynamic ATR threshold
-            if body < dynamic_min_pts:
-                continue
-
-            # Upper wick must be controlled (< 35% of total range)
-            if candle_range > 0 and (curr["high"] - curr["close"]) / candle_range > 0.35:
-                continue
+            c_dt = datetime.fromtimestamp(curr["timestamp"], tz=INDIA_TZ)
+            time_str = c_dt.strftime("%I:%M %p").lstrip("0")
+            curr_minutes = c_dt.hour * 60 + c_dt.minute
 
             # Base of preceding 3 to 8 candles
             base_candles = today_c1m[-9:-1]
@@ -531,48 +633,66 @@ def dispatch_instant_demand_surge() -> list[str]:
                 continue
 
             base_high = max(c["high"] for c in base_candles)
+            base_low = min(c["low"] for c in base_candles)
 
-            # Must break out above base_high
-            if curr["close"] > base_high:
-                c_dt = datetime.fromtimestamp(curr["timestamp"], tz=INDIA_TZ)
-                time_str = c_dt.strftime("%I:%M %p").lstrip("0")
-                key = f"{sym_display}_1M_SURGE_{today.isoformat()}_{c_dt.strftime('%H%M')}"
+            sent_keys = _load_sent_keys()
 
-                # Deduplication: Check if already sent or sent within last 12 minutes
-                sent_keys = _load_sent_keys()
-                if key in sent_keys:
-                    continue
-
-                curr_minutes = c_dt.hour * 60 + c_dt.minute
-                recent_sent = False
+            def _is_recently_sent(prefix: str) -> bool:
                 for k in sent_keys:
-                    if k.startswith(f"{sym_display}_1M_SURGE_{today.isoformat()}_"):
+                    if k.startswith(prefix):
                         try:
                             hhmm = k.split("_")[-1]
                             k_min = int(hhmm[:2]) * 60 + int(hhmm[2:])
                             if abs(curr_minutes - k_min) < 12:
-                                recent_sent = True
-                                break
+                                return True
                         except Exception:
                             pass
-                if recent_sent:
-                    continue
+                return False
 
-                msg = f"⚡ {sym_display} Demand Surge at {time_str} @ {curr['close']:,.0f} (Base: {base_high:,.0f})"
+            # ── CASE 1: DEMAND SURGE (GREEN IMPULSE BREAKOUT) ──
+            bull_body = curr["close"] - curr["open"]
+            upper_wick = curr["high"] - curr["close"]
+            if (
+                bull_body >= dynamic_min_pts
+                and (candle_range <= 0 or upper_wick / candle_range <= 0.35)
+                and curr["close"] > base_high
+                and not is_bear_regime  # TRAP GUARD: Never buy into overhead breakdown walls
+            ):
+                key = f"{sym_display}_1M_SURGE_{today.isoformat()}_{c_dt.strftime('%H%M')}"
+                if key not in sent_keys and not _is_recently_sent(f"{sym_display}_1M_SURGE_{today.isoformat()}_"):
+                    msg = f"⚡ {sym_display} Demand Surge at {time_str} @ {curr['close']:,.0f} (Base: {base_high:,.0f})"
+                    acquired = reserve_alert_atomic(key, today.isoformat(), msg)
+                    if acquired:
+                        ok, reason = send_telegram_text(msg)
+                        if ok:
+                            logger.info("✓ Dispatched Instant Demand Surge: %s", msg)
+                            sent_this_cycle.append(key)
+                        else:
+                            logger.warning("✗ Failed sending Telegram alert for %s: %s", sym_display, reason)
 
-                # Atomic reservation: only send if this worker acquires the database lock
-                acquired = reserve_alert_atomic(key, today.isoformat(), msg)
-                if not acquired:
-                    continue
+            # ── CASE 2: BEAR BREAKDOWN SURGE (RED IMPULSE BREAKDOWN) ──
+            bear_body = curr["open"] - curr["close"]
+            lower_wick = curr["close"] - curr["low"]
+            if (
+                bear_body >= dynamic_min_pts
+                and (candle_range <= 0 or lower_wick / candle_range <= 0.35)
+                and curr["close"] < base_low
+                and not is_bull_regime  # TRAP GUARD: Never short into runaway bull rallies
+            ):
+                key = f"{sym_display}_1M_BEAR_SURGE_{today.isoformat()}_{c_dt.strftime('%H%M')}"
+                if key not in sent_keys and not _is_recently_sent(f"{sym_display}_1M_BEAR_SURGE_{today.isoformat()}_"):
+                    msg = f"⚡ {sym_display} Bear Surge at {time_str} @ {curr['close']:,.0f} (Roof: {base_high:,.0f})"
+                    acquired = reserve_alert_atomic(key, today.isoformat(), msg)
+                    if acquired:
+                        ok, reason = send_telegram_text(msg)
+                        if ok:
+                            logger.info("✓ Dispatched Instant Bear Surge: %s", msg)
+                            sent_this_cycle.append(key)
+                        else:
+                            logger.warning("✗ Failed sending Telegram alert for %s: %s", sym_display, reason)
 
-                ok, reason = send_telegram_text(msg)
-                if ok:
-                    logger.info("✓ Dispatched Instant Demand Surge: %s", msg)
-                    sent_this_cycle.append(key)
-                else:
-                    logger.warning("✗ Failed sending Telegram alert for %s: %s", sym_display, reason)
         except Exception as exc:
-            logger.error("Error evaluating instant demand surge for %s: %s", sym_display, exc)
+            logger.error("Error evaluating instant surge for %s: %s", sym_display, exc)
 
     return sent_this_cycle
 
