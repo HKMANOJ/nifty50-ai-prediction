@@ -2424,54 +2424,6 @@
           </div>
         </div>
 
-        <!-- ═══════════════════════════════════════════════════════════════ -->
-        <!-- AUTOMATED INSTITUTIONAL TRADE PLAN BOX (SMC + ORDER FLOW) -->
-        <!-- ═══════════════════════════════════════════════════════════════ -->
-        <div id="ovTradePlanBox" style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border:1px solid #334155; border-radius:10px; padding:12px 14px; color:#f8fafc; display:flex; flex-direction:column; gap:10px; box-shadow:0 4px 12px rgba(0,0,0,0.06);">
-          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
-            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-              <span style="background:#3b82f6; color:#ffffff; font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; letter-spacing:0.5px;">🏛️ INSTITUTIONAL TRADE PLAN</span>
-              <span id="ovPlanAction" style="font-size:14px; font-weight:900; color:#34d399; font-family:var(--font-mono); letter-spacing:0.3px;">BUY ON DEMAND PULLBACK</span>
-              <span id="ovPlanSetup" style="font-size:11px; color:#94a3b8; font-weight:600;">+OB Demand Retest & Value Area Expansion</span>
-            </div>
-            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px;">
-              <span style="font-size:11px; color:#cbd5e1;">Risk:Reward <strong id="ovPlanRR" style="color:#38bdf8; font-family:var(--font-mono);">1 : 2.8 R</strong></span>
-              <span id="ovPlanStatus" style="font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:rgba(16,185,129,0.2); color:#34d399; border:1px solid rgba(16,185,129,0.4);">● Active Setup</span>
-              <button id="btnToggleOvPlan" onclick="toggleOvTradePlan()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.25); color:#f8fafc; border-radius:6px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:700;">▲ Collapse</button>
-            </div>
-          </div>
-
-          <div id="ovTradePlanDetails" style="display:flex; flex-direction:column; gap:10px;">
-            <!-- Trade Execution Metrics Grid -->
-            <div class="ov-plan-metrics-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px;">
-              <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 10px;">
-                <div style="font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase;">Entry Zone</div>
-                <div id="ovPlanEntry" style="font-size:13px; font-weight:800; color:#f8fafc; font-family:var(--font-mono); margin-top:2px;">--</div>
-              </div>
-              <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:8px 10px;">
-                <div style="font-size:10px; color:#f87171; font-weight:700; text-transform:uppercase;">Stop Loss (SL)</div>
-                <div id="ovPlanSL" style="font-size:13px; font-weight:800; color:#fca5a5; font-family:var(--font-mono); margin-top:2px;">--</div>
-              </div>
-              <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); border-radius:6px; padding:8px 10px;">
-                <div style="font-size:10px; color:#34d399; font-weight:700; text-transform:uppercase;">Target 1 (VAH)</div>
-                <div id="ovPlanT1" style="font-size:13px; font-weight:800; color:#86efac; font-family:var(--font-mono); margin-top:2px;">--</div>
-              </div>
-              <div style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.2); border-radius:6px; padding:8px 10px;">
-                <div style="font-size:10px; color:#38bdf8; font-weight:700; text-transform:uppercase;">Target 2 (Runner)</div>
-                <div id="ovPlanT2" style="font-size:13px; font-weight:800; color:#bae6fd; font-family:var(--font-mono); margin-top:2px;">--</div>
-              </div>
-            </div>
-
-            <!-- Execution Rule & Checklist Strip -->
-            <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid rgba(255,255,255,0.08); padding-top:8px; font-size:11px;">
-              <div id="ovPlanRule" style="color:#cbd5e1; flex:1; min-width:260px; line-height:1.4;">
-                Scanning market structure...
-              </div>
-              <div id="ovPlanChecklist" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;"></div>
-            </div>
-          </div>
-        </div>
-
         <!-- Live Crosshair HUD (Real-time IST Market Time + Candle OHLC + Volume) -->
         <div id="ovChartHud" style="display:flex; align-items:center; gap:10px; font-size:11px; font-family:var(--font-mono); color:#475569; padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; flex-wrap:wrap; min-height:28px;">
           <span style="color:#94a3b8;">Hover over candles to view precise Indian Standard Time (IST) & OHLCV values</span>
@@ -8283,39 +8235,6 @@
         telemChip.style.background = "#ecfdf5";
         telemChip.style.color = "#065f46";
         telemChip.style.borderColor = "#a7f3d0";
-      }
-
-      // Update Automated Institutional Trade Plan Box
-      const tp = data.trade_plan || {};
-      const planAction = document.getElementById("ovPlanAction");
-      const planSetup = document.getElementById("ovPlanSetup");
-      const planStatus = document.getElementById("ovPlanStatus");
-      const planRR = document.getElementById("ovPlanRR");
-      const planEntry = document.getElementById("ovPlanEntry");
-      const planSL = document.getElementById("ovPlanSL");
-      const planT1 = document.getElementById("ovPlanT1");
-      const planT2 = document.getElementById("ovPlanT2");
-      const planRule = document.getElementById("ovPlanRule");
-      const planChecklist = document.getElementById("ovPlanChecklist");
-
-      if (planAction) {
-        planAction.textContent = tp.action || "WAIT FOR SETUP";
-        planAction.style.color = tp.bias === "Bullish" ? "#34d399" : (tp.bias === "Bearish" ? "#f87171" : "#f59e0b");
-      }
-      if (planSetup) planSetup.textContent = tp.setup_name || "Scanning Market Structure";
-      if (planRR) planRR.textContent = tp.rr_ratio || "--";
-      if (planEntry) planEntry.textContent = tp.entry_zone || "--";
-      if (planSL) planSL.textContent = tp.stop_loss ? `₹${Number(tp.stop_loss).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "--";
-      if (planT1) planT1.textContent = tp.target_1 ? `₹${Number(tp.target_1).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "--";
-      if (planT2) planT2.textContent = tp.target_2 ? `₹${Number(tp.target_2).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "--";
-      if (planRule) planRule.textContent = tp.rule || "Scanning candles...";
-
-      if (planChecklist && tp.checklist) {
-        planChecklist.innerHTML = tp.checklist.map(item => `
-          <span style="display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; background:${item.pass ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'}; color:${item.pass ? '#34d399' : '#fca5a5'}; border:1px solid ${item.pass ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'};">
-            ${item.pass ? '✓' : '✗'} ${item.label}: ${item.detail}
-          </span>
-        `).join("");
       }
 
       // Paint Candles with Viewport & Zoom Preservation
