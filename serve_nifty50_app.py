@@ -1413,11 +1413,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             closes = [c["close"] for c in all_display_candles if c.get("close") is not None]
             volumes = [c["volume"] for c in all_display_candles if c.get("volume") is not None]
 
-            # Morning opening range (first 3 to 6 candles e.g. 09:15 - 09:45)
-            # of TODAY specifically, not the oldest day in the 5-day fetch.
+            # ORB 5m (first 5-minute candle: 09:15 - 09:20)
+            orb_5h = float(today_candles[0]["high"]) if today_candles else None
+            orb_5l = float(today_candles[0]["low"]) if today_candles else None
             base_count = min(len(today_candles), 6)
-            orb_high = max(c["high"] for c in today_candles[:base_count]) if today_candles else None
-            orb_low = min(c["low"] for c in today_candles[:base_count]) if today_candles else None
+            orb_high = orb_5h or (max(c["high"] for c in today_candles[:base_count]) if today_candles else None)
+            orb_low = orb_5l or (min(c["low"] for c in today_candles[:base_count]) if today_candles else None)
 
             # Calculate 9 EMA line across all display candles (including forming bar)
             ema9_series = []
@@ -1498,8 +1499,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "candles": tv_candles,
                 "volumes": tv_volumes,
                 "ema9": ema9_series,
-                "orb_high": round(orb_high, 2) if orb_high else None,
-                "orb_low": round(orb_low, 2) if orb_low else None,
+                "orb_5h": round(orb_5h, 2) if orb_5h else None,
+                "orb_5l": round(orb_5l, 2) if orb_5l else None,
+                "orb_high": round(orb_5h, 2) if orb_5h else None,
+                "orb_low": round(orb_5l, 2) if orb_5l else None,
                 "day_high": round(max(highs), 2) if highs else None,
                 "day_low": round(min(lows), 2) if lows else None,
                 "day_open": round(opens[0], 2) if opens else None,
@@ -1751,14 +1754,45 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 if not any(abs(ob.get("top", 0) - mob.get("top", 0)) < 2.0 for ob in today_obs):
                     today_obs.append(mob)
 
-            # 7. Day High, Day Low, PMH, PML, ORB
+            # 7. Day High, Day Low, PMH, PML, ORB 5H/5L & Classic Pivots (R1, R2, R3, S1, S2, S3)
             day_high = max(c["high"] for c in today_candles) if today_candles else None
             day_low = min(c["low"] for c in today_candles) if today_candles else None
+            
+            # ORB 5m: First 5-minute candle of today's session (09:15 - 09:20)
+            orb_5h = float(today_candles[0]["high"]) if today_candles else None
+            orb_5l = float(today_candles[0]["low"]) if today_candles else None
             base_count = min(len(today_candles), 6)
-            orb_high = max(c["high"] for c in today_candles[:base_count]) if today_candles else None
-            orb_low = min(c["low"] for c in today_candles[:base_count]) if today_candles else None
-            pmh = orb_high or (max(c["high"] for c in prior_candles[-75:]) if prior_candles else None)
-            pml = orb_low or (min(c["low"] for c in prior_candles[-75:]) if prior_candles else None)
+            orb_high = orb_5h or (max(c["high"] for c in today_candles[:base_count]) if today_candles else None)
+            orb_low = orb_5l or (min(c["low"] for c in today_candles[:base_count]) if today_candles else None)
+            pmh = orb_5h or (max(c["high"] for c in prior_candles[-75:]) if prior_candles else None)
+            pml = orb_5l or (min(c["low"] for c in prior_candles[-75:]) if prior_candles else None)
+
+            # Prior Day Classic Pivots (P, R1, R2, R3, S1, S2, S3)
+            pivot_p = None
+            r1 = None
+            r2 = None
+            r3 = None
+            s1 = None
+            s2 = None
+            s3 = None
+            if prior_candles:
+                prior_days = {}
+                for c in prior_candles:
+                    d = datetime.fromtimestamp(c["timestamp"], tz=IST_TZ).date()
+                    prior_days.setdefault(d, []).append(c)
+                if prior_days:
+                    last_prior_date = max(prior_days.keys())
+                    prev_day_candles = prior_days[last_prior_date]
+                    p_high = max(c["high"] for c in prev_day_candles)
+                    p_low = min(c["low"] for c in prev_day_candles)
+                    p_close = prev_day_candles[-1]["close"]
+                    pivot_p = round((p_high + p_low + p_close) / 3.0, 2)
+                    r1 = round(2 * pivot_p - p_low, 2)
+                    s1 = round(2 * pivot_p - p_high, 2)
+                    r2 = round(pivot_p + (p_high - p_low), 2)
+                    s2 = round(pivot_p - (p_high - p_low), 2)
+                    r3 = round(p_high + 2 * (pivot_p - p_low), 2)
+                    s3 = round(p_low - 2 * (p_high - pivot_p), 2)
 
             # 8. Align Institutional Trade Plan with Dashboard Playbook & SMC Active Block Status
             is_bull_side = pct_change >= 0
@@ -2067,15 +2101,35 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "footprints": analysis.get("footprints", {}),
                 "footprint_summary": analysis.get("footprint_summary") or analysis.get("footprints", {}).get("_summary", []),
                 "mtf_matrix": analysis.get("mtf_matrix", {}),
-                "orb_high": round(orb_high, 2) if orb_high else None,
-                "orb_low": round(orb_low, 2) if orb_low else None,
+                "orb_5h": round(orb_5h, 2) if orb_5h else None,
+                "orb_5l": round(orb_5l, 2) if orb_5l else None,
+                "orb_high": round(orb_5h, 2) if orb_5h else None,
+                "orb_low": round(orb_5l, 2) if orb_5l else None,
                 "day_high": round(day_high, 2) if day_high else None,
                 "day_low": round(day_low, 2) if day_low else None,
+                "pivots": {
+                    "pivot": pivot_p,
+                    "r1": r1,
+                    "r2": r2,
+                    "r3": r3,
+                    "s1": s1,
+                    "s2": s2,
+                    "s3": s3,
+                },
                 "anchors": {
                     "day_high": round(day_high, 2) if day_high else None,
                     "day_low": round(day_low, 2) if day_low else None,
                     "pmh": round(pmh, 2) if pmh else None,
                     "pml": round(pml, 2) if pml else None,
+                    "orb_5h": round(orb_5h, 2) if orb_5h else None,
+                    "orb_5l": round(orb_5l, 2) if orb_5l else None,
+                    "pivot": pivot_p,
+                    "r1": r1,
+                    "r2": r2,
+                    "r3": r3,
+                    "s1": s1,
+                    "s2": s2,
+                    "s3": s3,
                     "poc": round(vp_out["poc"], 2) if vp_out.get("poc") else None,
                 },
                 "scanner_info": scanner_item,

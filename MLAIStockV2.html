@@ -2396,6 +2396,8 @@
               <span class="chart-stat-chip" id="ovPocChip" style="background:#f5f3ff; color:#7c3aed; border:1px solid #ddd6fe; font-weight:800;">POC: ₹4,869.89</span>
               <span class="chart-stat-chip" id="ovVahChip" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:700;">VAH: ₹4,988.20</span>
               <span class="chart-stat-chip" id="ovValChip" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; font-weight:700;">VAL: ₹4,646.40</span>
+              <span class="chart-stat-chip" id="ovOrbChip" style="display:none; background:#fef2f2; color:#991b1b; border:1px solid #fecaca; font-weight:800;">ORB 5: --</span>
+              <span class="chart-stat-chip" id="ovPivotChip" style="display:none; background:#f0f9ff; color:#0369a1; border:1px solid #bae6fd; font-weight:700;">Pivot: --</span>
               <span class="chart-stat-chip" id="ovStructureChip" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:700;">⚡ Trend: Bullish</span>
               <span class="chart-stat-chip" id="ovEarlyIgnitionChip" style="display:none; background:#ecfdf5; color:#065f46; border:1px solid #10b981; font-weight:800;">🎯 SWEET SPOT IGNITION (1.8% - 2.5%)</span>
               <span class="chart-stat-chip" id="ovTelemetryChip" style="background:#f8fafc; color:#475569; border:1px solid #e2e8f0; font-weight:600;">⚡ Feed: Upstox 5m</span>
@@ -2411,6 +2413,7 @@
             </div>
             <button class="tf-btn active" id="btnOvFitChart">Fit View</button>
             <button class="tf-btn" id="btnOvToggleVp" style="background:#f5f3ff; color:#7c3aed; border-color:#ddd6fe; font-weight:700;">Volume Profile</button>
+            <button class="tf-btn active" id="btnOvToggleOrbPivots" style="background:#fef3c7; color:#92400e; border-color:#fde68a; font-weight:700;">🎯 ORB 5 & Pivots</button>
             <button class="tf-btn active" id="btnOvToggleOb" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;">Order Blocks</button>
             <button class="tf-btn active" id="btnOvToggleFvg" style="background:#ecfdf5; color:#047857; border-color:#a7f3d0; font-weight:700;">📦 FVG (50% CE)</button>
             <button class="tf-btn" id="btnOvToggleLiq" style="background:#fef2f2; color:#b91c1c; border-color:#fecaca; font-weight:700; opacity:0.5;">🎯 Liquidity</button>
@@ -4414,31 +4417,75 @@
         }
         _chartPriceLines = [];
 
-        const pmhPrice = data.orb_high || data.day_high;
-        const pmlPrice = data.orb_low || data.day_low;
+        const orb5hPrice = data.orb_5h || data.orb_high || data.day_high;
+        const orb5lPrice = data.orb_5l || data.orb_low || data.day_low;
 
-        // 1. PMH (Prior Morning High) - Blue Solid (width 2)
-        if (pmhPrice) {
+        // 1. ORB 5H (Opening Range 5m High) - Red Solid (width 2)
+        if (orb5hPrice) {
           _chartPriceLines.push(_candleSeries.createPriceLine({
-            price: pmhPrice,
-            color: '#2563eb',
+            price: orb5hPrice,
+            color: '#dc2626',
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Solid,
             axisLabelVisible: true,
-            title: 'PMH',
+            title: 'ORB 5H',
           }));
         }
 
-        // 2. PML (Prior Morning Low) - Blue Solid (width 2)
-        if (pmlPrice) {
+        // 2. ORB 5L (Opening Range 5m Low) - Green Solid (width 2)
+        if (orb5lPrice) {
           _chartPriceLines.push(_candleSeries.createPriceLine({
-            price: pmlPrice,
-            color: '#2563eb',
+            price: orb5lPrice,
+            color: '#16a34a',
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Solid,
             axisLabelVisible: true,
-            title: 'PML',
+            title: 'ORB 5L',
           }));
+        }
+
+        // Classic Pivot Resistance & Support Levels (R1, R2, Pivot P, S1, S2)
+        if (data.pivots) {
+          if (data.pivots.pivot) {
+            _chartPriceLines.push(_candleSeries.createPriceLine({
+              price: data.pivots.pivot,
+              color: '#0284c7',
+              lineWidth: 1.5,
+              lineStyle: LightweightCharts.LineStyle.Dotted,
+              axisLabelVisible: true,
+              title: 'Pivot (P)',
+            }));
+          }
+          if (data.pivots.r1) {
+            _chartPriceLines.push(_candleSeries.createPriceLine({
+              price: data.pivots.r1,
+              color: '#ef4444',
+              lineWidth: 1.5,
+              lineStyle: LightweightCharts.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: 'R1',
+            }));
+          }
+          if (data.pivots.r2) {
+            _chartPriceLines.push(_candleSeries.createPriceLine({
+              price: data.pivots.r2,
+              color: '#b91c1c',
+              lineWidth: 1.5,
+              lineStyle: LightweightCharts.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: 'R2',
+            }));
+          }
+          if (data.pivots.s1) {
+            _chartPriceLines.push(_candleSeries.createPriceLine({
+              price: data.pivots.s1,
+              color: '#22c55e',
+              lineWidth: 1.5,
+              lineStyle: LightweightCharts.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: 'S1',
+            }));
+          }
         }
 
         // 3. Day High (if distinct from PMH) - Amber Dashed
@@ -6836,6 +6883,10 @@
   let _overviewSymbol = "BRITANNIA";
   let _ovPriceLines = [];
   let _ovShowVp = true;
+  let _ovShowOrbPivots = true;
+  let _lastOrb5h = null;
+  let _lastOrb5l = null;
+  let _lastPivots = null;
   let _ovShowOb = true;
   let _ovShowFvg = true;
   let _ovShowLiq = false;
@@ -7066,6 +7117,13 @@
       updateVolumeProfilePriceLines();
       requestAnimationFrame(renderVolumeProfileCanvas);
       e.target.style.opacity = _ovShowVp ? "1" : "0.5";
+    });
+
+    document.getElementById("btnOvToggleOrbPivots")?.addEventListener("click", (e) => {
+      _ovShowOrbPivots = !_ovShowOrbPivots;
+      updateVolumeProfilePriceLines();
+      e.currentTarget.style.opacity = _ovShowOrbPivots ? "1" : "0.5";
+      e.currentTarget.classList.toggle("active", _ovShowOrbPivots);
     });
 
     document.getElementById("btnOvToggleOb")?.addEventListener("click", (e) => {
@@ -7818,40 +7876,159 @@
     });
     _ovPriceLines = [];
 
-    if (!_ovShowVp || !_lastVpData || !_ovCandleSeries) return;
+    if (!_ovCandleSeries) return;
 
-    if (_lastVpData.poc) {
-      const pocLine = _ovCandleSeries.createPriceLine({
-        price: _lastVpData.poc,
-        color: '#a855f7',
-        lineWidth: 2,
-        lineStyle: LightweightCharts.LineStyle.Solid,
-        axisLabelVisible: true,
-        title: 'POC',
-      });
-      _ovPriceLines.push(pocLine);
+    // ── 1. Volume Profile Lines (POC, VAH, VAL) ──
+    if (_ovShowVp && _lastVpData) {
+      if (_lastVpData.poc) {
+        const pocLine = _ovCandleSeries.createPriceLine({
+          price: _lastVpData.poc,
+          color: '#a855f7',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          axisLabelVisible: true,
+          title: 'POC',
+        });
+        _ovPriceLines.push(pocLine);
+      }
+      if (_lastVpData.vah) {
+        const vahLine = _ovCandleSeries.createPriceLine({
+          price: _lastVpData.vah,
+          color: '#2563eb',
+          lineWidth: 1.5,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'VAH',
+        });
+        _ovPriceLines.push(vahLine);
+      }
+      if (_lastVpData.val) {
+        const valLine = _ovCandleSeries.createPriceLine({
+          price: _lastVpData.val,
+          color: '#2563eb',
+          lineWidth: 1.5,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'VAL',
+        });
+        _ovPriceLines.push(valLine);
+      }
     }
-    if (_lastVpData.vah) {
-      const vahLine = _ovCandleSeries.createPriceLine({
-        price: _lastVpData.vah,
-        color: '#2563eb',
-        lineWidth: 1.5,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'VAH',
-      });
-      _ovPriceLines.push(vahLine);
-    }
-    if (_lastVpData.val) {
-      const valLine = _ovCandleSeries.createPriceLine({
-        price: _lastVpData.val,
-        color: '#2563eb',
-        lineWidth: 1.5,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'VAL',
-      });
-      _ovPriceLines.push(valLine);
+
+    // ── 2. ORB 5H / ORB 5L & Classic Pivot Resistance / Support ──
+    if (_ovShowOrbPivots) {
+      // ORB 5H (Opening Range 5m High) - Red Solid (width 2)
+      if (_lastOrb5h) {
+        const orbHLine = _ovCandleSeries.createPriceLine({
+          price: _lastOrb5h,
+          color: '#dc2626',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          axisLabelVisible: true,
+          title: 'ORB 5H',
+        });
+        _ovPriceLines.push(orbHLine);
+      }
+      // ORB 5L (Opening Range 5m Low) - Green Solid (width 2)
+      if (_lastOrb5l) {
+        const orbLLine = _ovCandleSeries.createPriceLine({
+          price: _lastOrb5l,
+          color: '#16a34a',
+          lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          axisLabelVisible: true,
+          title: 'ORB 5L',
+        });
+        _ovPriceLines.push(orbLLine);
+      }
+
+      // Classic Pivot Levels: Resistance (R1, R2, R3), Pivot (P), Support (S1, S2, S3)
+      if (_lastPivots) {
+        // Daily Pivot P
+        if (_lastPivots.pivot) {
+          const pLine = _ovCandleSeries.createPriceLine({
+            price: _lastPivots.pivot,
+            color: '#0284c7',
+            lineWidth: 1.5,
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: 'Pivot (P)',
+          });
+          _ovPriceLines.push(pLine);
+        }
+        // Resistance 1 (R1)
+        if (_lastPivots.r1) {
+          const r1Line = _ovCandleSeries.createPriceLine({
+            price: _lastPivots.r1,
+            color: '#ef4444',
+            lineWidth: 1.5,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'R1',
+          });
+          _ovPriceLines.push(r1Line);
+        }
+        // Resistance 2 (R2)
+        if (_lastPivots.r2) {
+          const r2Line = _ovCandleSeries.createPriceLine({
+            price: _lastPivots.r2,
+            color: '#b91c1c',
+            lineWidth: 1.5,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'R2',
+          });
+          _ovPriceLines.push(r2Line);
+        }
+        // Resistance 3 (R3)
+        if (_lastPivots.r3) {
+          const r3Line = _ovCandleSeries.createPriceLine({
+            price: _lastPivots.r3,
+            color: '#7f1d1d',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: 'R3',
+          });
+          _ovPriceLines.push(r3Line);
+        }
+        // Support 1 (S1)
+        if (_lastPivots.s1) {
+          const s1Line = _ovCandleSeries.createPriceLine({
+            price: _lastPivots.s1,
+            color: '#22c55e',
+            lineWidth: 1.5,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'S1',
+          });
+          _ovPriceLines.push(s1Line);
+        }
+        // Support 2 (S2)
+        if (_lastPivots.s2) {
+          const s2Line = _ovCandleSeries.createPriceLine({
+            price: _lastPivots.s2,
+            color: '#15803d',
+            lineWidth: 1.5,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'S2',
+          });
+          _ovPriceLines.push(s2Line);
+        }
+        // Support 3 (S3)
+        if (_lastPivots.s3) {
+          const s3Line = _ovCandleSeries.createPriceLine({
+            price: _lastPivots.s3,
+            color: '#14532d',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: 'S3',
+          });
+          _ovPriceLines.push(s3Line);
+        }
+      }
     }
   }
 
@@ -8056,6 +8233,31 @@
       if (pocChip && vp.poc) pocChip.textContent = `POC: ₹${vp.poc.toFixed(2)}`;
       if (vahChip && vp.vah) vahChip.textContent = `VAH: ₹${vp.vah.toFixed(2)}`;
       if (valChip && vp.val) valChip.textContent = `VAL: ₹${vp.val.toFixed(2)}`;
+
+      // Store ORB and Pivot levels
+      _lastOrb5h = data.orb_5h || data.orb_high || null;
+      _lastOrb5l = data.orb_5l || data.orb_low || null;
+      _lastPivots = data.pivots || null;
+
+      const orbChip = document.getElementById("ovOrbChip");
+      if (orbChip) {
+        if (_lastOrb5h && _lastOrb5l) {
+          orbChip.style.display = "inline-flex";
+          orbChip.innerHTML = `<span style="color:#dc2626; font-weight:800;">ORB 5H: ₹${_lastOrb5h.toLocaleString("en-IN", {minimumFractionDigits:1, maximumFractionDigits:2})}</span> · <span style="color:#16a34a; font-weight:800;">5L: ₹${_lastOrb5l.toLocaleString("en-IN", {minimumFractionDigits:1, maximumFractionDigits:2})}</span>`;
+        } else {
+          orbChip.style.display = "none";
+        }
+      }
+
+      const pivotChip = document.getElementById("ovPivotChip");
+      if (pivotChip) {
+        if (_lastPivots && _lastPivots.pivot) {
+          pivotChip.style.display = "inline-flex";
+          pivotChip.innerHTML = `Pivot: ₹${_lastPivots.pivot.toFixed(1)} | <span style="color:#dc2626; font-weight:800;">R1: ₹${_lastPivots.r1.toFixed(1)}</span> | <span style="color:#16a34a; font-weight:800;">S1: ₹${_lastPivots.s1.toFixed(1)}</span>`;
+        } else {
+          pivotChip.style.display = "none";
+        }
+      }
 
       const ms = data.market_structure || {};
       if (structChip) {
