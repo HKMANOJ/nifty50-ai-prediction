@@ -2454,7 +2454,7 @@ def main() -> None:
     # Launch autonomous 5-minute background auto-scanner
     start_background_auto_scanner(interval_seconds=300)
     # Launch autonomous 1-minute real-time demand surge scanner
-    start_instant_surge_scanner(interval_seconds=30)
+    # start_instant_surge_scanner(interval_seconds=30)  # Disabled: 1-minute surges removed to eliminate noise and whipsaws
 
     # Bind the private WebSocket listener used by the same-origin /ws proxy.
     try:
