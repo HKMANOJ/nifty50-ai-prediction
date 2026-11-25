@@ -2084,7 +2084,6 @@
               <button class="tf-btn" id="btnFitChart">Fit View</button>
               <button class="tf-btn active" id="btnToggleDashboardSmc" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;" title="Toggle Fair Value Gaps and Order Blocks on Dashboard Chart">📦 SMC (FVG & OB)</button>
               <button class="tf-btn active" id="btnToggleTrendBand" onclick="toggleDashboardTrendBand()" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0; font-weight:700;" title="Toggle Monotonic Trailing Trend Band on 5m chart">⚡ Trend Band</button>
-              <button class="tf-btn active" id="btnToggleBreakout" onclick="toggleDashboardBreakouts()" style="background:#fffbeb; color:#92400e; border-color:#fde68a; font-weight:700;" title="Toggle Frozen Breakout Line & BR Markers">🎯 Breakout</button>
               <button class="tf-btn" id="btnOpenOverview" onclick="openStockInOverview(_selectedSymbol)" style="background:linear-gradient(135deg, #4f46e5, #6366f1); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated Stock Overview with Volume Profile & Order Blocks">🔬 Open in Stock Overview</button>
               <button class="tf-btn" onclick="window.open('/chart_studio.html?symbol=' + encodeURIComponent(_selectedSymbol), '_blank')" style="background:linear-gradient(135deg, #2563eb, #1d4ed8); color:#fff; border:none; font-weight:700; cursor:pointer;" title="Open in dedicated full-screen TradingView Studio with Drawing Tools & Upstox Feed">📈 Pro Studio ↗</button>
             </div>
@@ -2107,7 +2106,6 @@
             <div class="legend-item"><span style="display:inline-block; width:12px; height:8px; background:rgba(16,185,129,0.25); border:1px solid #10b981; border-radius:2px; vertical-align:middle; margin-right:3px;"></span> DEMAND / FVG+</div>
             <div class="legend-item"><span style="display:inline-block; width:12px; height:8px; background:rgba(245,158,11,0.25); border:1px solid #f59e0b; border-radius:2px; vertical-align:middle; margin-right:3px;"></span> BEAR OB / FVG-</div>
             <div class="legend-item"><span style="display:inline-block; width:12px; height:8px; background:rgba(16,185,129,0.3); border:1px solid #10b981; border-radius:2px; vertical-align:middle; margin-right:3px;"></span> Trend Band</div>
-            <div class="legend-item"><span style="display:inline-block; width:12px; height:2px; background:#f59e0b; vertical-align:middle; margin-right:3px; border-top:1px dashed #f59e0b;"></span> Frozen BR</div>
             <div class="legend-item" style="color:#64748b; margin-left:auto;">Scroll / drag left for 5-day history</div>
           </div>
         </div>
@@ -2416,10 +2414,13 @@
             <button class="tf-btn active" id="btnOvToggleOrbPivots" style="background:#fef3c7; color:#92400e; border-color:#fde68a; font-weight:700;">🎯 ORB 5 & Pivots</button>
             <button class="tf-btn active" id="btnOvToggleOb" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;">Order Blocks</button>
             <button class="tf-btn active" id="btnOvToggleFvg" style="background:#ecfdf5; color:#047857; border-color:#a7f3d0; font-weight:700;">📦 FVG (50% CE)</button>
+            <button class="tf-btn" id="btnOvToggleTrendBand" onclick="toggleOvTrendBand()" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0; font-weight:700; opacity:0.5;" title="Toggle Monotonic Trailing Trend Band on Stock Overview chart">⚡ Trend Band</button>
+            <button class="tf-btn active" id="btnOvToggleChannels" onclick="toggleOvTrendChannels()" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:700;" title="Toggle Session Trend Channels (Groww style parallel regression channels)">📐 Trend Channels</button>
+            <button class="tf-btn" id="btnOvTogglePatterns" onclick="toggleOvPatterns()" style="background:#fdf4ff; color:#9333ea; border-color:#f0abfc; font-weight:700; opacity:0.5;" title="Toggle 90%+ High Accuracy Institutional Patterns (Only draws when confidence >= 90%)">📐 Patterns (90%+)</button>
             <button class="tf-btn" id="btnOvToggleLiq" style="background:#fef2f2; color:#b91c1c; border-color:#fecaca; font-weight:700; opacity:0.5;">🎯 Liquidity</button>
             <button class="tf-btn" id="btnOvToggleCvd" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:700; opacity:0.5;">📈 CVD</button>
             <button class="tf-btn active" id="btnOvToggleFpSummary" style="background:#f0fdf4; color:#166534; border-color:#86efac; font-weight:700;">📊 Flow Bar (5-Row)</button>
-            <button class="tf-btn" id="btnOvToggleFp" style="background:#fdf2f8; color:#be185d; border-color:#fbcfe8; font-weight:700;">👣 Footprint</button>
+            <button class="tf-btn" id="btnOvToggleFp" style="background:#fdf2f8; color:#be185d; border-color:#fbcfe8; font-weight:700; opacity:0.5;">👣 Footprint</button>
             <button class="tf-btn" id="btnOvToggleMtf" style="background:#fdf4ff; color:#a21caf; border-color:#f0abfc; font-weight:700; opacity:0.5;">⚡ MTF Matrix</button>
           </div>
         </div>
@@ -3534,56 +3535,6 @@
         ctx.lineWidth = 1.5;
         ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
 
-        // Feature 1: Internal VPOC Sniper Entry Line (Line B)
-        // High-volume absorption / distribution level inside the base candle
-        const vpocVal = ob.vpoc || (isBull ? (ob.bottom + (ob.top - ob.bottom) * 0.40) : (ob.top - (ob.top - ob.bottom) * 0.40));
-        const yVpoc = series.priceToCoordinate(vpocVal);
-        if (yVpoc !== null && yVpoc >= boxY && yVpoc <= boxY + boxHeight) {
-          ctx.save();
-          ctx.strokeStyle = isBull ? "#eab308" : "#38bdf8"; // bright amber gold / cyan
-          ctx.lineWidth = 1.2;
-          ctx.setLineDash([4, 3]);
-          ctx.beginPath();
-          ctx.moveTo(boxX, yVpoc);
-          ctx.lineTo(boxX + boxWidth, yVpoc);
-          ctx.stroke();
-
-          // Right-aligned VPOC sniper tag
-          if (boxWidth >= 75) {
-            ctx.setLineDash([]);
-            ctx.font = "bold 8px 'JetBrains Mono', monospace";
-            const vpocText = `🎯 VPOC ₹${vpocVal.toFixed(1)}`;
-            const vpocW = ctx.measureText(vpocText).width + 6;
-            const vpocX = boxX + boxWidth - vpocW - 4;
-            ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
-            ctx.fillRect(vpocX, yVpoc - 6, vpocW, 12);
-            ctx.strokeStyle = isBull ? "#eab308" : "#38bdf8";
-            ctx.lineWidth = 0.8;
-            ctx.strokeRect(vpocX, yVpoc - 6, vpocW, 12);
-            ctx.fillStyle = isBull ? "#fef08a" : "#bae6fd";
-            ctx.textBaseline = "middle";
-            ctx.fillText(vpocText, vpocX + 3, yVpoc);
-          }
-          ctx.restore();
-        }
-
-        // Feature 2: Breakout Trigger Line (Line A) across Candle 1's wick
-        if (isFresh && boxWidth >= 40) {
-          const triggerPrice = isBull ? ob.top : ob.bottom;
-          const yTrigger = series.priceToCoordinate(triggerPrice);
-          if (yTrigger !== null) {
-            ctx.save();
-            ctx.strokeStyle = isBull ? "#06b6d4" : "#f43f5e";
-            ctx.lineWidth = 1.0;
-            ctx.setLineDash([2, 2]);
-            ctx.beginPath();
-            ctx.moveTo(boxX, yTrigger);
-            ctx.lineTo(boxX + Math.min(boxWidth, 120), yTrigger);
-            ctx.stroke();
-            ctx.restore();
-          }
-        }
-
         // Crisp tag label inside the box at left
         if (boxWidth >= 30) {
           ctx.font = "bold 9px 'JetBrains Mono', -apple-system, monospace";
@@ -3857,7 +3808,8 @@
   // Strictly renders only the single primary active breakout line & BR marker
   // ═══════════════════════════════════════════════════════════════════
   function drawFrozenBreakouts(ctx, chart, series, w, h, breakoutData) {
-    if (!ctx || !chart || !series || !breakoutData) return;
+    // Disabled per user request: removes noisy BR Level lines and BR ▲ markers for clean chart view
+    return;
     const rawLevels = breakoutData.levels || [];
     const rawMarkers = breakoutData.markers || [];
 
@@ -4146,6 +4098,11 @@
         borderColor: "#cbd5e1",
         timeVisible: true,
         secondsVisible: false,
+        barSpacing: 13,
+        minBarSpacing: 5,
+        rightOffset: 10,
+        fixLeftEdge: false,
+        fixRightEdge: false,
         tickMarkFormatter: (time, tickMarkType, locale) => {
           const d = new Date(time * 1000);
           const timeStr = d.toLocaleTimeString('en-IN', {
@@ -4195,7 +4152,19 @@
     ro.observe(container);
 
     document.getElementById("btnFitChart")?.addEventListener("click", () => {
-      if (_tvChart) _tvChart.timeScale().fitContent();
+      if (_tvChart) {
+        const curRange = _tvChart.timeScale().getVisibleLogicalRange();
+        const totalBars = (_dashboardCandleData || []).length || 85;
+        // Toggle: if zoomed out (> 120 bars), snap to clean wide view (85 bars); otherwise fit all
+        if (curRange && (curRange.to - curRange.from) > 120) {
+          _tvChart.timeScale().setVisibleLogicalRange({
+            from: totalBars - Math.min(85, totalBars),
+            to: totalBars + 8,
+          });
+        } else {
+          _tvChart.timeScale().fitContent();
+        }
+      }
     });
 
     document.getElementById("btnToggleDashboardSmc")?.addEventListener("click", (e) => {
@@ -4359,7 +4328,18 @@
         try { _tvChart.priceScale('right').applyOptions({ autoScale: true }); } catch(e) {}
         try { _candleSeries.priceScale().applyOptions({ autoScale: true }); } catch(e) {}
         _candleSeries.setData(data.candles);
-        try { _tvChart.timeScale().fitContent(); } catch(e) {}
+        const totalBars = (data.candles || []).length;
+        if (totalBars > 0) {
+          const visibleBars = Math.min(85, totalBars);
+          try {
+            _tvChart.timeScale().setVisibleLogicalRange({
+              from: totalBars - visibleBars,
+              to: totalBars + 8,
+            });
+          } catch(e) {
+            try { _tvChart.timeScale().fitContent(); } catch(err) {}
+          }
+        }
 
         // Clear all previous price lines
         if (_chartPriceLines && _chartPriceLines.length) {
@@ -4414,9 +4394,9 @@
             _chartPriceLines.push(_candleSeries.createPriceLine({
               price: data.pivots.r1,
               color: '#ef4444',
-              lineWidth: 1.5,
+              lineWidth: 1.2,
               lineStyle: LightweightCharts.LineStyle.Dashed,
-              axisLabelVisible: true,
+              axisLabelVisible: false,
               title: 'R1',
             }));
           }
@@ -4424,9 +4404,9 @@
             _chartPriceLines.push(_candleSeries.createPriceLine({
               price: data.pivots.r2,
               color: '#b91c1c',
-              lineWidth: 1.5,
+              lineWidth: 1.2,
               lineStyle: LightweightCharts.LineStyle.Dashed,
-              axisLabelVisible: true,
+              axisLabelVisible: false,
               title: 'R2',
             }));
           }
@@ -4434,9 +4414,9 @@
             _chartPriceLines.push(_candleSeries.createPriceLine({
               price: data.pivots.s1,
               color: '#22c55e',
-              lineWidth: 1.5,
+              lineWidth: 1.2,
               lineStyle: LightweightCharts.LineStyle.Dashed,
-              axisLabelVisible: true,
+              axisLabelVisible: false,
               title: 'S1',
             }));
           }
@@ -4525,7 +4505,18 @@
 
         setTimeout(() => {
           if (_tvChart) {
-            _tvChart.timeScale().fitContent();
+            const totalBars = (data.candles || []).length;
+            if (totalBars > 0) {
+              const visibleBars = Math.min(85, totalBars);
+              try {
+                _tvChart.timeScale().setVisibleLogicalRange({
+                  from: totalBars - visibleBars,
+                  to: totalBars + 8,
+                });
+              } catch(e) {
+                try { _tvChart.timeScale().fitContent(); } catch(err) {}
+              }
+            }
             requestAnimationFrame(renderDashboardSmcOverlay);
           }
         }, 50);
@@ -6845,8 +6836,14 @@
   let _ovShowFvg = true;
   let _ovShowLiq = false;
   let _ovShowCvd = false;
-  let _ovShowFootprint = true;
-  let _ovFootprintLiveTracking = true;
+  let _ovShowFootprint = false;
+  let _ovShowTrendBand = false;
+  let _ovShowChannels = true;
+  try {
+    const saved = localStorage.getItem("mlai_show_channels");
+    if (saved !== null) _ovShowChannels = (saved === "true");
+  } catch(e) {}
+  let _ovFootprintLiveTracking = false;
   let _ovCandlesData = [];
   let _ovSelectedFootprintTime = null;
   let _ovVolHeightMode = "compact";
@@ -6859,6 +6856,326 @@
   let _ovShowMtf = false;
   let _ovMtfData = null;
   let _ovLastUserInteraction = 0;
+
+  function toggleOvTrendBand() {
+    _ovShowTrendBand = !_ovShowTrendBand;
+    const btn = document.getElementById("btnOvToggleTrendBand");
+    if (btn) {
+      btn.style.opacity = _ovShowTrendBand ? "1" : "0.5";
+      btn.classList.toggle("active", _ovShowTrendBand);
+    }
+    requestAnimationFrame(renderVolumeProfileCanvas);
+  }
+
+  let _ovShowPatterns = false;
+  let _ovPatternsData = [];
+
+  function toggleOvPatterns() {
+    _ovShowPatterns = !_ovShowPatterns;
+    const btn = document.getElementById("btnOvTogglePatterns");
+    if (btn) {
+      btn.style.opacity = _ovShowPatterns ? "1" : "0.5";
+      btn.classList.toggle("active", _ovShowPatterns);
+    }
+    const chip = document.getElementById("ovTelemetryChip");
+    if (_ovShowPatterns) {
+      const q = (_ovPatternsData || []).filter(p => p.confidence >= 90.0);
+      if (q.length === 0 && chip) {
+        chip.textContent = "🛡️ Patterns: No Pattern >= 90% (Noise Shield Active)";
+        chip.style.background = "#faf5ff";
+        chip.style.color = "#7e22ce";
+        chip.style.borderColor = "#e9d5ff";
+      }
+    }
+    requestAnimationFrame(renderVolumeProfileCanvas);
+  }
+
+  function drawHighConvictionPatterns(ctx, chart, series, w, h, patterns) {
+    if (!patterns || !patterns.length || !chart || !series) return;
+
+    ctx.save();
+    for (const pat of patterns) {
+      if (pat.confidence < 90.0) continue; // Strict 90%+ rule: do not draw low-accuracy noise!
+
+      const pts = pat.points || [];
+      if (pts.length < 3) continue;
+
+      const isBull = pat.direction === "bullish";
+      const strokeColor = isBull ? "#7c3aed" : "#c026d3"; // Vibrant Royal Violet / Fuchsia
+      const fillColor = isBull ? "rgba(124, 58, 237, 0.08)" : "rgba(192, 38, 211, 0.08)";
+
+      const coords = [];
+      for (const pt of pts) {
+        const x = chart.timeScale().timeToCoordinate(pt.time);
+        const y = series.priceToCoordinate(pt.price);
+        if (x !== null && y !== null) {
+          coords.push({ x, y, price: pt.price, role: pt.role, time: pt.time });
+        }
+      }
+
+      if (coords.length < 3) continue;
+
+      // 1. Draw Pattern Shape Outline (e.g. W or M connecting lines)
+      ctx.beginPath();
+      ctx.moveTo(coords[0].x, coords[0].y);
+      for (let k = 1; k < coords.length; k++) {
+        ctx.lineTo(coords[k].x, coords[k].y);
+      }
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2.4;
+      ctx.setLineDash([]);
+      ctx.stroke();
+
+      // Subtle translucent fill inside the pattern polygon
+      ctx.fillStyle = fillColor;
+      ctx.fill();
+
+      // 2. Draw Point Markers with Labels
+      coords.forEach((pt, idx) => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        if (pt.role) {
+          ctx.font = "bold 8px 'JetBrains Mono', monospace";
+          ctx.fillStyle = strokeColor;
+          ctx.textAlign = "center";
+          ctx.fillText(pt.role, pt.x, pt.y + (idx % 2 === 0 ? 12 : -8));
+        }
+      });
+
+      // 3. Draw Neckline
+      if (pat.neckline_price) {
+        const yNeck = series.priceToCoordinate(pat.neckline_price);
+        if (yNeck !== null) {
+          const xStart = Math.min(...coords.map(c => c.x));
+          const xEnd = Math.max(...coords.map(c => c.x)) + 40;
+          ctx.beginPath();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = 1.4;
+          ctx.setLineDash([5, 4]);
+          ctx.moveTo(xStart, yNeck);
+          ctx.lineTo(xEnd, yNeck);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          const neckTag = `NECK: ₹${pat.neckline_price.toFixed(1)}`;
+          ctx.font = "bold 8px 'JetBrains Mono', monospace";
+          const tw = ctx.measureText(neckTag).width + 6;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+          drawPillRect(ctx, xEnd - tw, yNeck - 7, tw, 14, 2);
+          ctx.fill();
+          ctx.strokeStyle = strokeColor;
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+          ctx.fillStyle = strokeColor;
+          ctx.textBaseline = "middle";
+          ctx.textAlign = "start";
+          ctx.fillText(neckTag, xEnd - tw + 3, yNeck);
+        }
+      }
+
+      // 4. Draw Measured Target Line
+      if (pat.target_price) {
+        const yTgt = series.priceToCoordinate(pat.target_price);
+        if (yTgt !== null) {
+          const xStart = coords[coords.length - 1].x;
+          const xEnd = Math.min(w - 70, xStart + 80);
+          ctx.beginPath();
+          ctx.strokeStyle = "#059669"; // Vivid Emerald Target
+          ctx.lineWidth = 1.6;
+          ctx.setLineDash([5, 4]);
+          ctx.moveTo(xStart, yTgt);
+          ctx.lineTo(xEnd, yTgt);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          const tgtTag = `🎯 TARGET: ₹${pat.target_price.toFixed(1)} (${pat.risk_reward || ''})`;
+          ctx.font = "bold 9px 'JetBrains Mono', monospace";
+          const tw = ctx.measureText(tgtTag).width + 8;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.98)";
+          drawPillRect(ctx, xEnd - tw, yTgt - 9, tw, 18, 3);
+          ctx.fill();
+          ctx.strokeStyle = "#059669";
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+          ctx.fillStyle = "#065f46";
+          ctx.textBaseline = "middle";
+          ctx.textAlign = "start";
+          ctx.fillText(tgtTag, xEnd - tw + 4, yTgt);
+        }
+      }
+
+      // 5. Draw Header Badge (90%+ Confidence Badge)
+      const headerX = coords[0].x;
+      const headerY = Math.max(20, Math.min(...coords.map(c => c.y)) - 24);
+      const titleTag = `🏆 ${pat.short_name || pat.name} · ${pat.confidence.toFixed(1)}% ACCURACY`;
+      ctx.font = "bold 10px 'JetBrains Mono', monospace";
+      const htw = ctx.measureText(titleTag).width + 12;
+      ctx.fillStyle = "rgba(245, 243, 255, 0.96)";
+      drawPillRect(ctx, headerX, headerY, htw, 18, 4);
+      ctx.fill();
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = strokeColor;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "start";
+      ctx.fillText(titleTag, headerX + 6, headerY + 9);
+    }
+    ctx.restore();
+  }
+
+  function toggleOvTrendChannels() {
+    _ovShowChannels = !_ovShowChannels;
+    try { localStorage.setItem("mlai_show_channels", _ovShowChannels ? "true" : "false"); } catch(e) {}
+    const btn = document.getElementById("btnOvToggleChannels");
+    if (btn) {
+      btn.style.opacity = _ovShowChannels ? "1" : "0.5";
+      btn.classList.toggle("active", _ovShowChannels);
+    }
+    requestAnimationFrame(renderVolumeProfileCanvas);
+  }
+
+  function drawTrendChannels(ctx, chart, series, w, h, candles) {
+    if (!candles || candles.length < 15 || !chart || !series) return;
+
+    // Group candles by trading day
+    const sessions = {};
+    for (const c of candles) {
+      const d = new Date(c.time * 1000);
+      const dayKey = d.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
+      if (!sessions[dayKey]) sessions[dayKey] = [];
+      sessions[dayKey].push(c);
+    }
+
+    const dayKeys = Object.keys(sessions);
+    const recentDays = dayKeys.slice(-2);
+
+    ctx.save();
+    for (const day of recentDays) {
+      const allBars = sessions[day];
+      if (allBars.length < 10) continue;
+
+      const totalN = allBars.length;
+      let highIdx = 0, lowIdx = 0, maxH = -Infinity, minL = Infinity;
+      for (let i = 0; i < totalN; i++) {
+        if (allBars[i].high > maxH) { maxH = allBars[i].high; highIdx = i; }
+        if (allBars[i].low < minL) { minL = allBars[i].low; lowIdx = i; }
+      }
+
+      // Check for dominant trend wave (e.g. morning rally wave like Nov 25)
+      let bars = allBars;
+      const openPrice = allBars[0].open;
+      if (highIdx >= 15 && highIdx <= 55 && (maxH - openPrice) > (openPrice * 0.005)) {
+        bars = allBars.slice(0, highIdx + 3);
+      } else if (lowIdx >= 15 && lowIdx <= 55 && (openPrice - minL) > (openPrice * 0.005)) {
+        bars = allBars.slice(0, lowIdx + 3);
+      }
+
+      const n = bars.length;
+      let sumX = 0, sumY = 0, sumXX = 0, sumXY = 0;
+      for (let i = 0; i < n; i++) {
+        const y = (bars[i].high + bars[i].low) / 2;
+        sumX += i;
+        sumY += y;
+        sumXX += i * i;
+        sumXY += i * y;
+      }
+      const xBar = sumX / n;
+      const yBar = sumY / n;
+      const denom = sumXX - sumX * xBar;
+      if (Math.abs(denom) < 1e-6) continue;
+      const slope = (sumXY - sumX * yBar) / denom;
+      const intercept = yBar - slope * xBar;
+
+      let maxUpperDev = -Infinity;
+      let minLowerDev = Infinity;
+      for (let i = 0; i < n; i++) {
+        const regPrice = slope * i + intercept;
+        const upperDev = bars[i].high - regPrice;
+        const lowerDev = bars[i].low - regPrice;
+        if (upperDev > maxUpperDev) maxUpperDev = upperDev;
+        if (lowerDev < minLowerDev) minLowerDev = lowerDev;
+      }
+
+      const startBar = bars[0];
+      const endBar = bars[n - 1];
+      const xStart = chart.timeScale().timeToCoordinate(startBar.time);
+      const xEnd = chart.timeScale().timeToCoordinate(endBar.time);
+      if (xStart === null || xEnd === null) continue;
+
+      const yUpperStart = series.priceToCoordinate(slope * 0 + intercept + maxUpperDev);
+      const yUpperEnd = series.priceToCoordinate(slope * (n - 1) + intercept + maxUpperDev);
+      const yLowerStart = series.priceToCoordinate(slope * 0 + intercept + minLowerDev);
+      const yLowerEnd = series.priceToCoordinate(slope * (n - 1) + intercept + minLowerDev);
+      const yMidStart = series.priceToCoordinate(slope * 0 + intercept);
+      const yMidEnd = series.priceToCoordinate(slope * (n - 1) + intercept);
+
+      if (yUpperStart === null || yUpperEnd === null || yLowerStart === null || yLowerEnd === null) continue;
+
+      // Fill channel area with translucent blue (Groww style)
+      ctx.beginPath();
+      ctx.moveTo(xStart, yUpperStart);
+      ctx.lineTo(xEnd, yUpperEnd);
+      ctx.lineTo(xEnd, yLowerEnd);
+      ctx.lineTo(xStart, yLowerStart);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(59, 130, 246, 0.06)";
+      ctx.fill();
+
+      // Draw Upper Channel Line (vivid royal blue like Groww)
+      ctx.beginPath();
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 2.0;
+      ctx.setLineDash([]);
+      ctx.moveTo(xStart, yUpperStart);
+      ctx.lineTo(xEnd, yUpperEnd);
+      ctx.stroke();
+
+      // Draw Lower Channel Line
+      ctx.beginPath();
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 2.0;
+      ctx.moveTo(xStart, yLowerStart);
+      ctx.lineTo(xEnd, yLowerEnd);
+      ctx.stroke();
+
+      // Draw Midline (dashed)
+      if (yMidStart !== null && yMidEnd !== null) {
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(37, 99, 235, 0.45)";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([5, 4]);
+        ctx.moveTo(xStart, yMidStart);
+        ctx.lineTo(xEnd, yMidEnd);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Small badge floating cleanly above upper channel line (avoids box overlap)
+      const isBull = slope > 0;
+      const tagText = `${isBull ? "▲ ASCENDING" : "▼ DESCENDING"} CHANNEL`;
+      ctx.font = "bold 9px 'JetBrains Mono', monospace";
+      const tw = ctx.measureText(tagText).width + 8;
+      const tagX = Math.max(10, xEnd - tw - 4);
+      const tagY = Math.max(10, yUpperEnd - 16);
+      ctx.fillStyle = "rgba(239, 246, 255, 0.95)";
+      drawPillRect(ctx, tagX, tagY, tw, 14, 3);
+      ctx.fill();
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      ctx.fillStyle = "#1d4ed8";
+      ctx.textBaseline = "middle";
+      ctx.fillText(tagText, tagX + 4, tagY + 7);
+    }
+    ctx.restore();
+  }
 
   function setOvVolumeHeight(mode) {
     _ovVolHeightMode = mode;
@@ -6953,6 +7270,11 @@
         borderColor: "#cbd5e1",
         timeVisible: true,
         secondsVisible: false,
+        barSpacing: 13,
+        minBarSpacing: 5,
+        rightOffset: 10,
+        fixLeftEdge: false,
+        fixRightEdge: false,
         tickMarkFormatter: (time, tickMarkType, locale) => {
           const d = new Date(time * 1000);
           const timeStr = d.toLocaleTimeString('en-IN', {
@@ -7056,7 +7378,20 @@
     ro.observe(container);
 
     document.getElementById("btnOvFitChart")?.addEventListener("click", () => {
-      if (_ovChart) _ovChart.timeScale().fitContent();
+      if (_ovChart && _ovCandlesData && _ovCandlesData.length) {
+        const totalBars = _ovCandlesData.length;
+        const visibleBars = Math.min(160, totalBars);
+        try {
+          _ovChart.timeScale().setVisibleLogicalRange({
+            from: totalBars - visibleBars,
+            to: totalBars + 8,
+          });
+        } catch(e) {
+          try { _ovChart.timeScale().fitContent(); } catch(err) {}
+        }
+      } else if (_ovChart) {
+        _ovChart.timeScale().fitContent();
+      }
     });
 
     // Wire up Volume Height controls
@@ -7111,6 +7446,23 @@
         renderCvdData();
       }
     });
+
+    // Sync button state for Channels and Trend Band
+    const btnChInit = document.getElementById("btnOvToggleChannels");
+    if (btnChInit) {
+      btnChInit.style.opacity = _ovShowChannels ? "1" : "0.5";
+      btnChInit.classList.toggle("active", _ovShowChannels);
+    }
+    const btnTbInit = document.getElementById("btnOvToggleTrendBand");
+    if (btnTbInit) {
+      btnTbInit.style.opacity = _ovShowTrendBand ? "1" : "0.5";
+      btnTbInit.classList.toggle("active", _ovShowTrendBand);
+    }
+    const btnPatInit = document.getElementById("btnOvTogglePatterns");
+    if (btnPatInit) {
+      btnPatInit.style.opacity = _ovShowPatterns ? "1" : "0.5";
+      btnPatInit.classList.toggle("active", _ovShowPatterns);
+    }
 
     // ── 5-Row Order Flow Summary Bar Toggle ──
     document.getElementById("btnOvToggleFpSummary")?.addEventListener("click", () => {
@@ -7915,9 +8267,9 @@
           const r1Line = _ovCandleSeries.createPriceLine({
             price: _lastPivots.r1,
             color: '#ef4444',
-            lineWidth: 1.5,
+            lineWidth: 1.2,
             lineStyle: LightweightCharts.LineStyle.Dashed,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: 'R1',
           });
           _ovPriceLines.push(r1Line);
@@ -7927,9 +8279,9 @@
           const r2Line = _ovCandleSeries.createPriceLine({
             price: _lastPivots.r2,
             color: '#b91c1c',
-            lineWidth: 1.5,
+            lineWidth: 1.2,
             lineStyle: LightweightCharts.LineStyle.Dashed,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: 'R2',
           });
           _ovPriceLines.push(r2Line);
@@ -7941,7 +8293,7 @@
             color: '#7f1d1d',
             lineWidth: 1,
             lineStyle: LightweightCharts.LineStyle.Dotted,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: 'R3',
           });
           _ovPriceLines.push(r3Line);
@@ -7951,9 +8303,9 @@
           const s1Line = _ovCandleSeries.createPriceLine({
             price: _lastPivots.s1,
             color: '#22c55e',
-            lineWidth: 1.5,
+            lineWidth: 1.2,
             lineStyle: LightweightCharts.LineStyle.Dashed,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: 'S1',
           });
           _ovPriceLines.push(s1Line);
@@ -7963,9 +8315,9 @@
           const s2Line = _ovCandleSeries.createPriceLine({
             price: _lastPivots.s2,
             color: '#15803d',
-            lineWidth: 1.5,
+            lineWidth: 1.2,
             lineStyle: LightweightCharts.LineStyle.Dashed,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: 'S2',
           });
           _ovPriceLines.push(s2Line);
@@ -7977,7 +8329,7 @@
             color: '#14532d',
             lineWidth: 1,
             lineStyle: LightweightCharts.LineStyle.Dotted,
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: 'S3',
           });
           _ovPriceLines.push(s3Line);
@@ -8039,8 +8391,18 @@
     }
 
     // 2. Draw Trend Band Overlay (if enabled)
-    if (_dashboardShowTrendBand && _ovTrendBandData) {
+    if (_ovShowTrendBand && _ovTrendBandData) {
       drawTrendBand(ctx, _ovChart, _ovCandleSeries, w, h, _ovTrendBandData);
+    }
+
+    // 2b. Draw Session Regression Trend Channels (Groww style parallel channels)
+    if (_ovShowChannels && _ovCandlesData && _ovCandlesData.length) {
+      drawTrendChannels(ctx, _ovChart, _ovCandleSeries, w, h, _ovCandlesData);
+    }
+
+    // 2c. Draw 90%+ High Accuracy Institutional Chart Patterns (if enabled)
+    if (_ovShowPatterns && _ovPatternsData && _ovPatternsData.length) {
+      drawHighConvictionPatterns(ctx, _ovChart, _ovCandleSeries, w, h, _ovPatternsData);
     }
 
     // 3. Draw Institutional Order Blocks (DEMAND & BEAR OB) and Fair Value Gaps (FVG+ & FVG- with 50% CE)
@@ -8265,6 +8627,7 @@
       _ovTrendBandData = data.trend_band || null;
       _ovBreakoutsData = data.frozen_breakouts || null;
       _ovExtensionData = data.extension_gate || null;
+      _ovPatternsData = data.high_conviction_patterns || [];
 
       // Render Left Volume Profile, Order Blocks & FVG on Canvas (Mathematically aligned to price scale)
       setTimeout(() => {
@@ -8378,11 +8741,16 @@
       if (_ovChart) {
         if (!options.silent) {
           const totalBars = (data.candles || []).length;
-          if (totalBars > 85) {
-            _ovChart.timeScale().setVisibleLogicalRange({
-              from: totalBars - 85,
-              to: totalBars + 5,
-            });
+          if (totalBars > 0) {
+            const visibleBars = Math.min(160, totalBars);
+            try {
+              _ovChart.timeScale().setVisibleLogicalRange({
+                from: totalBars - visibleBars,
+                to: totalBars + 8,
+              });
+            } catch(e) {
+              try { _ovChart.timeScale().fitContent(); } catch(err) {}
+            }
           } else {
             _ovChart.timeScale().fitContent();
           }

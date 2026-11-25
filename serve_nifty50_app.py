@@ -2117,12 +2117,21 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "bins": today_vp.get("bins") or analysis["volume_profile"].get("bins", []),
             }
 
+            # 10. Run 90%+ High-Conviction Institutional Pattern Detection
+            high_conviction_patterns = []
+            try:
+                from high_conviction_pattern_engine import detect_high_conviction_patterns
+                high_conviction_patterns = detect_high_conviction_patterns(tv_candles, min_confidence=90.0)
+            except Exception as pe:
+                print(f"[stock-overview] Pattern detection error: {pe}", file=sys.stderr)
+
             self._send_json(HTTPStatus.OK, {
                 "ok": True,
                 "symbol": symbol,
                 "name": name,
                 "ltp": ltp,
                 "percent_change": pct_change,
+                "high_conviction_patterns": high_conviction_patterns,
                 "index_quote": index_quote,
                 "candles": tv_candles,
                 "volumes": tv_volumes,
