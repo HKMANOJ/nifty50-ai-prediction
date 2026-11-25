@@ -387,7 +387,7 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
     hist_candles_1m = []
     if full_range or not raw_candles_1m:
         to_date = now_ist.strftime("%Y-%m-%d")
-        from_date = (now_ist - timedelta(days=6)).strftime("%Y-%m-%d")
+        from_date = (now_ist - timedelta(days=14)).strftime("%Y-%m-%d")
         hist_url = f"{UPSTOX_API_BASE}/historical-candle/{encoded_key}/1minute/{to_date}/{from_date}"
         hist_req = urllib.request.Request(hist_url, headers=headers)
         try:

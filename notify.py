@@ -422,6 +422,11 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
         logger.debug("Skipping pre-09:30 opening range volatility rush.")
         return []
 
+    # Cutoff: No new intraday entries after 2:45 PM (prevents broker square-off whipsaws)
+    if now_ist.hour > 14 or (now_ist.hour == 14 and now_ist.minute > 45):
+        logger.debug("Skipping post-14:45 late-session square-off rush.")
+        return []
+
     for sym_display, sym_code in targets:
         try:
             res = fetch_5m_candles_pipeline(sym_code, full_range=True)
@@ -520,19 +525,52 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                                 sym_display, clean_time, pct_change, orb_5l)
                     continue
 
-                # TREND & OPEN GUARD: If market is trading below open price and below ORB 5H,
-                # buying is catching a falling knife inside a negative session. Suppress!
-                if ltp < open_price and ltp < orb_5h:
-                    logger.info("🛡️ [TREND GUARD] Suppressed %s Demand Fresh at %s (Trading below Open %.1f and below ORB 5H %.1f)",
-                                sym_display, clean_time, open_price, orb_5h)
+                # CHOP GUARD: If price is inside the opening range chop without breakout, suppress!
+                day_high_so_far = max(c["high"] for c in today_completed)
+                if ltp < orb_5h and day_high_so_far < orb_5h + 50 and ltp > orb_5l + 100:
+                    logger.info("🛡️ [CHOP GUARD] Suppressed %s Demand Fresh at %s (Inside opening range without breakout)",
+                                sym_display, clean_time)
                     continue
 
-                # DIRECTIONAL HYSTERESIS GUARD: Do not flip from Bear to Bull within 25 minutes unless broke ORB 5H
-                if _has_recent_conflicting_alert(sent_keys, sym_display, "BEAR_OB", f_dt, min_separation_minutes=25):
+                # DIRECTIONAL HYSTERESIS GUARD: Do not flip from Bear to Bull within 20 minutes unless broke ORB 5H
+                if _has_recent_conflicting_alert(sent_keys, sym_display, "BEAR_OB", f_dt, min_separation_minutes=20):
                     if ltp < orb_5h:
-                        logger.info("🛡️ [HYSTERESIS GUARD] Suppressed %s Demand Fresh at %s (Conflicting Bear alert within 25m)",
+                        logger.info("🛡️ [HYSTERESIS GUARD] Suppressed %s Demand Fresh at %s (Conflicting Bear alert within 20m)",
                                     sym_display, clean_time)
                         continue
+
+                # GEMINI AI AUDITOR (Conviction check >= 75)
+                try:
+                    from gemini_evaluator import evaluate_trade_with_gemini
+                    closes = [c["close"] for c in today_completed]
+                    alpha = 2.0 / 21
+                    ema20 = closes[0]
+                    for p in closes: ema20 = alpha * p + (1.0 - alpha) * ema20
+                    snapshot = {
+                        "symbol": sym_display,
+                        "time_ist": clean_time,
+                        "ltp": ltp,
+                        "day_open": open_price,
+                        "day_high": day_high_so_far,
+                        "day_low": min(c["low"] for c in today_completed),
+                        "orb_5h": orb_5h,
+                        "orb_5l": orb_5l,
+                        "ema20": round(ema20, 2),
+                        "atr_5m": round(atr, 2),
+                        "setup_side": "LONG",
+                        "ob_top": ob_top,
+                        "ob_bottom": float(ob.get("bottom") or 0.0),
+                        "extension_atr": ext_gate.get("extension_atr", 0.0),
+                        "is_extended": is_extended_long,
+                        "order_flow": {"delta_bar": today_completed[-1].get("delta") or 0.0},
+                    }
+                    ai_res = evaluate_trade_with_gemini(snapshot, use_api=True)
+                    if ai_res.get("verdict") == "REJECTED" and ai_res.get("conviction_score", 100) < 75:
+                        logger.info("🛡️ [GEMINI AI] Suppressed %s Demand Fresh at %s (Score: %d/100, Reason: %s)",
+                                    sym_display, clean_time, ai_res.get("conviction_score", 0), ai_res.get("rationale", ""))
+                        continue
+                except Exception as ai_exc:
+                    logger.debug("Gemini check bypassed: %s", ai_exc)
 
                 item = {
                     "symbol": sym_display,
@@ -564,6 +602,8 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                     continue
 
                 ob_bottom = float(ob.get("bottom") or 0.0)
+                ob_top = float(ob.get("top") or 0.0)
+                min_expansion = 150.0 if sym_display == "Sensex" else 50.0
 
                 # EXTENSION GUARD: Never short at extreme oversold lows (< -1.8x ATR below EMA20)
                 if is_extended_short:
@@ -571,26 +611,74 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                                 sym_display, clean_time, ext_gate.get("extension_atr", 0.0))
                     continue
 
-                # TRAP GUARD: If market is in confirmed Bull Regime and zone formed above ORB 5H,
-                # this is a counter-trend dip. Suppress!
-                if is_confirmed_bull and ob_bottom > orb_5h:
-                    logger.info("🛡️ [TRAP GUARD] Suppressed %s Bear OB at %s (Market in Bull Regime: %.2f%%, above ORB 5H %.1f)",
-                                sym_display, clean_time, pct_change, orb_5h)
+                # Calculate 20 EMA from today's completed candles
+                closes = [c["close"] for c in today_completed]
+                alpha = 2.0 / (20 + 1)
+                ema20 = closes[0]
+                for p in closes:
+                    ema20 = alpha * p + (1.0 - alpha) * ema20
+
+                day_high_so_far = max(c["high"] for c in today_completed)
+                day_low_so_far = min(c["low"] for c in today_completed)
+
+                # Institutional High-Conviction Bear Patterns:
+                # 1. Bear Trend Breakdown below ORB 5L
+                c1_below_orb = ltp < orb_5l
+                # 2. Exhaustion Top Reversal at Day High after significant expansion above ORB 5H
+                c2_top_reversal = (day_high_so_far - orb_5h >= min_expansion) and (ob_top >= day_high_so_far - 0.75 * atr)
+                # 3. Structural breakdown below EMA20 following an expansion above ORB 5H
+                c3_choch_ema = (day_high_so_far - orb_5h >= min_expansion) and (ltp < ema20) and (ltp > day_low_so_far + 150)
+
+                # If none of the institutional patterns match, suppress counter-trend or opening chop shorts!
+                if not (c1_below_orb or c2_top_reversal or c3_choch_ema):
+                    logger.info("🛡️ [TRAP GUARD] Suppressed %s Bear OB at %s (Inside consolidation without top exhaustion or breakdown)",
+                                sym_display, clean_time)
                     continue
 
-                # TREND & OPEN GUARD: If market is trading above open price and above ORB 5L,
-                # shorting is stepping in front of a bull train. Suppress!
-                if ltp > open_price and ltp > orb_5l:
-                    logger.info("🛡️ [TREND GUARD] Suppressed %s Bear OB at %s (Trading above Open %.1f and above ORB 5L %.1f)",
-                                sym_display, clean_time, open_price, orb_5l)
-                    continue
+                # MARKET STRUCTURE SHIFT (MSS) GUARD:
+                # If trading above ORB 5H, price MUST have cracked below the recent 15-minute low (prevents shorting runaway bull rallies)
+                if ltp > orb_5h and len(today_completed) >= 5:
+                    recent_15m_low = min(c["low"] for c in today_completed[-4:-1])
+                    if ltp >= recent_15m_low:
+                        logger.info("🛡️ [MSS GUARD] Suppressed %s Bear OB at %s (No structural breakdown below recent 15m low %.1f)",
+                                    sym_display, clean_time, recent_15m_low)
+                        continue
 
-                # DIRECTIONAL HYSTERESIS GUARD: Do not flip from Bull to Bear within 25 minutes unless broke ORB 5L
-                if _has_recent_conflicting_alert(sent_keys, sym_display, "DEMAND", f_dt, min_separation_minutes=25):
+                # DIRECTIONAL HYSTERESIS GUARD: Do not flip from Bull to Bear within 20 minutes unless broke ORB 5L
+                if _has_recent_conflicting_alert(sent_keys, sym_display, "DEMAND", f_dt, min_separation_minutes=20):
                     if ltp > orb_5l:
-                        logger.info("🛡️ [HYSTERESIS GUARD] Suppressed %s Bear OB at %s (Conflicting Bull alert within 25m)",
+                        logger.info("🛡️ [HYSTERESIS GUARD] Suppressed %s Bear OB at %s (Conflicting Bull alert within 20m)",
                                     sym_display, clean_time)
                         continue
+
+                # GEMINI AI AUDITOR (Conviction check >= 75)
+                try:
+                    from gemini_evaluator import evaluate_trade_with_gemini
+                    snapshot = {
+                        "symbol": sym_display,
+                        "time_ist": clean_time,
+                        "ltp": ltp,
+                        "day_open": open_price,
+                        "day_high": day_high_so_far,
+                        "day_low": day_low_so_far,
+                        "orb_5h": orb_5h,
+                        "orb_5l": orb_5l,
+                        "ema20": round(ema20, 2),
+                        "atr_5m": round(atr, 2),
+                        "setup_side": "SHORT",
+                        "ob_top": ob_top,
+                        "ob_bottom": ob_bottom,
+                        "extension_atr": ext_gate.get("extension_atr", 0.0),
+                        "is_extended": is_extended_short,
+                        "order_flow": {"delta_bar": today_completed[-1].get("delta") or 0.0},
+                    }
+                    ai_res = evaluate_trade_with_gemini(snapshot, use_api=True)
+                    if ai_res.get("verdict") == "REJECTED" and ai_res.get("conviction_score", 100) < 75:
+                        logger.info("🛡️ [GEMINI AI] Suppressed %s Bear OB at %s (Score: %d/100, Reason: %s)",
+                                    sym_display, clean_time, ai_res.get("conviction_score", 0), ai_res.get("rationale", ""))
+                        continue
+                except Exception as ai_exc:
+                    logger.debug("Gemini check bypassed: %s", ai_exc)
 
                 item = {
                     "symbol": sym_display,

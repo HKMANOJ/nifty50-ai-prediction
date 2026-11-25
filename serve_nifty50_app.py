@@ -1493,6 +1493,42 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 forming_dt = datetime.fromtimestamp(forming_c["timestamp"], tz=_ist)
                 latest_bar_label = f"{forming_dt.strftime('%I:%M %p')} (Live)"
 
+            prior_candles = [
+                c for c in all_display_candles
+                if datetime.fromtimestamp(c["timestamp"], tz=_ist).date() < last_day
+            ]
+
+            pivots_data = {}
+            pmh_val = None
+            pml_val = None
+            if prior_candles:
+                prior_days = {}
+                for c in prior_candles:
+                    d = datetime.fromtimestamp(c["timestamp"], tz=_ist).date()
+                    prior_days.setdefault(d, []).append(c)
+                if prior_days:
+                    last_prior_date = max(prior_days.keys())
+                    prev_day_candles = prior_days[last_prior_date]
+                    p_high = max(c["high"] for c in prev_day_candles)
+                    p_low = min(c["low"] for c in prev_day_candles)
+                    p_close = prev_day_candles[-1]["close"]
+                    pmh_val = round(p_high, 2)
+                    pml_val = round(p_low, 2)
+                    pivot_p = round((p_high + p_low + p_close) / 3.0, 2)
+                    pivots_data = {
+                        "pivot": pivot_p,
+                        "p": pivot_p,
+                        "r1": round(2 * pivot_p - p_low, 2),
+                        "r2": round(pivot_p + (p_high - p_low), 2),
+                        "r3": round(p_high + 2 * (pivot_p - p_low), 2),
+                        "s1": round(2 * pivot_p - p_high, 2),
+                        "s2": round(pivot_p - (p_high - p_low), 2),
+                        "s3": round(p_low - 2 * (p_high - pivot_p), 2),
+                        "prev_high": round(p_high, 2),
+                        "prev_low": round(p_low, 2),
+                        "prev_close": round(p_close, 2),
+                    }
+
             resp_payload = {
                 "ok": True,
                 "symbol": symbol,
@@ -1503,6 +1539,9 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "orb_5l": round(orb_5l, 2) if orb_5l else None,
                 "orb_high": round(orb_5h, 2) if orb_5h else None,
                 "orb_low": round(orb_5l, 2) if orb_5l else None,
+                "pmh": pmh_val,
+                "pml": pml_val,
+                "pivots": pivots_data,
                 "day_high": round(max(highs), 2) if highs else None,
                 "day_low": round(min(lows), 2) if lows else None,
                 "day_open": round(opens[0], 2) if opens else None,
@@ -1764,8 +1803,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             base_count = min(len(today_candles), 6)
             orb_high = orb_5h or (max(c["high"] for c in today_candles[:base_count]) if today_candles else None)
             orb_low = orb_5l or (min(c["low"] for c in today_candles[:base_count]) if today_candles else None)
-            pmh = orb_5h or (max(c["high"] for c in prior_candles[-75:]) if prior_candles else None)
-            pml = orb_5l or (min(c["low"] for c in prior_candles[-75:]) if prior_candles else None)
+            pmh = None
+            pml = None
 
             # Prior Day Classic Pivots (P, R1, R2, R3, S1, S2, S3)
             pivot_p = None
@@ -1786,6 +1825,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     p_high = max(c["high"] for c in prev_day_candles)
                     p_low = min(c["low"] for c in prev_day_candles)
                     p_close = prev_day_candles[-1]["close"]
+                    pmh = round(p_high, 2)
+                    pml = round(p_low, 2)
                     pivot_p = round((p_high + p_low + p_close) / 3.0, 2)
                     r1 = round(2 * pivot_p - p_low, 2)
                     s1 = round(2 * pivot_p - p_high, 2)
@@ -2107,6 +2148,8 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "orb_low": round(orb_5l, 2) if orb_5l else None,
                 "day_high": round(day_high, 2) if day_high else None,
                 "day_low": round(day_low, 2) if day_low else None,
+                "pmh": round(pmh, 2) if pmh else None,
+                "pml": round(pml, 2) if pml else None,
                 "pivots": {
                     "pivot": pivot_p,
                     "r1": r1,

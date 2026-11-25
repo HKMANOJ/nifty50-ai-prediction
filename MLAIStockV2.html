@@ -4371,6 +4371,8 @@
 
         const orb5hPrice = data.orb_5h || data.orb_high || data.day_high;
         const orb5lPrice = data.orb_5l || data.orb_low || data.day_low;
+        const pmhPrice = data.pmh || (data.anchors && data.anchors.pmh) || null;
+        const pmlPrice = data.pml || (data.anchors && data.anchors.pml) || null;
 
         // 1. ORB 5H (Opening Range 5m High) - Red Solid (width 2)
         if (orb5hPrice) {
