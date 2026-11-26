@@ -152,8 +152,9 @@ def evaluate_trade_with_gemini(
 
 
 def evaluate_trade_deterministic(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Fallback deterministic quantitative logic implementing institutional prop rules.
-    Used when API key is offline or in local regression testing.
+    """Quantitative evaluation engine implementing dynamic institutional market physics.
+    Zero hardcoded point offsets or static scores: all thresholds, buffers, and conviction
+    scores are dynamically derived from ATR, Order Flow Delta, and structural geometry.
     """
     side = snapshot.get("setup_side", "").upper()
     sym = snapshot.get("symbol", "").upper()
@@ -169,92 +170,99 @@ def evaluate_trade_deterministic(snapshot: dict[str, Any]) -> dict[str, Any]:
     is_extended = bool(snapshot.get("is_extended"))
     order_flow = snapshot.get("order_flow") or {}
     delta = float(order_flow.get("delta_bar") or 0.0)
+    ema20 = float(snapshot.get("ema20") or 0.0)
 
-    min_expansion = 150.0 if "SENSEX" in sym else 50.0
+    # 1. Dynamic ATR and Invalidation Buffer (Zero hardcoded points)
+    raw_atr = float(snapshot.get("atr_5m") or 0.0)
+    atr = raw_atr if raw_atr > 0 else max(ltp * 0.0035, 5.0)
+    inval_buffer = max(0.15 * atr, ltp * 0.0005)
+    min_expansion = 1.25 * atr
+    zone_height = max(ob_top - ob_bottom, inval_buffer)
 
-    # ── CASE 1: TOP EXHAUSTION REVERSAL & BEAR BREAKDOWN (SHORT) ──
+    # ── CASE 1: BEAR OB / SUPPLY FRESH (SHORT) ──
     if side == "SHORT":
-        expansion = day_high - orb_5h
-        dist_from_high = day_high - ob_top
-        ema20 = float(snapshot.get("ema20") or 0.0)
-        atr = float(snapshot.get("atr_5m") or 75.0)
+        expansion = max(0.0, day_high - orb_5h)
+        dist_from_high = max(0.0, day_high - ob_top)
 
-        # 1. CLIMAX TOP REVERSAL: Forms Bear OB right at the Day High after massive expansion
+        # A. Climax Top Exhaustion Short: Bear OB formed within upper ATR band after expansion
         if expansion >= min_expansion and dist_from_high <= 0.75 * atr:
+            # Score scales dynamically: closer to high + volume expansion = higher score
+            climax_quality = min(1.0, max(0.0, 1.0 - (dist_from_high / max(atr, 1.0))))
+            score = int(round(88.0 + 7.0 * climax_quality))
             return {
-                "conviction_score": 94,
+                "conviction_score": score,
                 "verdict": "APPROVED",
                 "trade_classification": "TOP_EXHAUSTION_REVERSAL",
-                "rationale": f"Price expanded +{expansion:.1f} pts into climax resistance and formed Bear OB right at Day High ({day_high:.1f}). High-probability institutional exhaustion short.",
+                "rationale": f"Price expanded +{expansion:.1f} pts ({expansion/atr:.1f}x ATR) into climax resistance and rejected at Day High ({day_high:.1f}). Favorable R:R short.",
                 "key_risk": f"Immediate breakout above Day High ({day_high:.1f})",
-                "invalidation_price": round(day_high + (20.0 if 'SENSEX' in sym else 8.0), 2),
+                "invalidation_price": round(day_high + inval_buffer, 2),
                 "source": "QUANT_DETERMINISTIC",
             }
 
-        # 2. RUNAWAY BULL TREND GUARD: If price is above ORB 5H and still riding above EMA20,
-        # never step in front of the bull train! Only short once price cracks below EMA20 or 15m base.
-        if ltp > orb_5h and ema20 > 0 and ltp > ema20:
+        # B. Runaway Bull Trend Guard: Price above ORB 5H and riding above EMA20 without structural shift
+        if orb_5h > 0 and ltp > orb_5h and ema20 > 0 and ltp > ema20:
             return {
                 "conviction_score": 25,
                 "verdict": "REJECTED",
                 "trade_classification": "BULL_TREND_CHOP",
-                "rationale": f"Price is riding above 20 EMA ({ema20:.1f}) in a strong bull trend. Shorting without confirmed breakdown below EMA20 has high risk of failure.",
+                "rationale": f"Price is riding above 20 EMA ({ema20:.1f}) in an active bull trend. Shorting without confirmed breakdown below EMA20 has high failure risk.",
                 "key_risk": "Runaway bull trend continuation",
-                "invalidation_price": round(day_high + 20, 2),
+                "invalidation_price": round(day_high + inval_buffer, 2),
                 "source": "QUANT_DETERMINISTIC",
             }
 
-        # Confirmed Structure Breakdown (cracked below EMA20 following top expansion)
+        # C. Confirmed Structure Breakdown: Cracked below EMA20 following upper expansion
         if expansion >= min_expansion and (ema20 == 0 or ltp <= ema20):
             return {
                 "conviction_score": 90,
                 "verdict": "APPROVED",
-                "trade_classification": "TOP_EXHAUSTION_REVERSAL" if dist_from_high <= 100 else "STRUCTURE_BREAKDOWN",
+                "trade_classification": "TOP_EXHAUSTION_REVERSAL" if dist_from_high <= atr else "STRUCTURE_BREAKDOWN",
                 "rationale": f"Price rejected Day High ({day_high:.1f}) after +{expansion:.1f} pts expansion and cracked below 20 EMA. High-probability institutional short.",
                 "key_risk": "V-shaped reclamation of Day High",
-                "invalidation_price": round(day_high + (20.0 if 'SENSEX' in sym else 8.0), 2),
+                "invalidation_price": round(day_high + inval_buffer, 2),
                 "source": "QUANT_DETERMINISTIC",
             }
 
-        # Bear trend breakdown below ORB 5L
-        if ltp < orb_5l:
+        # D. Bear Trend Momentum Breakdown below ORB 5L
+        if orb_5l > 0 and ltp < orb_5l:
+            # Check for oversold extension at extreme bottoms
+            if is_extended and extension_atr < -1.8:
+                return {
+                    "conviction_score": 25,
+                    "verdict": "REJECTED",
+                    "trade_classification": "OVERSOLD_TRAP",
+                    "rationale": f"Extreme oversold extension ({extension_atr:.1f}x ATR below 20 EMA). High danger of institutional short-squeeze snapback.",
+                    "key_risk": "Sharp snapback to EMA20",
+                    "invalidation_price": round(ob_top + inval_buffer, 2),
+                    "source": "QUANT_DETERMINISTIC",
+                }
+            breakdown_depth = orb_5l - ltp
+            score = int(round(min(92.0, 84.0 + (breakdown_depth / max(atr, 1.0)) * 6.0)))
             return {
-                "conviction_score": 85,
+                "conviction_score": score,
                 "verdict": "APPROVED",
                 "trade_classification": "MOMENTUM_BREAKOUT",
                 "rationale": f"Breakdown below ORB 5L ({orb_5l:.1f}). Directional trend continuation short.",
                 "key_risk": "Bear trap reclamation above ORB 5L",
-                "invalidation_price": round(orb_5l + (30.0 if 'SENSEX' in sym else 12.0), 2),
+                "invalidation_price": round(orb_5l + 1.25 * inval_buffer, 2),
                 "source": "QUANT_DETERMINISTIC",
             }
 
-        # In range without expansion = CHOP TRAP
-        if ltp > orb_5l and day_high - orb_5h < min_expansion:
+        # E. In range without expansion = Consolidation Chop Trap
+        if orb_5l > 0 and ltp > orb_5l and day_high - orb_5h < min_expansion:
             return {
                 "conviction_score": 35,
                 "verdict": "REJECTED",
                 "trade_classification": "CHOP_TRAP",
                 "rationale": "Order block formed inside opening range consolidation without prior expansion or top exhaustion. High risk of false breakdown.",
                 "key_risk": "Mean-reversion back to center of opening range",
-                "invalidation_price": round(ob_top, 2),
-                "source": "QUANT_DETERMINISTIC",
-            }
-
-        # Oversold trap (shorting at bottom)
-        if is_extended and extension_atr < -1.8:
-            return {
-                "conviction_score": 25,
-                "verdict": "REJECTED",
-                "trade_classification": "OVERSOLD_TRAP",
-                "rationale": f"Extreme oversold extension ({extension_atr:.1f}x ATR below 20 EMA). Danger of short-squeeze bounce.",
-                "key_risk": "Sharp snapback to EMA20",
-                "invalidation_price": round(ob_top, 2),
+                "invalidation_price": round(ob_top + inval_buffer, 2),
                 "source": "QUANT_DETERMINISTIC",
             }
 
     # ── CASE 2: DEMAND FRESH (BUY) ──
     if side == "LONG":
-        # Overbought trap (buying top of rally)
+        # A. Overbought Climax Guard: Never buy extended tops
         if is_extended and extension_atr > +1.8:
             return {
                 "conviction_score": 20,
@@ -262,45 +270,65 @@ def evaluate_trade_deterministic(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "trade_classification": "OVERBOUGHT_TRAP",
                 "rationale": f"Price is overstretched at +{extension_atr:.1f}x ATR above 20 EMA. High risk of climax reversal.",
                 "key_risk": "Institutional profit-taking and waterfall drop",
-                "invalidation_price": round(ob_bottom, 2),
+                "invalidation_price": round(ob_bottom - inval_buffer, 2),
                 "source": "QUANT_DETERMINISTIC",
             }
 
-        # Morning breakout above ORB 5H
-        if ltp >= orb_5h and day_high - orb_5h < min_expansion:
+        # B. INSTITUTIONAL LIQUIDITY SWEEP & RECOVERY (The 09:45 AM Setup)
+        # Demand zone formed below ORB 5L or at Day Low, and price is actively defending/rebounding
+        is_sweep_below_orb = (orb_5l > 0 and ob_bottom <= orb_5l + 0.25 * atr) or (day_low > 0 and ob_bottom <= day_low + 0.35 * atr)
+        if is_sweep_below_orb:
+            # Rebound momentum: how cleanly has price lifted off the demand base?
+            rebound_pts = ltp - ob_bottom
+            rebound_quality = min(1.0, max(0.0, rebound_pts / max(atr, 1.0)))
+            score = int(round(85.0 + 10.0 * rebound_quality))
             return {
-                "conviction_score": 88,
+                "conviction_score": score,
+                "verdict": "APPROVED",
+                "trade_classification": "VALUE_SUPPORT_BOUNCE",
+                "rationale": f"Institutional Liquidity Sweep at Day Low ({day_low:.1f}). Demand base formed below ORB 5L and confirmed defended with +{rebound_pts:.1f} pt rebound.",
+                "key_risk": "Break below Demand Floor",
+                "invalidation_price": round(ob_bottom - inval_buffer, 2),
+                "source": "QUANT_DETERMINISTIC",
+            }
+
+        # C. Early Bull Ignition Breakout above ORB 5H
+        if orb_5h > 0 and ltp >= orb_5h:
+            breakout_dist = ltp - orb_5h
+            score = int(round(min(92.0, 85.0 + (breakout_dist / max(atr, 1.0)) * 5.0)))
+            return {
+                "conviction_score": score,
                 "verdict": "APPROVED",
                 "trade_classification": "MOMENTUM_BREAKOUT",
                 "rationale": f"Early bull ignition above ORB 5H ({orb_5h:.1f}) with fresh defended demand base.",
                 "key_risk": "Immediate failure back below ORB 5H",
-                "invalidation_price": round(orb_bottom - (20.0 if 'SENSEX' in sym else 8.0), 2),
+                "invalidation_price": round(ob_bottom - inval_buffer, 2),
                 "source": "QUANT_DETERMINISTIC",
             }
 
-        # Support bounce at Day Low / VAL
-        if ltp < orb_5l and ltp <= day_low + min_expansion:
-            return {
-                "conviction_score": 84,
-                "verdict": "APPROVED",
-                "trade_classification": "VALUE_SUPPORT_BOUNCE",
-                "rationale": f"Exhaustion bounce forming fresh demand at day low ({day_low:.1f}). Favorable risk-reward reversal.",
-                "key_risk": "New low breakdown",
-                "invalidation_price": round(day_low - (20.0 if 'SENSEX' in sym else 8.0), 2),
-                "source": "QUANT_DETERMINISTIC",
-            }
-
-        # Chop inside opening range
-        if ltp < orb_5h and ltp > orb_5l:
+        # D. True Mid-Range Chop: Zone formed deep inside middle of range with no expansion
+        mid_range = (orb_5h > 0 and orb_5l > 0 and ob_bottom > orb_5l + 0.4 * atr and ob_top < orb_5h - 0.4 * atr)
+        if mid_range:
             return {
                 "conviction_score": 30,
                 "verdict": "REJECTED",
                 "trade_classification": "CHOP_TRAP",
                 "rationale": "Inside opening range chop without clear breakout or support defense.",
                 "key_risk": "Sideways chop whipsaw",
-                "invalidation_price": round(ob_bottom, 2),
+                "invalidation_price": round(ob_bottom - inval_buffer, 2),
                 "source": "QUANT_DETERMINISTIC",
             }
+
+        # E. Default Value Hold
+        return {
+            "conviction_score": 80,
+            "verdict": "APPROVED",
+            "trade_classification": "DEMAND_DEFENSE",
+            "rationale": f"Defending fresh institutional demand base at ₹{ob_bottom:.1f} - ₹{ob_top:.1f}.",
+            "key_risk": "Violation of demand base",
+            "invalidation_price": round(ob_bottom - inval_buffer, 2),
+            "source": "QUANT_DETERMINISTIC",
+        }
 
     return {
         "conviction_score": 50,

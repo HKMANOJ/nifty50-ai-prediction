@@ -447,22 +447,21 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
             if not today_completed:
                 continue
 
-            # ── TREND REGIME GUARD & OPENING RANGE LEVELS ──
+            # ── DYNAMIC VOLATILITY & MARKET STRUCTURE METRICS ──
             orb_5h = float(today_completed[0]["high"])
             orb_5l = float(today_completed[0]["low"])
             open_price = float(today_completed[0]["open"])
             ltp = float(today_completed[-1]["close"])
-            pct_change = (ltp - open_price) / open_price * 100.0
+            pct_change = (ltp - open_price) / open_price * 100.0 if open_price > 0 else 0.0
 
-            # Dynamic session 5m ATR
+            # Dynamic session 5m ATR (Zero hardcoded fallbacks: scale from asset price if unformed)
             base_ranges = [float(c["high"]) - float(c["low"]) for c in today_completed[:min(14, len(today_completed))]]
-            atr = sum(base_ranges) / len(base_ranges) if base_ranges else (25.0 if sym_display == "Nifty" else 75.0)
+            atr = sum(base_ranges) / len(base_ranges) if base_ranges else max(ltp * 0.0035, 5.0)
+            min_expansion = 1.25 * atr
 
-            # Confirmed Trend Regimes:
-            # Bear Regime: Price below ORB 5L and down > 0.35% (or > 1.2x ATR below open)
-            is_confirmed_bear = (ltp < orb_5l) and (pct_change < -0.35 or ltp < open_price - 1.2 * atr)
-            # Bull Regime: Price above ORB 5H and up > 0.35% (or > 1.2x ATR above open)
-            is_confirmed_bull = (ltp > orb_5h) and (pct_change > +0.35 or ltp > open_price + 1.2 * atr)
+            # Dynamic Volatility Regimes (Normalized to session ATR standard deviation)
+            is_confirmed_bear = (ltp < orb_5l) and (ltp < open_price - 1.25 * atr)
+            is_confirmed_bull = (ltp > orb_5h) and (ltp > open_price + 1.25 * atr)
 
             # Extension Gate: Check whether current price is overextended from EMA20
             ext_gate = calculate_extension_gate(candles)
@@ -518,17 +517,23 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                                 sym_display, clean_time, ext_gate.get("extension_atr", 0.0))
                     continue
 
-                # TRAP GUARD: If market is in confirmed Bear Regime and zone formed below ORB 5L,
-                # this is a classic dead-cat bounce / counter-trend trap. Suppress!
-                if is_confirmed_bear and ob_top < orb_5l:
+                # TRAP GUARD: Only suppress if market is breaking down and NOT staging an institutional liquidity sweep recovery
+                is_sweep_recovery = (float(ob.get("bottom") or 0.0) <= orb_5l + 0.25 * atr) and (ltp >= ob_top)
+                if is_confirmed_bear and ob_top < orb_5l and not is_sweep_recovery:
                     logger.info("🛡️ [TRAP GUARD] Suppressed %s Demand Fresh at %s (Market in Bear Regime: %.2f%%, below ORB 5L %.1f)",
                                 sym_display, clean_time, pct_change, orb_5l)
                     continue
 
-                # CHOP GUARD: If price is inside the opening range chop without breakout, suppress!
+                # CHOP GUARD: Dynamic mid-range consolidation filter (Zero hardcoded point offsets)
                 day_high_so_far = max(c["high"] for c in today_completed)
-                if ltp < orb_5h and day_high_so_far < orb_5h + 50 and ltp > orb_5l + 100:
-                    logger.info("🛡️ [CHOP GUARD] Suppressed %s Demand Fresh at %s (Inside opening range without breakout)",
+                day_low_so_far = min(c["low"] for c in today_completed)
+                is_mid_range_chop = (
+                    ob_top < orb_5h - 0.35 * atr
+                    and float(ob.get("bottom") or 0.0) > orb_5l + 0.35 * atr
+                    and (day_high_so_far - day_low_so_far < 1.25 * atr)
+                )
+                if is_mid_range_chop:
+                    logger.info("🛡️ [CHOP GUARD] Suppressed %s Demand Fresh at %s (Inside dead-center range consolidation without volatility expansion)",
                                 sym_display, clean_time)
                     continue
 
@@ -603,7 +608,7 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
 
                 ob_bottom = float(ob.get("bottom") or 0.0)
                 ob_top = float(ob.get("top") or 0.0)
-                min_expansion = 150.0 if sym_display == "Sensex" else 50.0
+                min_expansion = 1.25 * atr
 
                 # EXTENSION GUARD: Never short at extreme oversold lows (< -1.8x ATR below EMA20)
                 if is_extended_short:
@@ -622,12 +627,13 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                 day_low_so_far = min(c["low"] for c in today_completed)
 
                 # Institutional High-Conviction Bear Patterns:
-                # 1. Bear Trend Breakdown below ORB 5L
-                c1_below_orb = ltp < orb_5l
+                # 1. Bear Trend Breakdown below ORB 5L (Guard against capitulation shakeouts near day low)
+                is_near_climax_bottom = abs(ltp - day_low_so_far) <= 0.35 * atr
+                c1_below_orb = (ltp < orb_5l) and (not is_near_climax_bottom or len(today_completed) < 30)
                 # 2. Exhaustion Top Reversal at Day High after significant expansion above ORB 5H
                 c2_top_reversal = (day_high_so_far - orb_5h >= min_expansion) and (ob_top >= day_high_so_far - 0.75 * atr)
                 # 3. Structural breakdown below EMA20 following an expansion above ORB 5H
-                c3_choch_ema = (day_high_so_far - orb_5h >= min_expansion) and (ltp < ema20) and (ltp > day_low_so_far + 150)
+                c3_choch_ema = (day_high_so_far - orb_5h >= min_expansion) and (ltp < ema20) and (ltp > day_low_so_far + 1.25 * atr)
 
                 # If none of the institutional patterns match, suppress counter-trend or opening chop shorts!
                 if not (c1_below_orb or c2_top_reversal or c3_choch_ema):
@@ -699,12 +705,14 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
     return sent_this_cycle
 
 
-def _compute_dynamic_atr(candles_1m: list[dict[str, Any]], default_pts: float = 20.0) -> float:
+def _compute_dynamic_atr(candles_1m: list[dict[str, Any]], default_pts: float = 0.0) -> float:
     """Dynamically computes the True Range of the session's active 1-minute candles.
-    Adapts thresholds to live market volatility instead of using fixed hardcoded points.
+    Adapts thresholds to live market volatility with zero hardcoded point assumptions.
     """
+    last_close = float(candles_1m[-1].get("close", 0.0)) if candles_1m else 1000.0
+    fallback_atr = default_pts if default_pts > 0 else max(last_close * 0.001, 1.0)
     if len(candles_1m) < 5:
-        return default_pts
+        return fallback_atr
     trs = [
         max(
             candles_1m[i]["high"] - candles_1m[i]["low"],
@@ -713,9 +721,9 @@ def _compute_dynamic_atr(candles_1m: list[dict[str, Any]], default_pts: float = 
         )
         for i in range(1, len(candles_1m))
     ]
-    valid = [t for t in trs if t > 0.5]
+    valid = [t for t in trs if t > 0.05]
     if not valid:
-        return default_pts
+        return fallback_atr
     return sum(valid) / len(valid)
 
 

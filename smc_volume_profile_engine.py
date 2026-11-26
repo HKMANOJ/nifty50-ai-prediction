@@ -321,7 +321,7 @@ def detect_order_blocks_and_structure(
 
                 # 2. Retest: price pulls back meaningfully into the zone (at least 15% penetration or candle body inside)
                 if not tested:
-                    retest_threshold = max(0.05, (ob_top - ob_bottom) * 0.15)
+                    retest_threshold = max(atr * 0.05, (ob_top - ob_bottom) * 0.15)
                     if (low_f <= ob_top - retest_threshold) or (close_f <= ob_top and close_f >= ob_bottom):
                         tested = True
                         tested_time = c_f["timestamp"]
@@ -399,7 +399,7 @@ def detect_order_blocks_and_structure(
 
                 # 2. Retest: price rallies meaningfully into the zone (at least 15% penetration or candle body inside)
                 if not tested:
-                    retest_threshold = max(0.05, (ob_top - ob_bottom) * 0.15)
+                    retest_threshold = max(atr * 0.05, (ob_top - ob_bottom) * 0.15)
                     if (high_f >= ob_bottom + retest_threshold) or (close_f >= ob_bottom and close_f <= ob_top):
                         tested = True
                         tested_time = c_f["timestamp"]
@@ -705,27 +705,29 @@ def generate_institutional_trade_plan(
         action = "BUY ON DEMAND PULLBACK"
         setup_name = "+OB Demand Retest & Value Area Expansion"
 
-        valid_demand = [ob for ob in demand_obs if ob["top"] <= ltp * 1.01]
+        valid_demand = [ob for ob in demand_obs if ob["top"] <= ltp + 1.25 * atr]
         if valid_demand:
             target_ob = max(valid_demand, key=lambda x: x["top"])
             entry_low = round(target_ob["bottom"], 2)
             entry_high = round(target_ob["top"], 2)
             entry_mid = round((entry_low + entry_high) / 2, 2)
-            stop_loss = round(entry_low * 0.995, 2)
+            inval_buffer = max(0.15 * atr, entry_low * 0.0005)
+            stop_loss = round(entry_low - inval_buffer, 2)
             entry_zone_str = f"₹{entry_low:,.2f} – ₹{entry_high:,.2f}"
             ob_status = target_ob.get("status") or ("Fresh" if target_ob.get("fresh") else "Tested")
             ob_source = f"{ob_status} Demand OB"
         else:
             entry_mid = round(min(ltp, poc), 2)
-            entry_low = round(entry_mid * 0.996, 2)
-            entry_high = round(entry_mid * 1.002, 2)
-            stop_loss = round(min(val, entry_low * 0.993), 2)
+            inval_buffer = max(0.15 * atr, entry_mid * 0.0005)
+            entry_low = round(entry_mid - 0.5 * inval_buffer, 2)
+            entry_high = round(entry_mid + 0.5 * inval_buffer, 2)
+            stop_loss = round(min(val, entry_low - inval_buffer), 2)
             entry_zone_str = f"₹{entry_low:,.2f} – ₹{entry_high:,.2f}"
             ob_source = "POC Confluence Zone"
 
-        risk = max(1.0, entry_mid - stop_loss)
+        risk = max(inval_buffer, entry_mid - stop_loss)
         target_1 = round(max(vah, entry_mid + risk * 1.8), 2)
-        target_2 = round(max(swing_high * 1.006, entry_mid + risk * 3.0), 2)
+        target_2 = round(max(swing_high + 0.5 * atr, entry_mid + risk * 3.0), 2)
         reward = max(1.0, target_1 - entry_mid)
         rr_num = max(1.5, round(reward / risk, 1))
         rr_ratio = f"1 : {rr_num} R"
@@ -749,20 +751,23 @@ def generate_institutional_trade_plan(
         action = "SELL ON SUPPLY RALLY"
         setup_name = "-OB Supply Rejection & Breakdown"
 
-        valid_supply = [ob for ob in supply_obs if ob["bottom"] >= ltp * 0.99]
+        valid_supply = [ob for ob in supply_obs if ob["bottom"] >= ltp - 1.25 * atr]
         if valid_supply:
             target_ob = min(valid_supply, key=lambda x: x["bottom"])
             entry_low = round(target_ob["bottom"], 2)
             entry_high = round(target_ob["top"], 2)
             entry_mid = round((entry_low + entry_high) / 2, 2)
-            stop_loss = round(entry_high * 1.005, 2)
+            inval_buffer = max(0.15 * atr, entry_high * 0.0005)
+            stop_loss = round(entry_high + inval_buffer, 2)
             entry_zone_str = f"₹{entry_low:,.2f} – ₹{entry_high:,.2f}"
             ob_status = target_ob.get("status") or ("Fresh" if target_ob.get("fresh") else "Tested")
             ob_source = f"{ob_status} Supply OB"
         else:
             entry_mid = round(max(ltp, poc), 2)
-            entry_low = round(entry_mid * 0.998, 2)
-            entry_high = round(entry_mid * 1.004, 2)
+            inval_buffer = max(0.15 * atr, entry_mid * 0.0005)
+            entry_low = round(entry_mid - 0.5 * inval_buffer, 2)
+            entry_high = round(entry_mid + 0.5 * inval_buffer, 2)
+            stop_loss = round(max(vah, entry_high + inval_buffer), 2)
             stop_loss = round(max(vah, entry_high * 1.007), 2)
             entry_zone_str = f"₹{entry_low:,.2f} – ₹{entry_high:,.2f}"
             ob_source = "POC Resistance Zone"

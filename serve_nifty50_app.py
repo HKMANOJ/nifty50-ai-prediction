@@ -1659,15 +1659,21 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             ]
             today_vp = calculate_volume_profile(today_candles)
 
+            # Dynamic session ATR for precision volatility scaling (zero hardcoded points)
+            base_ranges = [float(c["high"]) - float(c["low"]) for c in today_candles[:min(14, len(today_candles))]] if today_candles else []
+            session_atr = sum(base_ranges) / len(base_ranges) if base_ranges else max((ltp or 1000.0) * 0.0035, 5.0)
+            inval_buffer = max(0.15 * session_atr, (ltp or 1000.0) * 0.0005)
+
             # If scanner item has demand_zone / supply_zone, ensure exact match at top with dynamic tested check
             if scanner_item and scanner_item.get("is_demand_fresh") and scanner_item.get("demand_zone"):
                 m = re.findall(r"[\d\.]+", scanner_item["demand_zone"])
                 if len(m) >= 2 and today_candles:
                     dz_low = float(m[0])
                     dz_high = float(m[1])
+                    zone_match_tol = max(0.15 * session_atr, dz_high * 0.0008)
                     existing_match = None
                     for ob in today_obs:
-                        if (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND") and abs(ob.get("top", 0) - dz_high) <= 2.0:
+                        if (ob.get("type") in ("BULLISH", "+OB") or ob.get("label") == "DEMAND") and abs(ob.get("top", 0) - dz_high) <= zone_match_tol:
                             existing_match = ob
                             break
                     if existing_match:
@@ -1705,7 +1711,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                                 break
                             # 2. Retest: price enters zone
                             if not tested:
-                                retest_thresh = max(0.05, (dz_high - dz_low) * 0.15)
+                                retest_thresh = max(inval_buffer, (dz_high - dz_low) * 0.15)
                                 if (low_f <= dz_high - retest_thresh) or (close_f <= dz_high and close_f >= dz_low):
                                     tested = True
                                     tested_time = c_f["timestamp"]
@@ -1728,9 +1734,10 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 if len(m) >= 2 and today_candles:
                     sz_low = float(m[0])
                     sz_high = float(m[1])
+                    zone_match_tol = max(0.15 * session_atr, sz_high * 0.0008)
                     existing_match = None
                     for ob in today_obs:
-                        if (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY")) and abs(ob.get("top", 0) - sz_high) <= 2.0:
+                        if (ob.get("type") in ("BEARISH", "-OB") or ob.get("label") in ("BEAR OB", "SUPPLY")) and abs(ob.get("top", 0) - sz_high) <= zone_match_tol:
                             existing_match = ob
                             break
                     if existing_match:
@@ -1927,25 +1934,19 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             if scanner_item:
                 entry_val = float(scanner_item.get("entry") or ((primary_ob["top"] if is_bull_side else primary_ob["bottom"]) if primary_ob else ltp))
                 sl_val = (
-                    round(primary_ob["bottom"] * 0.995, 2)
+                    round(primary_ob["bottom"] - inval_buffer, 2)
                     if (primary_ob and is_bull_side)
                     else (
-                        round(primary_ob["top"] * 1.005, 2)
+                        round(primary_ob["top"] + inval_buffer, 2)
                         if (primary_ob and not is_bull_side)
-                        else float(scanner_item.get("stop_loss") or (entry_val * 0.993 if is_bull_side else entry_val * 1.007))
+                        else float(scanner_item.get("stop_loss") or (entry_val - session_atr if is_bull_side else entry_val + session_atr))
                     )
                 )
-                t1_val = (
-                    round(max(entry_val * 1.015, primary_ob["top"] * 1.015), 2)
-                    if (primary_ob and is_bull_side)
-                    else (
-                        round(min(entry_val * 0.985, primary_ob["bottom"] * 0.985), 2)
-                        if (primary_ob and not is_bull_side)
-                        else float(scanner_item.get("target") or (entry_val * 1.015 if is_bull_side else entry_val * 0.985))
-                    )
-                )
-                t2_val = round(entry_val * 1.030 if is_bull_side else entry_val * 0.970, 2)
-                be_val = round(entry_val * 1.008 if is_bull_side else entry_val * 0.992, 2)
+                calc_risk = max(inval_buffer, abs(entry_val - sl_val))
+                t1_val = round(entry_val + (1.8 * calc_risk if is_bull_side else -1.8 * calc_risk), 2)
+                t2_val = round(entry_val + (3.0 * calc_risk if is_bull_side else -3.0 * calc_risk), 2)
+                be_val = round(entry_val + (0.8 * calc_risk if is_bull_side else -0.8 * calc_risk), 2)
+                rr_str = f"1 : {round(abs(t1_val - entry_val) / max(0.01, calc_risk), 1)} R/R"
 
                 if is_df:
                     action_str = "BUY ON DEMAND BREAKOUT"
@@ -1977,7 +1978,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     "target_1": round(t1_val, 2),
                     "target_2": t2_val,
                     "be_lock": be_val,
-                    "rr_ratio": "1 : 3+ Risk/Reward",
+                    "rr_ratio": rr_str,
                     "is_demand_fresh": is_df,
                     "is_demand_tested": is_dt,
                     "is_bear_ob_fresh": is_bf,
@@ -2011,10 +2012,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                         trade_plan["action"] = "BUY ON BREAKOUT"
 
                     entry_val = primary_ob["top"] if primary_ob else ltp
-                    sl_val = round(primary_ob["bottom"] * 0.995, 2) if primary_ob else round(ltp * 0.993, 2)
-                    t1_val = round(max(entry_val * 1.015, (primary_ob["top"] * 1.015) if primary_ob else (entry_val * 1.015)), 2)
-                    t2_val = round(max(entry_val * 1.030, (primary_ob["top"] * 1.030) if primary_ob else (entry_val * 1.030)), 2)
-                    be_val = round(entry_val * 1.008, 2)
+                    sl_val = round(primary_ob["bottom"] - inval_buffer, 2) if primary_ob else round(ltp - session_atr, 2)
+                    calc_risk = max(inval_buffer, abs(entry_val - sl_val))
+                    t1_val = round(entry_val + 1.8 * calc_risk, 2)
+                    t2_val = round(entry_val + 3.0 * calc_risk, 2)
+                    be_val = round(entry_val + 0.8 * calc_risk, 2)
+                    rr_str = f"1 : {round(abs(t1_val - entry_val) / max(0.01, calc_risk), 1)} R/R"
 
                     trade_plan["entry"] = round(entry_val, 2)
                     trade_plan["entry_zone"] = active_zone_str or f"₹{entry_val:.2f}"
@@ -2023,7 +2026,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     trade_plan["target_1"] = t1_val
                     trade_plan["target_2"] = t2_val
                     trade_plan["be_lock"] = be_val
-                    trade_plan["rr_ratio"] = "1 : 3+ Risk/Reward"
+                    trade_plan["rr_ratio"] = rr_str
                 else:
                     trade_plan["supply_zone"] = active_zone_str
                     trade_plan["supply_zone_time"] = active_time_str
@@ -2041,10 +2044,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                         trade_plan["action"] = "SELL ON SUPPLY RALLY"
 
                     entry_val = primary_ob["bottom"] if primary_ob else ltp
-                    sl_val = round(primary_ob["top"] * 1.005, 2) if primary_ob else round(ltp * 1.007, 2)
-                    t1_val = round(min(entry_val * 0.985, (primary_ob["bottom"] * 0.985) if primary_ob else (entry_val * 0.985)), 2)
-                    t2_val = round(min(entry_val * 0.970, (primary_ob["bottom"] * 0.970) if primary_ob else (entry_val * 0.970)), 2)
-                    be_val = round(entry_val * 0.992, 2)
+                    sl_val = round(primary_ob["top"] + inval_buffer, 2) if primary_ob else round(ltp + session_atr, 2)
+                    calc_risk = max(inval_buffer, abs(entry_val - sl_val))
+                    t1_val = round(entry_val - 1.8 * calc_risk, 2)
+                    t2_val = round(entry_val - 3.0 * calc_risk, 2)
+                    be_val = round(entry_val - 0.8 * calc_risk, 2)
+                    rr_str = f"1 : {round(abs(t1_val - entry_val) / max(0.01, calc_risk), 1)} R/R"
 
                     trade_plan["entry"] = round(entry_val, 2)
                     trade_plan["entry_zone"] = active_zone_str or f"₹{entry_val:.2f}"
@@ -2053,7 +2058,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                     trade_plan["target_1"] = t1_val
                     trade_plan["target_2"] = t2_val
                     trade_plan["be_lock"] = be_val
-                    trade_plan["rr_ratio"] = "1 : 3+ Risk/Reward"
+                    trade_plan["rr_ratio"] = rr_str
 
                 if active_zone_str:
                     ob_desc = f"{'Fresh' if (is_df or is_bf) else 'Tested'} {'Demand OB' if is_bull_side else 'Bear OB'}"
