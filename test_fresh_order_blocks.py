@@ -183,6 +183,29 @@ class FreshOrderBlockTests(unittest.TestCase):
             self.assertFalse(notify.send_fresh_ob_alert({"symbol": "NIFTY", "status": "Tested", "demand_fresh_time": "01:30 PM"}, test=True))
             self.assertFalse(notify.send_fresh_ob_alert({"symbol": "SENSEX", "mitigated": True, "demand_fresh_time": "01:30 PM"}, test=True))
 
+    def test_telegram_conviction_gate_requires_92_or_above(self):
+        import gemini_evaluator
+        import notify
+
+        self.assertEqual(notify.MIN_ALERT_CONVICTION, 92)
+        common = dict(
+            sym_display="Nifty", clean_time="10:15 AM", setup_side="LONG",
+            ltp=25900.0, open_price=25870.0, day_high=25910.0, day_low=25735.0,
+            orb_5h=25880.0, orb_5l=25770.0, ema20=25840.0, atr=55.0,
+            ob_top=25855.0, ob_bottom=25807.0, extension_atr=1.0,
+            is_extended=False, delta_bar=0.0,
+        )
+        cases = [
+            ({"verdict": "APPROVED", "conviction_score": 91}, False),
+            ({"verdict": "APPROVED", "conviction_score": 90}, False),
+            ({"verdict": "REJECTED", "conviction_score": 95}, False),
+            ({"verdict": "APPROVED", "conviction_score": 92}, True),
+            ({"verdict": "APPROVED", "conviction_score": 95}, True),
+        ]
+        for verdict_payload, expected in cases:
+            with self.subTest(verdict_payload=verdict_payload):
+                with patch.object(gemini_evaluator, "evaluate_trade_with_gemini", return_value=verdict_payload):
+                    self.assertEqual(notify._passes_conviction_gate(**common), expected)
 
 
 if __name__ == "__main__":

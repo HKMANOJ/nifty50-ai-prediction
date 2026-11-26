@@ -367,6 +367,68 @@ def send_fresh_ob_alert(item: dict, sector: str = "", is_pe: bool = False, force
         return False
 
 
+MIN_ALERT_CONVICTION = 92
+
+
+def _passes_conviction_gate(
+    *,
+    sym_display: str,
+    clean_time: str,
+    setup_side: str,
+    ltp: float,
+    open_price: float,
+    day_high: float,
+    day_low: float,
+    orb_5h: float,
+    orb_5l: float,
+    ema20: float,
+    atr: float,
+    ob_top: float,
+    ob_bottom: float,
+    extension_atr: float,
+    is_extended: bool,
+    delta_bar: float,
+    min_conviction: int = MIN_ALERT_CONVICTION,
+) -> bool:
+    """Evaluate setup conviction with Gemini AI (deterministic fallback) and require >= min_conviction."""
+    from gemini_evaluator import evaluate_trade_deterministic, evaluate_trade_with_gemini
+
+    snapshot = {
+        "symbol": sym_display,
+        "time_ist": clean_time,
+        "ltp": ltp,
+        "day_open": open_price,
+        "day_high": day_high,
+        "day_low": day_low,
+        "orb_5h": orb_5h,
+        "orb_5l": orb_5l,
+        "ema20": round(ema20, 2),
+        "atr_5m": round(atr, 2),
+        "setup_side": setup_side,
+        "ob_top": ob_top,
+        "ob_bottom": ob_bottom,
+        "extension_atr": extension_atr,
+        "is_extended": is_extended,
+        "order_flow": {"delta_bar": delta_bar},
+    }
+    try:
+        ai_res = evaluate_trade_with_gemini(snapshot, use_api=True)
+    except Exception as ai_exc:
+        logger.debug("Gemini check failed (%s); falling back to deterministic score", ai_exc)
+        ai_res = evaluate_trade_deterministic(snapshot)
+
+    score = int(ai_res.get("conviction_score") or 0)
+    verdict = str(ai_res.get("verdict") or "REJECTED").upper()
+    label = "Demand Fresh" if setup_side == "LONG" else "Bear OB"
+    if verdict == "REJECTED" or score < min_conviction:
+        logger.info(
+            "🛡️ [CONVICTION GATE >=%d] Suppressed %s %s at %s (Verdict: %s, Score: %d/100, Reason: %s)",
+            min_conviction, sym_display, label, clean_time, verdict, score, ai_res.get("rationale", ""),
+        )
+        return False
+    return True
+
+
 def _has_recent_conflicting_alert(sent_keys: set[str], sym_display: str, opp_type: str, curr_dt: datetime, min_separation_minutes: int = 25) -> bool:
     """Check if an opposite-directional alert was sent recently within min_separation_minutes."""
     prefix = f"{sym_display}_{opp_type}_FRESH_"
@@ -491,6 +553,14 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
             ]
 
             sent_keys = _load_sent_keys()
+            closes = [c["close"] for c in today_completed]
+            alpha = 2.0 / 21.0
+            ema20 = closes[0]
+            for p in closes:
+                ema20 = alpha * p + (1.0 - alpha) * ema20
+            day_high_so_far = max(c["high"] for c in today_completed)
+            day_low_so_far = min(c["low"] for c in today_completed)
+            delta_bar = float(today_completed[-1].get("delta") or 0.0)
 
             # 1. EVALUATE DEMAND FRESH CANDIDATES
             for ob in demand_fresh:
@@ -510,6 +580,7 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                     continue
 
                 ob_top = float(ob.get("top") or 0.0)
+                ob_bottom = float(ob.get("bottom") or 0.0)
 
                 # EXTENSION GUARD: Never buy at extreme overextended highs (> 1.8x ATR above EMA20)
                 if is_extended_long:
@@ -518,18 +589,16 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                     continue
 
                 # TRAP GUARD: Only suppress if market is breaking down and NOT staging an institutional liquidity sweep recovery
-                is_sweep_recovery = (float(ob.get("bottom") or 0.0) <= orb_5l + 0.25 * atr) and (ltp >= ob_top)
+                is_sweep_recovery = (ob_bottom <= orb_5l + 0.25 * atr) and (ltp >= ob_top)
                 if is_confirmed_bear and ob_top < orb_5l and not is_sweep_recovery:
                     logger.info("🛡️ [TRAP GUARD] Suppressed %s Demand Fresh at %s (Market in Bear Regime: %.2f%%, below ORB 5L %.1f)",
                                 sym_display, clean_time, pct_change, orb_5l)
                     continue
 
                 # CHOP GUARD: Dynamic mid-range consolidation filter (Zero hardcoded point offsets)
-                day_high_so_far = max(c["high"] for c in today_completed)
-                day_low_so_far = min(c["low"] for c in today_completed)
                 is_mid_range_chop = (
                     ob_top < orb_5h - 0.35 * atr
-                    and float(ob.get("bottom") or 0.0) > orb_5l + 0.35 * atr
+                    and ob_bottom > orb_5l + 0.35 * atr
                     and (day_high_so_far - day_low_so_far < 1.25 * atr)
                 )
                 if is_mid_range_chop:
@@ -544,38 +613,25 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                                     sym_display, clean_time)
                         continue
 
-                # GEMINI AI AUDITOR (Conviction check >= 75)
-                try:
-                    from gemini_evaluator import evaluate_trade_with_gemini
-                    closes = [c["close"] for c in today_completed]
-                    alpha = 2.0 / 21
-                    ema20 = closes[0]
-                    for p in closes: ema20 = alpha * p + (1.0 - alpha) * ema20
-                    snapshot = {
-                        "symbol": sym_display,
-                        "time_ist": clean_time,
-                        "ltp": ltp,
-                        "day_open": open_price,
-                        "day_high": day_high_so_far,
-                        "day_low": min(c["low"] for c in today_completed),
-                        "orb_5h": orb_5h,
-                        "orb_5l": orb_5l,
-                        "ema20": round(ema20, 2),
-                        "atr_5m": round(atr, 2),
-                        "setup_side": "LONG",
-                        "ob_top": ob_top,
-                        "ob_bottom": float(ob.get("bottom") or 0.0),
-                        "extension_atr": ext_gate.get("extension_atr", 0.0),
-                        "is_extended": is_extended_long,
-                        "order_flow": {"delta_bar": today_completed[-1].get("delta") or 0.0},
-                    }
-                    ai_res = evaluate_trade_with_gemini(snapshot, use_api=True)
-                    if ai_res.get("verdict") == "REJECTED" and ai_res.get("conviction_score", 100) < 75:
-                        logger.info("🛡️ [GEMINI AI] Suppressed %s Demand Fresh at %s (Score: %d/100, Reason: %s)",
-                                    sym_display, clean_time, ai_res.get("conviction_score", 0), ai_res.get("rationale", ""))
-                        continue
-                except Exception as ai_exc:
-                    logger.debug("Gemini check bypassed: %s", ai_exc)
+                if not _passes_conviction_gate(
+                    sym_display=sym_display,
+                    clean_time=clean_time,
+                    setup_side="LONG",
+                    ltp=ltp,
+                    open_price=open_price,
+                    day_high=day_high_so_far,
+                    day_low=day_low_so_far,
+                    orb_5h=orb_5h,
+                    orb_5l=orb_5l,
+                    ema20=ema20,
+                    atr=atr,
+                    ob_top=ob_top,
+                    ob_bottom=ob_bottom,
+                    extension_atr=ext_gate.get("extension_atr", 0.0),
+                    is_extended=is_extended_long,
+                    delta_bar=delta_bar,
+                ):
+                    continue
 
                 item = {
                     "symbol": sym_display,
@@ -616,16 +672,6 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                                 sym_display, clean_time, ext_gate.get("extension_atr", 0.0))
                     continue
 
-                # Calculate 20 EMA from today's completed candles
-                closes = [c["close"] for c in today_completed]
-                alpha = 2.0 / (20 + 1)
-                ema20 = closes[0]
-                for p in closes:
-                    ema20 = alpha * p + (1.0 - alpha) * ema20
-
-                day_high_so_far = max(c["high"] for c in today_completed)
-                day_low_so_far = min(c["low"] for c in today_completed)
-
                 # Institutional High-Conviction Bear Patterns:
                 # 1. Bear Trend Breakdown below ORB 5L (Guard against capitulation shakeouts near day low)
                 is_near_climax_bottom = abs(ltp - day_low_so_far) <= 0.35 * atr
@@ -657,34 +703,25 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                                     sym_display, clean_time)
                         continue
 
-                # GEMINI AI AUDITOR (Conviction check >= 75)
-                try:
-                    from gemini_evaluator import evaluate_trade_with_gemini
-                    snapshot = {
-                        "symbol": sym_display,
-                        "time_ist": clean_time,
-                        "ltp": ltp,
-                        "day_open": open_price,
-                        "day_high": day_high_so_far,
-                        "day_low": day_low_so_far,
-                        "orb_5h": orb_5h,
-                        "orb_5l": orb_5l,
-                        "ema20": round(ema20, 2),
-                        "atr_5m": round(atr, 2),
-                        "setup_side": "SHORT",
-                        "ob_top": ob_top,
-                        "ob_bottom": ob_bottom,
-                        "extension_atr": ext_gate.get("extension_atr", 0.0),
-                        "is_extended": is_extended_short,
-                        "order_flow": {"delta_bar": today_completed[-1].get("delta") or 0.0},
-                    }
-                    ai_res = evaluate_trade_with_gemini(snapshot, use_api=True)
-                    if ai_res.get("verdict") == "REJECTED" and ai_res.get("conviction_score", 100) < 75:
-                        logger.info("🛡️ [GEMINI AI] Suppressed %s Bear OB at %s (Score: %d/100, Reason: %s)",
-                                    sym_display, clean_time, ai_res.get("conviction_score", 0), ai_res.get("rationale", ""))
-                        continue
-                except Exception as ai_exc:
-                    logger.debug("Gemini check bypassed: %s", ai_exc)
+                if not _passes_conviction_gate(
+                    sym_display=sym_display,
+                    clean_time=clean_time,
+                    setup_side="SHORT",
+                    ltp=ltp,
+                    open_price=open_price,
+                    day_high=day_high_so_far,
+                    day_low=day_low_so_far,
+                    orb_5h=orb_5h,
+                    orb_5l=orb_5l,
+                    ema20=ema20,
+                    atr=atr,
+                    ob_top=ob_top,
+                    ob_bottom=ob_bottom,
+                    extension_atr=ext_gate.get("extension_atr", 0.0),
+                    is_extended=is_extended_short,
+                    delta_bar=delta_bar,
+                ):
+                    continue
 
                 item = {
                     "symbol": sym_display,
