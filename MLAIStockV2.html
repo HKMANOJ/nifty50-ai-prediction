@@ -3133,6 +3133,7 @@
       if (!data || !data.fresh_ob) return;
       const ob = data.fresh_ob;
       if (ob.status !== "Fresh") return;
+      if (ob.conviction_ok === false) return;
 
       const timeStr = ob.formation_time_str || "";
       const baseKey = `${key}_${ob.label || ob.type}_${timeStr}_${ob.time || ''}`;
@@ -3265,17 +3266,6 @@
 
         playBellRangSound();
         showStickyToast(row, isBreakdown);
-
-        // Instant Telegram Push Notification
-        fetch('/api/telegram/alert', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            item: row,
-            sector: (typeof getSectorBadgeData === 'function') ? (getSectorBadgeData(row.symbol, !isBreakdown)?.name || '') : '',
-            is_pe: isBreakdown,
-          })
-        }).catch(err => console.warn('Telegram dispatch error:', err));
 
         // Acknowledge alert delivery to backend state machine
         if (row.alert_event_id) {

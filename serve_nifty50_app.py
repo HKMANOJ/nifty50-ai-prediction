@@ -54,6 +54,7 @@ STOCK_SUGGESTION_SNAPSHOT = (
     if _scanner_data_dir else DEFAULT_STOCK_SUGGESTION_SNAPSHOT
 )
 REFRESH_LOCK = threading.Lock()
+_INDEX_ALERT_LOCK = threading.Lock()
 
 # Debounce: collapse a burst of refresh requests (many tabs, reconnects, button
 # spam) into at most one real scan per MIN_SCAN_INTERVAL. Between scans, callers
@@ -65,6 +66,88 @@ _INDEX_QUOTE_LOCK = threading.Lock()
 _INDEX_QUOTES: dict[str, Any] = {"ts": 0.0, "quotes": {}}
 _INDEX_OB_CACHE: dict[str, Any] = {"ts": 0.0, "obs": {}}
 _SERVE_CANDLE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _apply_index_regime(quote: dict[str, Any]) -> None:
+    """Populate unified index regime classification and choppy shield flag on a quote dict."""
+    p_chg = float(quote.get("percent_change") or 0.0)
+    if -0.20 <= p_chg <= 0.20:
+        quote["regime"] = "SIDEWAYS"
+        quote["regime_label"] = "SIDEWAYS (CHOPPY)"
+        quote["choppy_shield"] = True
+    elif p_chg > 0.20:
+        quote["regime"] = "BULLISH"
+        quote["regime_label"] = "BULLISH TREND"
+        quote["choppy_shield"] = False
+    else:
+        quote["regime"] = "BEARISH"
+        quote["regime_label"] = "BEARISH TREND"
+        quote["choppy_shield"] = False
+
+
+def _evaluate_index_ob_conviction(candles: list[dict[str, Any]], today_completed: list[dict[str, Any]], sym_key: str, ob: dict[str, Any], f_time: Any) -> dict[str, Any]:
+    """Compute unified structural conviction metadata for UI and index alert gating."""
+    from stock_suggestion_index import INDIA_TZ
+    from smc_volume_profile_engine import (
+        calculate_extension_gate,
+        calculate_multi_timeframe_matrix,
+        calculate_rolling_atr,
+    )
+    from gemini_evaluator import evaluate_trade_deterministic
+    from notify import MIN_ALERT_CONVICTION
+
+    ltp = float(candles[-1]["close"])
+    open_p = float(today_completed[0]["open"]) if today_completed else ltp
+    orb_5h = float(today_completed[0]["high"]) if today_completed else ltp
+    orb_5l = float(today_completed[0]["low"]) if today_completed else ltp
+    day_high = max(float(c["high"]) for c in today_completed) if today_completed else ltp
+    day_low = min(float(c["low"]) for c in today_completed) if today_completed else ltp
+
+    ext_gate = calculate_extension_gate(candles)
+    ema20 = float(ext_gate.get("ema20") or 0.0)
+    atr = calculate_rolling_atr(candles, period=14)
+    if atr <= 0:
+        atr = max(ltp * 0.0035, 5.0)
+    mtf_overall = str(calculate_multi_timeframe_matrix(candles).get("overall") or "").upper()
+    above_5m_ema20 = ltp >= ema20 if ema20 > 0 else True
+    setup_side = "LONG" if str(ob.get("type") or "").upper() == "BULLISH" else "SHORT"
+    dt_str = datetime.fromtimestamp(f_time, tz=INDIA_TZ).strftime("%I:%M %p").lstrip("0")
+
+    snapshot = {
+        "symbol": "Nifty" if "NIFTY" in sym_key.upper() else "Sensex",
+        "time_ist": dt_str,
+        "ltp": ltp,
+        "day_open": open_p,
+        "day_high": day_high,
+        "day_low": day_low,
+        "orb_5h": orb_5h,
+        "orb_5l": orb_5l,
+        "ema20": round(ema20, 2),
+        "atr_5m": round(atr, 2),
+        "atr_rolling": round(atr, 2),
+        "setup_side": setup_side,
+        "ob_top": float(ob.get("top") or 0.0),
+        "ob_bottom": float(ob.get("bottom") or 0.0),
+        "extension_atr": float(ext_gate.get("extension_atr") or 0.0),
+        "signed_extension_atr": float(
+            ext_gate.get("signed_extension_atr")
+            if ext_gate.get("signed_extension_atr") is not None
+            else (ext_gate.get("extension_atr") or 0.0)
+        ),
+        "extension_side": str(ext_gate.get("side") or "").upper(),
+        "mtf_overall": mtf_overall,
+        "above_5m_ema20": above_5m_ema20,
+        "is_extended": bool(ext_gate.get("is_extended")),
+        "order_flow": {"delta_bar": float(today_completed[-1].get("delta") or 0.0) if today_completed else 0.0},
+    }
+    res = evaluate_trade_deterministic(snapshot)
+    score = int(res.get("conviction_score") or 0)
+    verdict = str(res.get("verdict") or "REJECTED").upper()
+    return {
+        "conviction_ok": (verdict != "REJECTED" and score >= MIN_ALERT_CONVICTION),
+        "conviction_score": score,
+        "conviction_verdict": verdict,
+    }
 
 
 def _get_cached_index_fresh_ob(symbol: str) -> dict[str, Any] | None:
@@ -99,6 +182,11 @@ def _get_cached_index_fresh_ob(symbol: str) -> dict[str, Any] | None:
                 if latest:
                     f_time = latest.get("formation_time") or latest.get("time")
                     dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
+                    conv = {"conviction_ok": True, "conviction_score": 0, "conviction_verdict": "UNKNOWN"}
+                    try:
+                        conv = _evaluate_index_ob_conviction(candles, today_completed, sym_key, latest, f_time)
+                    except Exception:
+                        pass
                     new_obs[sym_key] = {
                         "type": latest.get("type"),
                         "label": latest.get("label"),
@@ -108,6 +196,7 @@ def _get_cached_index_fresh_ob(symbol: str) -> dict[str, Any] | None:
                         "time": latest.get("time"),
                         "formation_time": f_time,
                         "formation_time_str": dt.strftime("%I:%M %p"),
+                        **conv,
                     }
             except Exception:
                 pass
@@ -127,19 +216,7 @@ def _attach_fresh_ob_to_index_context(payload: dict[str, Any]) -> None:
             if name in idx_ctx and isinstance(idx_ctx[name], dict):
                 idx_ctx[name] = dict(idx_ctx[name])
                 idx_ctx[name]["fresh_ob"] = _get_cached_index_fresh_ob(name)
-                p_chg = float(idx_ctx[name].get("percent_change") or 0.0)
-                if -0.20 <= p_chg <= 0.20:
-                    idx_ctx[name]["regime"] = "SIDEWAYS"
-                    idx_ctx[name]["regime_label"] = "SIDEWAYS (CHOPPY)"
-                    idx_ctx[name]["choppy_shield"] = True
-                elif p_chg > 0.20:
-                    idx_ctx[name]["regime"] = "BULLISH"
-                    idx_ctx[name]["regime_label"] = "BULLISH TREND"
-                    idx_ctx[name]["choppy_shield"] = False
-                else:
-                    idx_ctx[name]["regime"] = "BEARISH"
-                    idx_ctx[name]["regime_label"] = "BEARISH TREND"
-                    idx_ctx[name]["choppy_shield"] = False
+                _apply_index_regime(idx_ctx[name])
 
 
 
@@ -307,13 +384,9 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                                         print(f"[WS BROADCAST ERROR] {bc_err}")
 
                             # Dispatch real-time NIFTY and SENSEX Demand Fresh alerts to Telegram
-                            try:
-                                import notify
-                                dispatched = notify.dispatch_new_fresh_alerts(scan_payload)
-                                if dispatched:
-                                    print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Dispatched index alerts: {dispatched}")
-                            except Exception as notify_err:
-                                print(f"[AUTO-SCANNER TELEGRAM ERROR] {notify_err}")
+                            dispatched = _dispatch_index_alerts_safe(scan_payload)
+                            if dispatched:
+                                print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [AUTO-SCANNER] Dispatched index alerts: {dispatched}")
                         except Exception as scan_err:
                             scanner_trace.submit_health("scheduled_scan_failed", attempt_id=attempt_id,
                                                         error_type=type(scan_err).__name__)
@@ -350,13 +423,51 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
             except Exception as e:
                 print(f"[AUTO-SCANNER LOOP EXCEPTION] {e}")
                 time.sleep(30)
-            except Exception as e:
-                print(f"[AUTO-SCANNER LOOP EXCEPTION] {e}")
-                time.sleep(30)
 
     scanner_thread = threading.Thread(target=_loop, name="BackgroundAutoScanner", daemon=True)
     scanner_thread.start()
     print(f"[AUTO-SCANNER] Background 5-min auto-scanner thread active (interval: {interval_seconds}s).")
+
+
+def _dispatch_index_alerts_safe(payload: dict | None = None) -> list[str]:
+    """Thread-safe wrapper around notify.dispatch_new_fresh_alerts decoupled from REFRESH_LOCK."""
+    with _INDEX_ALERT_LOCK:
+        try:
+            import notify
+            return notify.dispatch_new_fresh_alerts(payload)
+        except Exception as notify_err:
+            print(f"[INDEX-ALERT TELEGRAM ERROR] {notify_err}", file=sys.stderr)
+            return []
+
+
+def start_fast_index_alert_scanner(interval_seconds: int = 300) -> None:
+    """Dedicated 5-minute NIFTY/SENSEX Telegram alert loop decoupled from the heavy 200-stock subprocess."""
+    def _fast_loop() -> None:
+        time.sleep(3)
+        while True:
+            try:
+                now_ist = get_ist_now()
+                current_minutes = now_ist.hour * 60 + now_ist.minute
+                if is_ist_market_hours(now_ist) and current_minutes <= 14 * 60 + 45:
+                    dispatched = _dispatch_index_alerts_safe()
+                    if dispatched:
+                        print(f"[{get_ist_now().strftime('%H:%M:%S IST')}] [FAST-INDEX-ALERTS] Dispatched index alerts: {dispatched}")
+                    sleep_secs, _ = compute_seconds_until_next_5min_grid(interval_seconds=interval_seconds, buffer_seconds=3)
+                    time.sleep(sleep_secs)
+                elif is_ist_market_hours(now_ist):
+                    time.sleep(60)
+                else:
+                    market_open_today = now_ist.replace(hour=9, minute=30, second=3, microsecond=0)
+                    if now_ist.weekday() < 5 and now_ist < market_open_today:
+                        time.sleep(min(60.0, max(5.0, (market_open_today - now_ist).total_seconds())))
+                    else:
+                        time.sleep(30)
+            except Exception as exc:
+                print(f"[FAST-INDEX-ALERTS LOOP EXCEPTION] {exc}", file=sys.stderr)
+                time.sleep(30)
+
+    threading.Thread(target=_fast_loop, name="FastIndexAlertScanner", daemon=True).start()
+    print(f"[FAST-INDEX-ALERTS] Dedicated 5-min index alert loop active (interval: {interval_seconds}s).")
 
 
 def start_instant_surge_scanner(interval_seconds: int = 30) -> None:
@@ -930,19 +1041,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             if name in quotes and isinstance(quotes[name], dict):
                 quotes[name] = dict(quotes[name])
                 quotes[name]["fresh_ob"] = _get_cached_index_fresh_ob(name)
-                p_chg = float(quotes[name].get("percent_change") or 0.0)
-                if -0.20 <= p_chg <= 0.20:
-                    quotes[name]["regime"] = "SIDEWAYS"
-                    quotes[name]["regime_label"] = "SIDEWAYS (CHOPPY)"
-                    quotes[name]["choppy_shield"] = True
-                elif p_chg > 0.20:
-                    quotes[name]["regime"] = "BULLISH"
-                    quotes[name]["regime_label"] = "BULLISH TREND"
-                    quotes[name]["choppy_shield"] = False
-                else:
-                    quotes[name]["regime"] = "BEARISH"
-                    quotes[name]["regime_label"] = "BEARISH TREND"
-                    quotes[name]["choppy_shield"] = False
+                _apply_index_regime(quotes[name])
 
         self._send_json(HTTPStatus.OK, {"ok": True, "index_context": quotes})
 
@@ -1344,11 +1443,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                         broadcast_scanner_update_sync(payload)
                     except Exception:
                         pass
-                    try:
-                        import notify
-                        notify.dispatch_new_fresh_alerts(payload)
-                    except Exception as exc:
-                        print(f"[telegram] dispatch error: {exc}", file=sys.stderr)
+                    _dispatch_index_alerts_safe(payload)
                 return HTTPStatus.OK, payload
 
             # Empty / failed scan: never broadcast it, never return blank -
@@ -2527,8 +2622,9 @@ def main() -> None:
     except Exception as exc:
         print("[scanner-retention] worker_start_failed", file=sys.stderr)
     
-    # Launch autonomous 5-minute background auto-scanner
+    # Launch autonomous 5-minute background auto-scanner and decoupled index alert dispatcher
     start_background_auto_scanner(interval_seconds=300)
+    start_fast_index_alert_scanner(interval_seconds=300)
     # Launch autonomous 1-minute real-time demand surge scanner
     # start_instant_surge_scanner(interval_seconds=30)  # Disabled: 1-minute surges removed to eliminate noise and whipsaws
 

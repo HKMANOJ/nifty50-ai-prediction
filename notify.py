@@ -31,7 +31,10 @@ if not logger.handlers:
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
 ROOT = Path(__file__).resolve().parent
 SENT_STORE_PATH = ROOT / "inputs" / "telegram_sent_alerts.json"
+PENDING_STORE_PATH = ROOT / "inputs" / "telegram_pending_alerts.json"
+DUAL_INDEX_WINDOW_SECONDS = 15 * 60
 _DISPATCH_LOCK = threading.Lock()
+_PENDING_LOCK = threading.Lock()
 _PG_TABLE_CHECKED = False
 
 
@@ -388,6 +391,10 @@ def _passes_conviction_gate(
     extension_atr: float,
     is_extended: bool,
     delta_bar: float,
+    signed_extension_atr: float | None = None,
+    extension_side: str = "",
+    mtf_overall: str = "",
+    above_5m_ema20: bool | None = None,
     min_conviction: int = MIN_ALERT_CONVICTION,
 ) -> bool:
     """Evaluate setup conviction with Gemini AI (deterministic fallback) and require >= min_conviction."""
@@ -404,10 +411,15 @@ def _passes_conviction_gate(
         "orb_5l": orb_5l,
         "ema20": round(ema20, 2),
         "atr_5m": round(atr, 2),
+        "atr_rolling": round(atr, 2),
         "setup_side": setup_side,
         "ob_top": ob_top,
         "ob_bottom": ob_bottom,
         "extension_atr": extension_atr,
+        "signed_extension_atr": extension_atr if signed_extension_atr is None else signed_extension_atr,
+        "extension_side": extension_side,
+        "mtf_overall": mtf_overall,
+        "above_5m_ema20": (ltp >= ema20 if ema20 > 0 else True) if above_5m_ema20 is None else above_5m_ema20,
         "is_extended": is_extended,
         "order_flow": {"delta_bar": delta_bar},
     }
@@ -447,15 +459,88 @@ def _has_recent_conflicting_alert(sent_keys: set[str], sym_display: str, opp_typ
     return False
 
 
+def _load_pending_candidates(session_date: str) -> dict[str, dict[str, Any]]:
+    """Load unexpired single-index pending confirmations for today's session."""
+    if not PENDING_STORE_PATH.is_file():
+        return {}
+    try:
+        data = json.loads(PENDING_STORE_PATH.read_text(encoding="utf-8"))
+        if data.get("session_date") == session_date and isinstance(data.get("candidates"), dict):
+            return dict(data["candidates"])
+    except Exception:
+        pass
+    return {}
+
+
+def _save_pending_candidates(session_date: str, candidates: dict[str, dict[str, Any]]) -> None:
+    """Persist pending single-index candidates waiting on partner confirmation."""
+    try:
+        PENDING_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        PENDING_STORE_PATH.write_text(
+            json.dumps({"session_date": session_date, "candidates": candidates}, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning("Failed to persist pending index confirmations: %s", exc)
+
+
+def _resolve_dual_index_candidates(
+    cycle_candidates: list[dict[str, Any]],
+    sent_keys: set[str],
+    now_ist: datetime,
+) -> list[dict[str, Any]]:
+    """Pair qualifying NIFTY and SENSEX signals agreeing in direction within 15 minutes."""
+    session_date = now_ist.date().isoformat()
+    now_ts = now_ist.timestamp()
+
+    with _PENDING_LOCK:
+        pending = _load_pending_candidates(session_date)
+
+        # Prune stale (> 15 min) or already-dispatched pending candidates
+        cleaned: dict[str, dict[str, Any]] = {}
+        for p_key, entry in pending.items():
+            q_ts = float(entry.get("queued_ts") or 0.0)
+            age = now_ts - q_ts
+            if entry.get("key") in sent_keys:
+                continue
+            if -60.0 <= age <= DUAL_INDEX_WINDOW_SECONDS:
+                cleaned[p_key] = entry
+
+        # Merge newly passing candidates from this scan cycle
+        for cand in cycle_candidates:
+            p_key = f"{cand['side']}:{cand['sym']}"
+            cleaned[p_key] = cand
+
+        confirmed: list[dict[str, Any]] = []
+        for side in ("LONG", "SHORT"):
+            n_key = f"{side}:Nifty"
+            s_key = f"{side}:Sensex"
+            if n_key in cleaned and s_key in cleaned:
+                n_entry = cleaned[n_key]
+                s_entry = cleaned[s_key]
+                gap = abs(float(n_entry["queued_ts"]) - float(s_entry["queued_ts"]))
+                if gap <= DUAL_INDEX_WINDOW_SECONDS:
+                    confirmed.extend([n_entry, s_entry])
+                    cleaned.pop(n_key, None)
+                    cleaned.pop(s_key, None)
+
+        _save_pending_candidates(session_date, cleaned)
+
+    if cycle_candidates and not confirmed:
+        held = ", ".join(f"{c['sym']} {c['side']}@{c['item'].get('demand_fresh_time')}" for c in cycle_candidates)
+        logger.info("🛡️ [DUAL-INDEX GATE] Holding single-index signal (%s) up to 15m for partner confirmation", held)
+
+    return confirmed
+
+
 def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
     """Scan NIFTY and SENSEX for newly formed Fresh Order Blocks (Demand Fresh & Bear OB Fresh) and notify Telegram.
     Strictly ONLY NIFTY and SENSEX alerts are dispatched (individual stocks remain suppressed).
     Applies Multi-Layer Institutional Guards:
-      1. Market Open Grace: Suppresses pre-09:30 initial balance noise.
-      2. Trend & Open Price Guard: Suppresses shorts when above Open price (unless broke ORB 5L),
-         and suppresses longs when below Open price (unless broke ORB 5H).
-      3. Extension Gate: Strictly blocks overstretched entries (> 1.8x ATR from EMA20) to prevent top-buying / bottom-shorting.
-      4. Directional Hysteresis: Prevents rapid 25-minute flip-flops between Bull and Bear inside consolidation.
+      1. Market Open Grace & Cutoff: Suppresses pre-09:30 open rush and post-14:45 close noise.
+      2. Unified 5m EMA20 & MTF Alignment: Blocks counter-trend shorts above EMA20 and falling-knife buys.
+      3. Signed Extension Gate: Strictly blocks overbought buys (> +1.8x ATR) and oversold shorts (< -1.8x ATR).
+      4. Dual-Index Confirmation: Requires NIFTY and SENSEX directional agreement within 15 minutes.
     Ensures formation recency (within last 20 minutes) and atomic database deduplication.
     """
     if not is_production_sender():
@@ -466,7 +551,12 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
 
     try:
         from stock_suggestion_index import fetch_5m_candles_pipeline, INDIA_TZ
-        from smc_volume_profile_engine import detect_order_blocks_and_structure, calculate_extension_gate
+        from smc_volume_profile_engine import (
+            detect_order_blocks_and_structure,
+            calculate_extension_gate,
+            calculate_rolling_atr,
+            calculate_multi_timeframe_matrix,
+        )
     except Exception as exc:
         logger.warning("Could not import pipeline/SMC engine in dispatch: %s", exc)
         return []
@@ -489,6 +579,9 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
         logger.debug("Skipping post-14:45 late-session square-off rush.")
         return []
 
+    sent_keys = _load_sent_keys()
+    cycle_candidates: list[dict[str, Any]] = []
+
     for sym_display, sym_code in targets:
         try:
             res = fetch_5m_candles_pipeline(sym_code, full_range=True)
@@ -509,26 +602,44 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
             if not today_completed:
                 continue
 
-            # ── DYNAMIC VOLATILITY & MARKET STRUCTURE METRICS ──
+            # ── UNIFIED DYNAMIC VOLATILITY & MARKET STRUCTURE METRICS ──
             orb_5h = float(today_completed[0]["high"])
             orb_5l = float(today_completed[0]["low"])
             open_price = float(today_completed[0]["open"])
             ltp = float(today_completed[-1]["close"])
             pct_change = (ltp - open_price) / open_price * 100.0 if open_price > 0 else 0.0
 
-            # Dynamic session 5m ATR (Zero hardcoded fallbacks: scale from asset price if unformed)
-            base_ranges = [float(c["high"]) - float(c["low"]) for c in today_completed[:min(14, len(today_completed))]]
-            atr = sum(base_ranges) / len(base_ranges) if base_ranges else max(ltp * 0.0035, 5.0)
+            atr = calculate_rolling_atr(candles, period=14)
+            if atr <= 0:
+                atr = max(ltp * 0.0035, 5.0)
             min_expansion = 1.25 * atr
 
-            # Dynamic Volatility Regimes (Normalized to session ATR standard deviation)
+            # Dynamic Volatility Regimes (Normalized to rolling ATR standard deviation)
             is_confirmed_bear = (ltp < orb_5l) and (ltp < open_price - 1.25 * atr)
-            is_confirmed_bull = (ltp > orb_5h) and (ltp > open_price + 1.25 * atr)
 
-            # Extension Gate: Check whether current price is overextended from EMA20
+            # Unified 200-bar 5m EMA20 & signed extension from EMA20
             ext_gate = calculate_extension_gate(candles)
-            is_extended_long = ext_gate.get("is_extended") and ext_gate.get("side") == "LONG"
-            is_extended_short = ext_gate.get("is_extended") and ext_gate.get("side") == "SHORT"
+            ext_atr = float(ext_gate.get("extension_atr") or 0.0)
+            signed_ext_atr = float(
+                ext_gate.get("signed_extension_atr")
+                if ext_gate.get("signed_extension_atr") is not None
+                else ext_atr
+            )
+            ext_side = str(ext_gate.get("side") or "").upper()
+            is_extended_long = bool(ext_gate.get("is_extended")) and ext_side == "LONG"
+            is_extended_short = bool(ext_gate.get("is_extended")) and ext_side == "SHORT"
+
+            ema20 = float(ext_gate.get("ema20") or 0.0)
+            if ema20 <= 0:
+                closes = [float(c["close"]) for c in candles[-200:]]
+                alpha = 2.0 / 21.0
+                ema20 = closes[0]
+                for p in closes:
+                    ema20 = alpha * p + (1.0 - alpha) * ema20
+            above_5m_ema20 = ltp >= ema20 if ema20 > 0 else True
+
+            mtf_res = calculate_multi_timeframe_matrix(candles)
+            mtf_overall = str(mtf_res.get("overall") or "").upper()
 
             ob_res = detect_order_blocks_and_structure(candles)
             raw_obs = ob_res.get("order_blocks", [])
@@ -552,14 +663,8 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                 and datetime.fromtimestamp(ob.get("time", 0), tz=INDIA_TZ).date() == today
             ]
 
-            sent_keys = _load_sent_keys()
-            closes = [c["close"] for c in today_completed]
-            alpha = 2.0 / 21.0
-            ema20 = closes[0]
-            for p in closes:
-                ema20 = alpha * p + (1.0 - alpha) * ema20
-            day_high_so_far = max(c["high"] for c in today_completed)
-            day_low_so_far = min(c["low"] for c in today_completed)
+            day_high_so_far = max(float(c["high"]) for c in today_completed)
+            day_low_so_far = min(float(c["low"]) for c in today_completed)
             delta_bar = float(today_completed[-1].get("delta") or 0.0)
 
             # 1. EVALUATE DEMAND FRESH CANDIDATES
@@ -585,7 +690,7 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                 # EXTENSION GUARD: Never buy at extreme overextended highs (> 1.8x ATR above EMA20)
                 if is_extended_long:
                     logger.info("🛡️ [EXTENSION GUARD] Suppressed %s Demand Fresh at %s (Overstretched +%.1fx ATR above EMA20; exhaustion risk)",
-                                sym_display, clean_time, ext_gate.get("extension_atr", 0.0))
+                                sym_display, clean_time, ext_atr)
                     continue
 
                 # TRAP GUARD: Only suppress if market is breaking down and NOT staging an institutional liquidity sweep recovery
@@ -627,9 +732,13 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                     atr=atr,
                     ob_top=ob_top,
                     ob_bottom=ob_bottom,
-                    extension_atr=ext_gate.get("extension_atr", 0.0),
+                    extension_atr=ext_atr,
                     is_extended=is_extended_long,
                     delta_bar=delta_bar,
+                    signed_extension_atr=signed_ext_atr,
+                    extension_side=ext_side,
+                    mtf_overall=mtf_overall,
+                    above_5m_ema20=above_5m_ema20,
                 ):
                     continue
 
@@ -642,8 +751,14 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                     "mitigated": False,
                     "type": "BULLISH",
                 }
-                if send_fresh_ob_alert(item, is_pe=False):
-                    sent_this_cycle.append(key)
+                cycle_candidates.append({
+                    "sym": sym_display,
+                    "side": "LONG",
+                    "key": key,
+                    "item": item,
+                    "is_pe": False,
+                    "queued_ts": now_ist.timestamp(),
+                })
 
             # 2. EVALUATE BEAR OB FRESH CANDIDATES
             for ob in bear_fresh:
@@ -664,12 +779,11 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
 
                 ob_bottom = float(ob.get("bottom") or 0.0)
                 ob_top = float(ob.get("top") or 0.0)
-                min_expansion = 1.25 * atr
 
                 # EXTENSION GUARD: Never short at extreme oversold lows (< -1.8x ATR below EMA20)
                 if is_extended_short:
-                    logger.info("🛡️ [EXTENSION GUARD] Suppressed %s Bear OB at %s (Overstretched -%.1fx ATR below EMA20; oversold bounce risk)",
-                                sym_display, clean_time, ext_gate.get("extension_atr", 0.0))
+                    logger.info("🛡️ [EXTENSION GUARD] Suppressed %s Bear OB at %s (Overstretched %.1fx ATR below EMA20; oversold bounce risk)",
+                                sym_display, clean_time, signed_ext_atr)
                     continue
 
                 # Institutional High-Conviction Bear Patterns:
@@ -679,7 +793,7 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                 # 2. Exhaustion Top Reversal at Day High after significant expansion above ORB 5H
                 c2_top_reversal = (day_high_so_far - orb_5h >= min_expansion) and (ob_top >= day_high_so_far - 0.75 * atr)
                 # 3. Structural breakdown below EMA20 following an expansion above ORB 5H
-                c3_choch_ema = (day_high_so_far - orb_5h >= min_expansion) and (ltp < ema20) and (ltp > day_low_so_far + 1.25 * atr)
+                c3_choch_ema = (day_high_so_far - orb_5h >= min_expansion) and (not above_5m_ema20) and (ltp > day_low_so_far + 1.25 * atr)
 
                 # If none of the institutional patterns match, suppress counter-trend or opening chop shorts!
                 if not (c1_below_orb or c2_top_reversal or c3_choch_ema):
@@ -717,9 +831,13 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                     atr=atr,
                     ob_top=ob_top,
                     ob_bottom=ob_bottom,
-                    extension_atr=ext_gate.get("extension_atr", 0.0),
+                    extension_atr=ext_atr,
                     is_extended=is_extended_short,
                     delta_bar=delta_bar,
+                    signed_extension_atr=signed_ext_atr,
+                    extension_side=ext_side,
+                    mtf_overall=mtf_overall,
+                    above_5m_ema20=above_5m_ema20,
                 ):
                     continue
 
@@ -733,11 +851,21 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
                     "type": "BEARISH",
                     "is_pe": True,
                 }
-                if send_fresh_ob_alert(item, is_pe=True):
-                    sent_this_cycle.append(key)
+                cycle_candidates.append({
+                    "sym": sym_display,
+                    "side": "SHORT",
+                    "key": key,
+                    "item": item,
+                    "is_pe": True,
+                    "queued_ts": now_ist.timestamp(),
+                })
 
         except Exception as exc:
             logger.error("Error evaluating index fresh alerts for %s: %s", sym_display, exc)
+
+    for cand in _resolve_dual_index_candidates(cycle_candidates, sent_keys, now_ist):
+        if send_fresh_ob_alert(cand["item"], is_pe=cand["is_pe"]):
+            sent_this_cycle.append(cand["key"])
 
     return sent_this_cycle
 

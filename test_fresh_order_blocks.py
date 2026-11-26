@@ -207,6 +207,138 @@ class FreshOrderBlockTests(unittest.TestCase):
                 with patch.object(gemini_evaluator, "evaluate_trade_with_gemini", return_value=verdict_payload):
                     self.assertEqual(notify._passes_conviction_gate(**common), expected)
 
+    def test_dual_index_confirmation_requires_agreement_within_15_mins(self):
+        import tempfile
+        from pathlib import Path
+        import notify
+
+        ist = ZoneInfo("Asia/Kolkata")
+        with tempfile.TemporaryDirectory() as tmp:
+            pending_file = Path(tmp) / "pending.json"
+            with patch.object(notify, "PENDING_STORE_PATH", pending_file):
+                # 1. Single index alone is held (empty output)
+                t0 = datetime(2026, 11, 20, 11, 5, tzinfo=ist)
+                n_long = {"sym": "Nifty", "side": "LONG", "key": "Nifty_DEMAND_FRESH_11:05 AM",
+                          "item": {"symbol": "Nifty", "demand_fresh_time": "11:05 AM"}, "is_pe": False, "queued_ts": t0.timestamp()}
+                self.assertEqual(notify._resolve_dual_index_candidates([n_long], set(), t0), [])
+
+                # 2. Opposite index agrees within 10 minutes -> both dispatch together
+                t1 = datetime(2026, 11, 20, 11, 15, tzinfo=ist)
+                s_long = {"sym": "Sensex", "side": "LONG", "key": "Sensex_DEMAND_FRESH_11:15 AM",
+                          "item": {"symbol": "Sensex", "demand_fresh_time": "11:15 AM"}, "is_pe": False, "queued_ts": t1.timestamp()}
+                confirmed = notify._resolve_dual_index_candidates([s_long], set(), t1)
+                self.assertEqual([c["sym"] for c in confirmed], ["Nifty", "Sensex"])
+
+                # 3. Single index held > 15m expires when partner arrives 20m later
+                t2 = datetime(2026, 11, 20, 12, 0, tzinfo=ist)
+                n_short = {"sym": "Nifty", "side": "SHORT", "key": "Nifty_BEAR_OB_FRESH_12:00 PM",
+                           "item": {"symbol": "Nifty", "demand_fresh_time": "12:00 PM"}, "is_pe": True, "queued_ts": t2.timestamp()}
+                self.assertEqual(notify._resolve_dual_index_candidates([n_short], set(), t2), [])
+
+                t3 = datetime(2026, 11, 20, 12, 20, tzinfo=ist)
+                s_short = {"sym": "Sensex", "side": "SHORT", "key": "Sensex_BEAR_OB_FRESH_12:20 PM",
+                           "item": {"symbol": "Sensex", "demand_fresh_time": "12:20 PM"}, "is_pe": True, "queued_ts": t3.timestamp()}
+                self.assertEqual(notify._resolve_dual_index_candidates([s_short], set(), t3), [])
+
+                # 4. Opposite sides do not confirm each other
+                t4 = datetime(2026, 11, 20, 12, 25, tzinfo=ist)
+                n_long2 = {"sym": "Nifty", "side": "LONG", "key": "Nifty_DEMAND_FRESH_12:25 PM",
+                           "item": {"symbol": "Nifty", "demand_fresh_time": "12:25 PM"}, "is_pe": False, "queued_ts": t4.timestamp()}
+                self.assertEqual(notify._resolve_dual_index_candidates([n_long2], set(), t4), [])
+
+                # 5. Simultaneous confirmation on matching side fires both immediately
+                t5 = datetime(2026, 11, 20, 13, 40, tzinfo=ist)
+                n_long3 = {"sym": "Nifty", "side": "LONG", "key": "Nifty_DEMAND_FRESH_1:40 PM",
+                           "item": {"symbol": "Nifty", "demand_fresh_time": "1:40 PM"}, "is_pe": False, "queued_ts": t5.timestamp()}
+                s_long2 = {"sym": "Sensex", "side": "LONG", "key": "Sensex_DEMAND_FRESH_1:40 PM",
+                           "item": {"symbol": "Sensex", "demand_fresh_time": "1:40 PM"}, "is_pe": False, "queued_ts": t5.timestamp()}
+                both = notify._resolve_dual_index_candidates([n_long3, s_long2], set(), t5)
+                self.assertEqual(len(both), 2)
+
+    def test_deterministic_guards_block_runaway_bull_oversold_and_falling_knife(self):
+        import gemini_evaluator
+
+        # Signed negative extension (< -1.8x) blocks oversold Bear OB even when extension_atr is unsigned magnitude
+        oversold = gemini_evaluator.evaluate_trade_deterministic({
+            "setup_side": "SHORT", "ltp": 25500.0, "day_high": 25800.0, "day_low": 25490.0,
+            "orb_5h": 25780.0, "orb_5l": 25700.0, "ema20": 25660.0, "atr_rolling": 50.0,
+            "ob_top": 25540.0, "ob_bottom": 25500.0, "extension_atr": 2.4,
+            "signed_extension_atr": -2.4, "extension_side": "SHORT", "is_extended": True,
+            "above_5m_ema20": False,
+        })
+        self.assertEqual(oversold["verdict"], "REJECTED")
+        self.assertEqual(oversold["trade_classification"], "OVERSOLD_TRAP")
+
+        # Runaway Bull: price riding above 5m EMA20 blocks Bear OB BEFORE top-exhaustion logic
+        runaway_bull_short = gemini_evaluator.evaluate_trade_deterministic({
+            "setup_side": "SHORT", "ltp": 26120.0, "day_high": 26140.0, "day_low": 25880.0,
+            "orb_5h": 25910.0, "orb_5l": 25870.0, "ema20": 26080.0, "atr_rolling": 50.0,
+            "ob_top": 26135.0, "ob_bottom": 26105.0, "extension_atr": 0.8,
+            "signed_extension_atr": 0.8, "extension_side": "LONG", "is_extended": False,
+            "above_5m_ema20": True,
+        })
+        self.assertEqual(runaway_bull_short["verdict"], "REJECTED")
+        self.assertEqual(runaway_bull_short["trade_classification"], "BULL_TREND_CHOP")
+
+        # Confirmed Top Reversal BELOW 5m EMA20 is approved
+        confirmed_top_short = gemini_evaluator.evaluate_trade_deterministic({
+            "setup_side": "SHORT", "ltp": 26010.0, "day_high": 26140.0, "day_low": 25880.0,
+            "orb_5h": 25910.0, "orb_5l": 25870.0, "ema20": 26040.0, "atr_rolling": 50.0,
+            "ob_top": 26120.0, "ob_bottom": 26080.0, "extension_atr": 0.6,
+            "signed_extension_atr": -0.6, "extension_side": "SHORT", "is_extended": False,
+            "above_5m_ema20": False,
+        })
+        self.assertEqual(confirmed_top_short["verdict"], "APPROVED")
+        self.assertEqual(confirmed_top_short["trade_classification"], "TOP_EXHAUSTION_REVERSAL")
+
+        # Falling-knife Demand below 5m EMA20 or Bearish MTF rejected
+        falling_knife = gemini_evaluator.evaluate_trade_deterministic({
+            "setup_side": "LONG", "ltp": 25600.0, "day_high": 25850.0, "day_low": 25580.0,
+            "orb_5h": 25840.0, "orb_5l": 25780.0, "ema20": 25660.0, "atr_rolling": 50.0,
+            "ob_top": 25620.0, "ob_bottom": 25585.0, "extension_atr": 1.2,
+            "signed_extension_atr": -1.2, "extension_side": "SHORT", "is_extended": False,
+            "above_5m_ema20": False, "mtf_overall": "BEARISH ▼",
+        })
+        self.assertEqual(falling_knife["verdict"], "REJECTED")
+        self.assertEqual(falling_knife["trade_classification"], "COUNTER_TREND_KNIFE")
+
+        # Symmetric MTF rejection on SHORT when MTF trend is BULLISH
+        counter_trend_short = gemini_evaluator.evaluate_trade_deterministic({
+            "setup_side": "SHORT", "ltp": 25820.0, "day_high": 25950.0, "day_low": 25800.0,
+            "orb_5h": 25910.0, "orb_5l": 25840.0, "ema20": 25860.0, "atr_rolling": 50.0,
+            "ob_top": 25845.0, "ob_bottom": 25810.0, "above_5m_ema20": False,
+            "mtf_overall": "BULLISH ▲",
+        })
+        self.assertEqual(counter_trend_short["verdict"], "REJECTED")
+        self.assertEqual(counter_trend_short["trade_classification"], "COUNTER_TREND_RALLY")
+
+        # Hard structural rejection must NOT be overridden even if mocked Gemini LLM returns 99 APPROVED
+        with patch("gemini_evaluator.get_gemini_api_key", return_value="fake-key"), \
+             patch("gemini_evaluator.requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"candidates": [{"content": {"parts": [{"text": '{"conviction_score": 99, "verdict": "APPROVED"}'}]}}]}
+            llm_res = gemini_evaluator.evaluate_trade_with_gemini({
+                "setup_side": "SHORT", "ltp": 26120.0, "day_high": 26140.0, "day_low": 25880.0,
+                "orb_5h": 25910.0, "orb_5l": 25870.0, "ema20": 26080.0, "atr_rolling": 50.0,
+                "ob_top": 26135.0, "ob_bottom": 26105.0, "above_5m_ema20": True,
+            }, use_api=True)
+            self.assertEqual(llm_res["verdict"], "REJECTED")
+            mock_post.assert_not_called()
+
+    def test_signed_extension_gate_preserves_ui_abs_and_exposes_signed(self):
+        from smc_volume_profile_engine import calculate_extension_gate
+
+        # Build 25 candles hovering near 1000, then sharp drop to 940 (< -1.8x ATR below EMA20)
+        bars = [candle(i, 1000, 1002, 998, 1000) for i in range(22)]
+        bars.append(candle(22, 1000, 1000, 975, 976))
+        bars.append(candle(23, 976, 977, 945, 946))
+        bars.append(candle(24, 946, 948, 935, 936))
+        gate = calculate_extension_gate(bars)
+        self.assertGreater(gate["extension_atr"], 1.8)
+        self.assertLess(gate["signed_extension_atr"], -1.8)
+        self.assertEqual(gate["side"], "SHORT")
+        self.assertTrue(gate["is_extended"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1604,6 +1604,24 @@ def calculate_monotonic_trend_band(candles: list[dict[str, Any]]) -> dict[str, A
 # FEATURE 9: ATR EXTENSION GATE ("DO NOT CHASE" RULE)
 # ═══════════════════════════════════════════════════════════════════════
 
+def calculate_rolling_atr(candles: list[dict[str, Any]], period: int = 14) -> float:
+    """Computes dynamic rolling True Range ATR over the latest `period` candles."""
+    n = len(candles)
+    if n < 2:
+        last_close = float(candles[-1]["close"]) if candles else 100.0
+        return max(last_close * 0.0035, 5.0)
+    trs = [
+        max(
+            float(candles[i]["high"]) - float(candles[i]["low"]),
+            abs(float(candles[i]["high"]) - float(candles[i - 1]["close"])),
+            abs(float(candles[i]["low"]) - float(candles[i - 1]["close"])),
+        )
+        for i in range(1, n)
+    ]
+    atr = sum(trs[-period:]) / min(period, len(trs))
+    return max(atr, 0.5)
+
+
 def calculate_extension_gate(candles: list[dict[str, Any]]) -> dict[str, Any]:
     """Evaluates whether current price is overextended from EMA20 by > 1.8 ATR.
     Long extension: (Close - EMA20) / ATR > 1.8 => EXTENDED_DO_NOT_CHASE
@@ -1611,14 +1629,17 @@ def calculate_extension_gate(candles: list[dict[str, Any]]) -> dict[str, Any]:
     """
     n = len(candles)
     if n < 20:
-        return {"is_extended": False, "extension_atr": 0.0, "status": "NORMAL", "warning": ""}
+        return {
+            "is_extended": False,
+            "extension_atr": 0.0,
+            "signed_extension_atr": 0.0,
+            "ema20": float(candles[-1]["close"]) if candles else 0.0,
+            "atr": calculate_rolling_atr(candles, 14),
+            "status": "NORMAL",
+            "warning": "",
+        }
 
-    # Calculate ATR14
-    trs = [max(candles[i]["high"] - candles[i]["low"],
-               abs(candles[i]["high"] - candles[i-1]["close"]),
-               abs(candles[i]["low"] - candles[i-1]["close"])) for i in range(1, n)]
-    atr = (sum(trs[-14:]) / min(14, len(trs))) if trs else 5.0
-    atr = max(atr, 0.5)
+    atr = calculate_rolling_atr(candles, 14)
 
     # Calculate EMA20
     alpha20 = 2.0 / (20 + 1)
@@ -1636,6 +1657,9 @@ def calculate_extension_gate(candles: list[dict[str, Any]]) -> dict[str, Any]:
         return {
             "is_extended": True,
             "extension_atr": extension_atr,
+            "signed_extension_atr": extension_atr,
+            "ema20": round(ema20, 2),
+            "atr": round(atr, 2),
             "status": "EXTENDED_DO_NOT_CHASE",
             "side": "LONG",
             "warning": f"Overstretched (+{extension_atr:.1f}x ATR above EMA20). Avoid chasing highs; wait for Demand Zone pullback.",
@@ -1644,6 +1668,9 @@ def calculate_extension_gate(candles: list[dict[str, Any]]) -> dict[str, Any]:
         return {
             "is_extended": True,
             "extension_atr": abs(extension_atr),
+            "signed_extension_atr": extension_atr,
+            "ema20": round(ema20, 2),
+            "atr": round(atr, 2),
             "status": "EXTENDED_DO_NOT_CHASE",
             "side": "SHORT",
             "warning": f"Overstretched ({extension_atr:.1f}x ATR below EMA20). Avoid chasing lows; wait for Supply Zone pullback.",
@@ -1652,6 +1679,9 @@ def calculate_extension_gate(candles: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "is_extended": False,
         "extension_atr": abs(extension_atr),
+        "signed_extension_atr": extension_atr,
+        "ema20": round(ema20, 2),
+        "atr": round(atr, 2),
         "status": "NORMAL",
         "side": "NEUTRAL",
         "warning": "",
