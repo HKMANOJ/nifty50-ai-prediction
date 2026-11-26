@@ -678,6 +678,15 @@ def generate_institutional_trade_plan(
         }
 
     ltp = candles[-1]["close"]
+    trs = [
+        max(candles[idx]["high"] - candles[idx]["low"],
+            abs(candles[idx]["high"] - candles[idx - 1]["close"]),
+            abs(candles[idx]["low"] - candles[idx - 1]["close"]))
+        for idx in range(1, len(candles))
+    ]
+    atr = (sum(trs[-14:]) / min(14, len(trs))) if trs else max(ltp * 0.0035, 5.0)
+    atr = max(atr, 0.5)
+
     trend = smc.get("trend", "Neutral")
     poc = vp.get("poc") or ltp
     vah = vp.get("vah") or ltp
