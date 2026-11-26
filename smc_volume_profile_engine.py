@@ -850,7 +850,10 @@ def analyze_stock_overview(
     fvgs = detect_fair_value_gaps(candles)
     liquidity = detect_liquidity_pools(candles)
     cvd = calculate_cvd_series(candles)
-    footprints = build_candle_footprints(candles)
+    # Optimize: Build detailed footprint ladders for active sessions (~2 days / 90 bars),
+    # preserving sub-second network transfer speeds without sending redundant aged history
+    recent_fp_candles = candles[-90:] if len(candles) > 90 else candles
+    footprints = build_candle_footprints(recent_fp_candles)
     mtf = calculate_multi_timeframe_matrix(candles)
     trend_band = calculate_monotonic_trend_band(candles)
     extension_gate = calculate_extension_gate(candles)

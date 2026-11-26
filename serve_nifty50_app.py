@@ -1150,20 +1150,39 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             delivery = {"delivery_id": "delivery_"+uuid.uuid4().hex, "transport": "http",
                         "sent_at_ist": get_ist_now().isoformat()}
             payload = {**payload, "_delivery": delivery}
-        encoded = json.dumps(payload, indent=2).encode("utf-8")
-        self.send_response(status.value)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(encoded)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        try:
-            self.wfile.write(encoded)
-        except Exception as exc:
-            if delivery:
-                import scanner_trace
-                scanner_trace.submit_health("delivery_failed", snapshot_id=payload["snapshot_id"],
-                                            **delivery, error_type=type(exc).__name__)
-            raise
+        encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        accept_encoding = getattr(self, "headers", {}).get("Accept-Encoding", "") or ""
+        if "gzip" in accept_encoding and len(encoded) > 1024:
+            import gzip
+            compressed = gzip.compress(encoded, compresslevel=5)
+            self.send_response(status.value)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(len(compressed)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                self.wfile.write(compressed)
+            except Exception as exc:
+                if delivery:
+                    import scanner_trace
+                    scanner_trace.submit_health("delivery_failed", snapshot_id=payload["snapshot_id"],
+                                                **delivery, error_type=type(exc).__name__)
+                raise
+        else:
+            self.send_response(status.value)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                self.wfile.write(encoded)
+            except Exception as exc:
+                if delivery:
+                    import scanner_trace
+                    scanner_trace.submit_health("delivery_failed", snapshot_id=payload["snapshot_id"],
+                                                **delivery, error_type=type(exc).__name__)
+                raise
         if delivery:
             import scanner_trace
             scanner_trace.submit_health("delivery_written", snapshot_id=payload["snapshot_id"],

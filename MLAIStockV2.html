@@ -6044,10 +6044,21 @@
   document.getElementById("btnReadOnlyMode")?.addEventListener("click", toggleReadOnlyMode);
 
   refreshBtn?.addEventListener("click", () => {
-    loadData({ refresh: true });
     const viewOv = document.getElementById("viewOverview");
-    if (viewOv && viewOv.style.display !== "none" && typeof loadStockOverview === "function" && _overviewSymbol) {
-      loadStockOverview(_overviewSymbol);
+    const isOverviewVisible = viewOv && viewOv.style.display !== "none";
+    if (isOverviewVisible && typeof loadStockOverview === "function" && _overviewSymbol) {
+      if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "⚡ Loading...";
+      }
+      loadStockOverview(_overviewSymbol).finally(() => {
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = "⚡ Refresh Live";
+        }
+      });
+    } else {
+      loadData({ refresh: true });
     }
   });
   window.addEventListener("online", () => loadData());
