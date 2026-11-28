@@ -570,8 +570,7 @@ class FreshOrderBlockTests(unittest.TestCase):
                  patch.object(ssi, "fetch_index_context", return_value=(fake_idx, [])), \
                  patch.object(ssi, "load_fo_lot_sizes", return_value={"RELIANCE": 500}), \
                  patch.object(ssi, "fetch_extra_candidates", side_effect=lambda syms, cb, **kw: (cb.__setitem__("RELIANCE", bars), [dict(fake_row)])[1]), \
-                 patch("upstox_provider.fetch_futures_candles", return_value=("NSE_FO|59097", [], [])), \
-                 patch("upstox_provider.extract_oi_row_from_futures_candles", return_value=fake_oi):
+                 patch("upstox_provider.fetch_futures_oi_summary", return_value=fake_oi):
                 payload = ssi.build_payload(20, require_current_session=False)
 
         self.assertTrue(payload["ok"])
@@ -606,6 +605,123 @@ class FreshOrderBlockTests(unittest.TestCase):
         self.assertIsNotNone(chosen)
         self.assertEqual(chosen["session_date"], "2026-11-27")
         self.assertEqual(chosen["bullish"][0]["symbol"], "NEW")
+
+    def test_upstox_fetch_futures_oi_summary_uses_30m_candles_without_caching_1m(self):
+        import json
+        import upstox_provider
+
+        sample_30m = {
+            "status": "success",
+            "data": {
+                "candles": [
+                    ["2026-11-27T15:00:00+05:30", 2500.0, 2510.0, 2495.0, 2505.0, 3000, 1120000],
+                    ["2026-11-27T14:30:00+05:30", 2490.0, 2505.0, 2488.0, 2500.0, 2000, 1110000],
+                    ["2026-11-26T15:00:00+05:30", 2480.0, 2485.0, 2475.0, 2482.0, 4000, 1000000],
+                ]
+            },
+        }
+        seen_urls: list[str] = []
+
+        class _FakeResp:
+            status = 200
+
+            def __init__(self, body: dict):
+                self._raw = json.dumps(body).encode("utf-8")
+
+            def read(self):
+                return self._raw
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def _fake_urlopen(req, timeout=6):
+            url = req.full_url if hasattr(req, "full_url") else str(req)
+            seen_urls.append(url)
+            if "/30minute/" in url:
+                return _FakeResp(sample_30m)
+            return _FakeResp({"status": "success", "data": {"candles": []}})
+
+        with patch.dict(upstox_provider._FUTURES_OI_SUMMARY_CACHE, {}, clear=True), \
+             patch.dict(upstox_provider._FUTURES_CACHE, {}, clear=True), \
+             patch.object(upstox_provider, "get_futures_instrument_key", return_value="NSE_FO|59097"), \
+             patch("urllib.request.urlopen", side_effect=_fake_urlopen):
+            res = upstox_provider.fetch_futures_oi_summary("RELIANCE")
+            fut_cache_size = len(upstox_provider._FUTURES_CACHE)
+
+        self.assertIsNotNone(res)
+        self.assertTrue(any("/30minute/" in u for u in seen_urls))
+        self.assertEqual(res["symbol"], "RELIANCE")
+        self.assertEqual(res["oi_now"], 1120000.0)
+        self.assertEqual(res["oi_prev"], 1000000.0)
+        self.assertEqual(res["oi_change"], 120000.0)
+        self.assertEqual(res["oi_change_percent"], 12.0)
+        self.assertEqual(res["volume_contracts"], 5000.0)
+        self.assertEqual(res["source"], "upstox_futures_30m")
+        self.assertEqual(fut_cache_size, 0)
+
+    def test_compact_db_telemetry_filters_verbose_events_from_postgres(self):
+        import json
+        import os
+        import tempfile
+        from unittest.mock import MagicMock
+        import db_adapter
+        import scanner_telemetry
+
+        events = [
+            {
+                "event_type": "ranking_decision",
+                "session_date": "2026-11-27",
+                "symbol": "RELIANCE",
+                "side": "bullish",
+                "payload": {"score": 90},
+            },
+            {
+                "event_type": "outcome",
+                "session_date": "2026-11-27",
+                "symbol": "RELIANCE",
+                "side": "bullish",
+                "payload": {"pnl": 1.2},
+            },
+        ]
+        mock_cursor = MagicMock()
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with tempfile.TemporaryDirectory() as td:
+            root_path = Path(td)
+            env_patch = {"SCANNER_COMPACT_DB_TELEMETRY": "1", "SCANNER_VERBOSE_DB_TELEMETRY": "0"}
+            with patch.dict(os.environ, env_patch), \
+                 patch.object(scanner_telemetry, "ROOT", root_path), \
+                 patch.object(db_adapter, "DATABASE_URL", "postgresql://mock/test"), \
+                 patch("psycopg2.connect", return_value=mock_conn):
+                scanner_telemetry.write_events(events)
+
+            local_lines = (root_path / "2026-11-27.jsonl").read_text(encoding="utf-8").strip().splitlines()
+            self.assertEqual(len(local_lines), 2)
+            uploaded = json.loads(mock_cursor.execute.call_args[0][1][0])
+            self.assertEqual([row["event_type"] for row in uploaded], ["outcome"])
+
+    def test_head_health_returns_200_and_empty_content_length(self):
+        from http import HTTPStatus
+        from unittest.mock import MagicMock
+        import serve_nifty50_app as app
+
+        handler = app.NiftyHandler.__new__(app.NiftyHandler)
+        handler.path = "/api/health"
+        handler.send_response = MagicMock()
+        handler.send_header = MagicMock()
+        handler.end_headers = MagicMock()
+
+        with patch.object(app, "_maybe_trigger_wakeup_catchup") as mock_wake:
+            handler.do_HEAD()
+
+        mock_wake.assert_called_once()
+        handler.send_response.assert_called_once_with(HTTPStatus.OK)
+        handler.send_header.assert_any_call("Content-Length", "0")
+        handler.end_headers.assert_called_once()
 
 
 if __name__ == "__main__":

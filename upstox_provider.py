@@ -31,6 +31,7 @@ _INSTRUMENTS_LOCK = threading.Lock()
 _INSTRUMENTS_REFRESH_ATTEMPT_TS = 0.0
 _FUTURES_CACHE: dict[tuple[str, bool], tuple[float, list[dict[str, Any]], list[dict[str, Any]]]] = {}
 _FUTURES_CACHE_TTL_SEC = 60.0
+_FUTURES_OI_SUMMARY_CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {}
 _CHROME_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -656,6 +657,96 @@ def extract_oi_row_from_futures_candles(
         "futures_value": round(futures_value_lakhs, 2),
         "source": "upstox_futures",
     }
+
+
+def fetch_futures_oi_summary(symbol: str) -> dict[str, Any] | None:
+    """Lightweight near-month futures OI summary using 30m historical + today's intraday bars (~4-25 KB, no 14d 1m cache)."""
+    fut_key = get_futures_instrument_key(symbol)
+    if not fut_key:
+        return None
+    now_mono = time.monotonic()
+    cached = _FUTURES_OI_SUMMARY_CACHE.get(fut_key)
+    if cached and (now_mono - cached[0]) < _FUTURES_CACHE_TTL_SEC:
+        return dict(cached[1]) if cached[1] is not None else None
+
+    now_ist = datetime.now(INDIA_TZ)
+    encoded_key = urllib.parse.quote(fut_key)
+    headers = _upstox_request_headers()
+    to_date = now_ist.strftime("%Y-%m-%d")
+    from_date = (now_ist - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    raw_hist: list[list[Any]] = []
+    try:
+        hist_url = f"{UPSTOX_API_BASE}/historical-candle/{encoded_key}/30minute/{to_date}/{from_date}"
+        with urllib.request.urlopen(urllib.request.Request(hist_url, headers=headers), timeout=6) as resp:
+            if resp.status == 200:
+                raw_hist = json.loads(resp.read().decode("utf-8")).get("data", {}).get("candles", [])
+    except Exception:
+        raw_hist = []
+
+    raw_intra: list[list[Any]] = []
+    if now_ist.weekday() < 5 and (now_ist.hour * 60 + now_ist.minute) >= (9 * 60 + 15):
+        try:
+            intra_url = f"{UPSTOX_API_BASE}/historical-candle/intraday/{encoded_key}/1minute"
+            with urllib.request.urlopen(urllib.request.Request(intra_url, headers=headers), timeout=5) as resp:
+                if resp.status == 200:
+                    raw_intra = json.loads(resp.read().decode("utf-8")).get("data", {}).get("candles", [])
+        except Exception:
+            raw_intra = []
+
+    by_day: dict[str, list[list[Any]]] = {}
+    for row in raw_hist:
+        try:
+            day_str = str(row[0])[:10]
+            by_day.setdefault(day_str, []).append(row)
+        except Exception:
+            continue
+    if raw_intra:
+        today_prefix = str(raw_intra[0][0])[:10]
+        by_day[today_prefix] = list(raw_intra)
+
+    if not by_day:
+        _FUTURES_OI_SUMMARY_CACHE[fut_key] = (now_mono, None)
+        return None
+
+    days = sorted(by_day)
+    latest_rows = by_day[days[-1]]  # Upstox raw order is newest-first
+
+    def _newest_positive_oi(rows_desc: list[list[Any]]) -> float | None:
+        # Handle both newest-first raw lists safely by ordering by timestamp descending
+        for r in sorted(rows_desc, key=lambda x: str(x[0]), reverse=True):
+            if len(r) > 6 and r[6] is not None and float(r[6]) > 0:
+                return float(r[6])
+        return None
+
+    oi_now = _newest_positive_oi(latest_rows)
+    if oi_now is None:
+        _FUTURES_OI_SUMMARY_CACHE[fut_key] = (now_mono, None)
+        return None
+
+    oi_prev = None
+    for d in reversed(days[:-1]):
+        oi_prev = _newest_positive_oi(by_day[d])
+        if oi_prev is not None:
+            break
+
+    oi_change = (oi_now - oi_prev) if oi_prev is not None else None
+    oi_change_percent = ((oi_change / oi_prev) * 100.0) if (oi_prev and oi_change is not None) else None
+    volume_contracts = sum(float(r[5] or 0.0) for r in latest_rows)
+    futures_value_lakhs = sum(float(r[5] or 0.0) * float(r[4] or 0.0) for r in latest_rows) / 100_000.0
+
+    summary = {
+        "symbol": symbol.upper().strip(),
+        "oi_now": oi_now,
+        "oi_prev": oi_prev,
+        "oi_change": oi_change,
+        "oi_change_percent": round(oi_change_percent, 2) if oi_change_percent is not None else None,
+        "volume_contracts": volume_contracts,
+        "futures_value": round(futures_value_lakhs, 2),
+        "source": "upstox_futures_30m",
+    }
+    _FUTURES_OI_SUMMARY_CACHE[fut_key] = (now_mono, summary)
+    return dict(summary)
 
 
 def fetch_5m_candles_with_telemetry(

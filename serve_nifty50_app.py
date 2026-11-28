@@ -918,7 +918,16 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         return private
 
     def do_HEAD(self) -> None:
-        if not self._deny_private_static(urlparse(self.path).path):
+        parsed_path = urlparse(self.path)
+        if parsed_path.path == "/api/health":
+            _maybe_trigger_wakeup_catchup()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if not self._deny_private_static(parsed_path.path):
             super().do_HEAD()
 
     def do_OPTIONS(self) -> None:

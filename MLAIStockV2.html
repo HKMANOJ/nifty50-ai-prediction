@@ -6414,10 +6414,16 @@
     }
   }
 
-  // Auto-refresh live market scanner — ONLY during market hours
+  let _lastScannerHttpPollAt = 0;
+  // Auto-refresh live market scanner — ONLY during market hours (skip frequent HTTP polls when WebSocket is open)
   setInterval(() => {
+    const wsOpen = typeof _wsClient !== "undefined" && _wsClient && _wsClient.readyState === WebSocket.OPEN;
+    const now = Date.now();
     if (document.visibilityState === "visible" && (isMarketHours() || !_lastScannerPayload)) {
-      loadData();
+      if (!_lastScannerPayload || !wsOpen || (now - _lastScannerHttpPollAt >= 240000)) {
+        _lastScannerHttpPollAt = now;
+        loadData();
+      }
     }
     if (_lastScannerPayload && !_scannerRetryTimer) scannerSnapshotStatus(_lastScannerPayload);
   }, 45000);
@@ -6540,9 +6546,14 @@
   setInterval(updateMarketStatusBadge, 60000); // refresh badge every 1 min
   updateMarketStatusBadge();               // set correct badge immediately on load
 
-  // Active chart live candle poller: ensures on-spot forming candle updates every 15s during market hours
+  let _lastCandleHttpPollAt = 0;
+  // Active chart live candle poller: relies on WS streaming when open (60s HTTP safety fallback)
   setInterval(() => {
+    const wsOpen = typeof _wsClient !== "undefined" && _wsClient && _wsClient.readyState === WebSocket.OPEN;
+    const now = Date.now();
+    if (wsOpen && (now - _lastCandleHttpPollAt < 60000)) return;
     if (document.visibilityState === "visible" && (isMarketHours() || isPreMarket()) && _selectedSymbol && _candleSeries) {
+      _lastCandleHttpPollAt = now;
       fetch(`${API_BASE}/api/stock_candles?symbol=${encodeURIComponent(_selectedSymbol)}`)
         .then(r => r.json())
         .then(data => {
@@ -8166,15 +8177,15 @@
 
     loadStockOverview(_overviewSymbol || _selectedSymbol || "BRITANNIA");
 
-    // Auto-refresh Stock Overview every 15s so new 5m candles appear without manual reload
+    // Auto-refresh Stock Overview every 30s during market hours only (no off-hours egress waste)
     if (!_ovAutoRefreshTimer) {
       _ovAutoRefreshTimer = setInterval(() => {
         const viewOv = document.getElementById("viewOverview");
-        if (viewOv && viewOv.style.display !== "none" && document.visibilityState === "visible") {
+        if (viewOv && viewOv.style.display !== "none" && document.visibilityState === "visible" && (isMarketHours() || isPreMarket())) {
           if (Date.now() - _ovLastUserInteraction < 20000) return; // Preserve user zoom/pan while inspecting
           if (_overviewSymbol) loadStockOverview(_overviewSymbol, { silent: true });
         }
-      }, 15000);
+      }, 30000);
     }
   }
 

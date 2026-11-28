@@ -183,16 +183,22 @@ async def push_single_symbol_candle(symbol: str, target_ws: WebSocketServerProto
 
 
 async def candle_streaming_loop() -> None:
-    """Periodically streams candle updates to clients for their active stocks."""
+    """Streams live candle updates during active market hours only (sleeps off-hours to save CPU/egress)."""
+    from datetime import datetime
+    from stock_suggestion_index import INDIA_TZ
+
     while True:
+        now_ist = datetime.now(INDIA_TZ)
+        cur_min = now_ist.hour * 60 + now_ist.minute
+        in_session = now_ist.weekday() < 5 and (9 * 60) <= cur_min <= (15 * 60 + 35)
         try:
-            if CONNECTED_CLIENTS:
+            if in_session and CONNECTED_CLIENTS:
                 active_symbols = set(CLIENT_WATCHLIST.values())
                 for symbol in active_symbols:
                     await push_single_symbol_candle(symbol)
         except Exception as e:
             logger.error(f"Error in candle streaming loop: {e}")
-        await asyncio.sleep(15)
+        await asyncio.sleep(15 if in_session else 60)
 
 
 async def ws_handler(ws: WebSocketServerProtocol) -> None:

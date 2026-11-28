@@ -1186,7 +1186,11 @@ def _upstox_quote_and_candles_fallback(symbol: str) -> tuple[dict[str, Any], lis
             return None
 
         if upstox_res.get("candles_1m"):
-            _CANDLE_1M_CACHE[symbol] = (_time.time(), upstox_res["candles_1m"])
+            latest_day_epoch = int(datetime.combine(days[-1], time.min, tzinfo=INDIA_TZ).timestamp())
+            _CANDLE_1M_CACHE[symbol] = (
+                _time.time(),
+                [b for b in upstox_res["candles_1m"] if int(b.get("timestamp") or 0) >= latest_day_epoch],
+            )
 
         ltp = float(latest_bars[-1]["close"])
         pct = ((ltp - prev_close) / prev_close) * 100.0
@@ -4427,8 +4431,7 @@ def _enrich_missing_oi_from_upstox(
 
     def _fetch_one(sym: str) -> tuple[str, dict[str, Any] | None]:
         try:
-            _, fut_5m, _ = upstox_provider.fetch_futures_candles(sym, full_range=True)
-            return sym, upstox_provider.extract_oi_row_from_futures_candles(sym, fut_5m)
+            return sym, upstox_provider.fetch_futures_oi_summary(sym)
         except Exception:
             return sym, None
 

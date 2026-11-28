@@ -21,6 +21,35 @@ IST = ZoneInfo("Asia/Kolkata")
 ROOT = Path(__file__).resolve().parent / "inputs" / "scanner_telemetry"
 VERSION = "scanner-observability-v2"
 _RECEIPT_LOCK = threading.Lock()
+_ESSENTIAL_DB_EVENTS = frozenset({
+    "outcome",
+    "candidate_outcome",
+    "tracked_breakout",
+    "daily_top5",
+    "instant_trigger",
+    "discovery",
+    "scanner_health",
+    "signal_displayed",
+    "display_rank_observed",
+    "logging_health",
+})
+
+
+def _compact_db_telemetry_enabled() -> bool:
+    """Suppresses bulky per-bar audit rows in Postgres unless verbose telemetry is requested."""
+    verbose = os.environ.get("SCANNER_VERBOSE_DB_TELEMETRY", "").strip().lower()
+    if verbose in ("1", "true", "yes"):
+        return False
+    compact = os.environ.get("SCANNER_COMPACT_DB_TELEMETRY", "").strip().lower()
+    if compact in ("1", "true", "yes"):
+        return True
+    if compact in ("0", "false", "no"):
+        return False
+    return bool(
+        os.environ.get("RENDER")
+        or os.environ.get("IS_PRODUCTION")
+        or os.environ.get("DEPLOYED_ENV") in ("prod", "production")
+    )
 
 
 def signal_id(session_date, symbol, side, setup=None):
@@ -68,10 +97,17 @@ def write_events(events):
             finally:
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
     conn = cursor = None
+    db_events = (
+        [e for e in events if e.get("event_type") in _ESSENTIAL_DB_EVENTS]
+        if _compact_db_telemetry_enabled()
+        else events
+    )
+    if not db_events:
+        return
     try:
         import db_adapter
         if not db_adapter.DATABASE_URL:
-            _mirror_health(events, batch_id, "database_not_configured")
+            _mirror_health(db_events, batch_id, "database_not_configured")
             return
         import psycopg2
         # Do not reuse db_adapter's process-global connection in HTTP threads.
@@ -83,12 +119,12 @@ def write_events(events):
             "SELECT event_type, session_date::date, symbol, side, payload "
             "FROM jsonb_to_recordset(%s::jsonb) AS e("
             "event_type text, session_date text, symbol text, side text, payload jsonb)",
-            (json.dumps(events, default=str),),
+            (json.dumps(db_events, default=str),),
         )
         conn.commit()
     except Exception as exc:
         print(f"[scanner-telemetry] mirror skipped; local events retained: {type(exc).__name__}", file=sys.stderr)
-        _mirror_health(events, batch_id, "database_write_failed", type(exc).__name__)
+        _mirror_health(db_events, batch_id, "database_write_failed", type(exc).__name__)
     finally:
         if cursor:
             cursor.close()

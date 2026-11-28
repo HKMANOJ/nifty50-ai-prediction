@@ -16,5 +16,7 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Render passes the port in $PORT, fallback to 10000 if not set
 ENV PORT=10000
+ENV SCANNER_COMPACT_DB_TELEMETRY=1
+EXPOSE 10000
 
 CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
