@@ -984,7 +984,25 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
         if parsed_path.path == "/api/health":
             _maybe_trigger_wakeup_catchup()
-            self._send_json(HTTPStatus.OK, {"ok": True, "service": "stock-suggestion-live-server"})
+            db_configured = False
+            try:
+                import db_adapter
+                db_configured = bool(db_adapter.DATABASE_URL)
+            except Exception:
+                db_configured = False
+            health_payload: dict[str, Any] = {
+                "ok": True,
+                "service": "stock-suggestion-live-server",
+                "cloud_state_sync": True,
+                "db_configured": db_configured,
+                "render_env": bool(os.environ.get("RENDER") or os.environ.get("RENDER_EXTERNAL_HOSTNAME")),
+            }
+            if "details" in parse_qs(parsed_path.query):
+                snap = self._cached_or_snapshot()
+                cloud_snap = _load_cloud_snapshot_cached()
+                health_payload["snapshot_session"] = snap.get("session_date") if snap else None
+                health_payload["cloud_snapshot_session"] = cloud_snap.get("session_date") if cloud_snap else None
+            self._send_json(HTTPStatus.OK, health_payload)
             return
 
         if parsed_path.path == "/api/most_active":
