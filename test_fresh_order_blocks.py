@@ -1,5 +1,6 @@
 from dataclasses import replace
 from datetime import datetime
+from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
@@ -506,6 +507,105 @@ class FreshOrderBlockTests(unittest.TestCase):
             self.assertEqual(summary["overall"]["data_source"], "local_outcome_log")
             self.assertGreater(summary["overall"]["total_trades"], 0)
             self.assertGreater(len(summary["patterns"]), 0)
+
+    def test_upstox_futures_oi_summary_and_expiry_check(self):
+        import upstox_provider
+
+        ist = ZoneInfo("Asia/Kolkata")
+        day1_t = int(datetime(2026, 11, 26, 15, 25, tzinfo=ist).timestamp())
+        day2_t1 = int(datetime(2026, 11, 27, 9, 15, tzinfo=ist).timestamp())
+        day2_t2 = int(datetime(2026, 11, 27, 15, 25, tzinfo=ist).timestamp())
+        fut_bars = [
+            {"timestamp": day1_t, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1000, "oi": 1_000_000},
+            {"timestamp": day2_t1, "open": 101.0, "high": 102.0, "low": 100.5, "close": 101.5, "volume": 2000, "oi": 1_050_000},
+            {"timestamp": day2_t2, "open": 101.5, "high": 103.0, "low": 101.0, "close": 102.0, "volume": 3000, "oi": 1_100_000},
+        ]
+        oi_row = upstox_provider.extract_oi_row_from_futures_candles("RELIANCE", fut_bars)
+        self.assertIsNotNone(oi_row)
+        self.assertEqual(oi_row["oi_prev"], 1_000_000.0)
+        self.assertEqual(oi_row["oi_now"], 1_100_000.0)
+        self.assertEqual(oi_row["oi_change"], 100_000.0)
+        self.assertAlmostEqual(oi_row["oi_change_percent"], 10.0, places=2)
+        self.assertEqual(oi_row["volume_contracts"], 5000.0)
+
+        now_ms = int(datetime(2026, 12, 30, 10, 0, tzinfo=ist).timestamp() * 1000)
+        expired_map = {"NIFTY_FUT": {"expiry": now_ms - 10_000}, "SENSEX_FUT": {"expiry": now_ms + 86_400_000}}
+        fresh_map = {"NIFTY_FUT": {"expiry": now_ms + 86_400_000}, "SENSEX_FUT": {"expiry": now_ms + 172_800_000}}
+        self.assertTrue(upstox_provider._instruments_need_refresh(expired_map, now_ms=now_ms))
+        self.assertFalse(upstox_provider._instruments_need_refresh(fresh_map, now_ms=now_ms))
+
+    def test_cloud_nse_block_falls_back_to_upstox_candles_and_futures_oi(self):
+        import tempfile
+        import stock_suggestion_index as ssi
+
+        ist = ZoneInfo("Asia/Kolkata")
+        bars = []
+        base_dt = datetime(2026, 11, 27, 9, 15, tzinfo=ist)
+        for idx_b in range(18):
+            ts = int((base_dt.timestamp()) + idx_b * 300)
+            px = 1000.0 + idx_b * 2.5
+            bars.append({
+                "timestamp": ts, "open": px - 1.0, "high": px + 1.5,
+                "low": px - 1.5, "close": px, "volume": 50_000.0 + idx_b * 1000.0,
+            })
+        fake_row = {
+            "symbol": "RELIANCE", "side": "gainer", "open": 1000.0, "high": 1044.0, "low": 998.5,
+            "prev_close": 995.0, "ltp": 1042.5, "percent_change": 4.77, "volume": 1_050_000.0, "value_lakhs": None,
+        }
+        fake_idx = {"NIFTY 50": {"name": "NIFTY 50", "ltp": 25600.0, "percent_change": 0.9, "direction": "bullish", "source": "Upstox"}}
+        fake_oi = {"symbol": "RELIANCE", "oi_now": 1_100_000.0, "oi_prev": 1_000_000.0, "oi_change": 100_000.0, "oi_change_percent": 10.0, "volume_contracts": 5000.0, "futures_value": 50.0}
+
+        with tempfile.TemporaryDirectory() as td:
+            td_path = Path(td)
+            with patch.object(ssi, "CANDIDATE_LIFECYCLE_PATH", td_path / "lc.json"), \
+                 patch.object(ssi, "TRACKED_BREAKOUTS_PATH", td_path / "tr.json"), \
+                 patch.object(ssi, "DAILY_TOP5_STATE_PATH", td_path / "dt.json"), \
+                 patch.object(ssi, "INSTANT_TRIGGERS_PATH", td_path / "it.json"), \
+                 patch.object(ssi, "TOP5_ELIGIBLE_STATE_PATH", td_path / "t5.json"), \
+                 patch.object(ssi, "DISCOVERY_STATE_PATH", td_path / "ds.json"), \
+                 patch.object(ssi, "OUTCOME_TRACKER_STATE_PATH", td_path / "ot.json"), \
+                 patch.object(ssi, "OUTPUT_PATH", td_path / "out.json"), \
+                 patch.object(ssi, "fetch_top_gainers_losers", side_effect=ssi.LiveDataError("nse_blocked")), \
+                 patch.object(ssi, "fetch_change_in_oi", side_effect=ssi.LiveDataError("nse_blocked")), \
+                 patch.object(ssi, "fetch_index_context", return_value=(fake_idx, [])), \
+                 patch.object(ssi, "load_fo_lot_sizes", return_value={"RELIANCE": 500}), \
+                 patch.object(ssi, "fetch_extra_candidates", side_effect=lambda syms, cb, **kw: (cb.__setitem__("RELIANCE", bars), [dict(fake_row)])[1]), \
+                 patch("upstox_provider.fetch_futures_candles", return_value=("NSE_FO|59097", [], [])), \
+                 patch("upstox_provider.extract_oi_row_from_futures_candles", return_value=fake_oi):
+                payload = ssi.build_payload(20, require_current_session=False)
+
+        self.assertTrue(payload["ok"])
+        self.assertGreaterEqual(payload["coverage"]["oi_symbols_loaded"], 1)
+        self.assertTrue(any(w.startswith("nse variations unavailable") for w in payload["warnings"]))
+        self.assertEqual(payload["bullish"][0]["symbol"], "RELIANCE")
+        self.assertEqual(payload["bullish"][0]["setup"], "Long buildup")
+
+    def test_server_prefers_newer_cloud_snapshot_over_stale_disk(self):
+        import json
+        import tempfile
+        import serve_nifty50_app as app
+
+        stale_disk = {
+            "ok": True, "session_date": "2026-11-25", "generated_at_ist": "2026-11-25T15:20:03+05:30",
+            "bullish": [{"symbol": "OLD"}], "bearish": [], "coverage": {"oi_symbols_loaded": 50},
+        }
+        fresh_cloud = {
+            "ok": True, "session_date": "2026-11-27", "generated_at_ist": "2026-11-27T15:20:03+05:30",
+            "bullish": [{"symbol": "NEW"}], "bearish": [], "coverage": {"oi_symbols_loaded": 50},
+        }
+        with tempfile.TemporaryDirectory() as td:
+            snap_file = Path(td) / "stock_suggestion_index.latest.json"
+            snap_file.write_text(json.dumps(stale_disk), encoding="utf-8")
+            with patch.object(app, "STOCK_SUGGESTION_SNAPSHOT", snap_file), \
+                 patch.object(app, "DEFAULT_STOCK_SUGGESTION_SNAPSHOT", snap_file), \
+                 patch.dict(app._SCAN_STATE, {"payload": None, "ts": 0.0, "signature": None}), \
+                 patch.dict(app._CLOUD_SNAPSHOT_CACHE, {"payload": None, "ts": 0.0}), \
+                 patch("db_adapter.load_cloud_state", return_value=fresh_cloud):
+                handler = app.NiftyHandler.__new__(app.NiftyHandler)
+                chosen = handler._cached_or_snapshot()
+        self.assertIsNotNone(chosen)
+        self.assertEqual(chosen["session_date"], "2026-11-27")
+        self.assertEqual(chosen["bullish"][0]["symbol"], "NEW")
 
 
 if __name__ == "__main__":

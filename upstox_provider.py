@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -26,7 +27,9 @@ INDIA_TZ = timezone(timedelta(hours=5, minutes=30))
 UPSTOX_API_BASE = "https://api.upstox.com/v2"
 
 _INSTRUMENTS_CACHE: dict[str, Any] | None = None
-_FUTURES_CACHE: dict[tuple[str, bool], tuple[float, list[dict[str, Any]]]] = {}
+_INSTRUMENTS_LOCK = threading.Lock()
+_INSTRUMENTS_REFRESH_ATTEMPT_TS = 0.0
+_FUTURES_CACHE: dict[tuple[str, bool], tuple[float, list[dict[str, Any]], list[dict[str, Any]]]] = {}
 _FUTURES_CACHE_TTL_SEC = 60.0
 _CHROME_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -60,6 +63,20 @@ def load_token() -> dict[str, Any]:
             pass
     if not token_data.get("access_token") and os.environ.get("UPSTOX_ACCESS_TOKEN"):
         token_data["access_token"] = os.environ.get("UPSTOX_ACCESS_TOKEN")
+    canonical_token_file = (INPUT_DIR / "upstox_token.json").resolve()
+    if not token_data.get("access_token") and TOKEN_FILE.resolve() == canonical_token_file:
+        try:
+            import db_adapter
+            cloud_token = db_adapter.load_cloud_state("upstox_token")
+            if isinstance(cloud_token, dict) and cloud_token.get("access_token"):
+                token_data = cloud_token
+                try:
+                    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+                    TOKEN_FILE.write_text(json.dumps(token_data, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+        except Exception:
+            pass
     return token_data
 
 
@@ -68,6 +85,13 @@ def save_token(token_data: dict[str, Any]) -> None:
     token_data["saved_at_epoch"] = time.time()
     token_data["saved_at_ist"] = datetime.now(INDIA_TZ).isoformat()
     TOKEN_FILE.write_text(json.dumps(token_data, indent=2), encoding="utf-8")
+    canonical_token_file = (INPUT_DIR / "upstox_token.json").resolve()
+    if TOKEN_FILE.resolve() == canonical_token_file:
+        try:
+            import db_adapter
+            db_adapter.save_cloud_state("upstox_token", token_data)
+        except Exception:
+            pass
 
 
 def get_login_url() -> str:
@@ -143,23 +167,57 @@ def get_user_profile() -> dict[str, Any] | None:
     return None
 
 
+def _instruments_need_refresh(mapping: dict[str, Any], now_ms: int | None = None) -> bool:
+    """Returns True when key near-month futures contracts in the index have expired."""
+    if not isinstance(mapping, dict) or not mapping:
+        return True
+    cur_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    # Near-month index contracts expire at 15:30 IST (~10:00 UTC) on expiry day, while expiry_ms
+    # from Upstox is stored at 23:59:59 IST. Treat anything strictly older than cur_ms as expired.
+    checked = 0
+    for key in ("NIFTY_FUT", "SENSEX_FUT", "RELIANCE_FUT"):
+        entry = mapping.get(key)
+        if isinstance(entry, dict) and entry.get("expiry"):
+            checked += 1
+            if int(entry["expiry"]) < cur_ms:
+                return True
+    return checked == 0
+
+
 def _load_instruments_map() -> dict[str, Any]:
-    """Loads cached Upstox instruments mapping, downloading on first use."""
-    global _INSTRUMENTS_CACHE
-    if _INSTRUMENTS_CACHE is None:
-        if INSTRUMENTS_FILE.exists():
+    """Loads cached Upstox instruments mapping, auto-rolling when near-month futures expire."""
+    global _INSTRUMENTS_CACHE, _INSTRUMENTS_REFRESH_ATTEMPT_TS
+    if _INSTRUMENTS_CACHE is not None and not _instruments_need_refresh(_INSTRUMENTS_CACHE):
+        return _INSTRUMENTS_CACHE
+
+    with _INSTRUMENTS_LOCK:
+        if _INSTRUMENTS_CACHE is None and INSTRUMENTS_FILE.exists():
             try:
                 _INSTRUMENTS_CACHE = json.loads(INSTRUMENTS_FILE.read_text(encoding="utf-8"))
             except Exception:
                 _INSTRUMENTS_CACHE = None
-        if not _INSTRUMENTS_CACHE:
+
+        needs_dl = _INSTRUMENTS_CACHE is None or _instruments_need_refresh(_INSTRUMENTS_CACHE)
+        if needs_dl and (time.monotonic() - _INSTRUMENTS_REFRESH_ATTEMPT_TS) >= 3600.0:
+            _INSTRUMENTS_REFRESH_ATTEMPT_TS = time.monotonic()
             try:
                 from download_upstox_instruments import download_and_index
-                _INSTRUMENTS_CACHE = download_and_index()
+                fresh = download_and_index()
+                if isinstance(fresh, dict) and fresh:
+                    _INSTRUMENTS_CACHE = fresh
             except Exception as dl_err:
-                print(f"[UPSTOX WARNING] Failed to download master instruments: {dl_err}")
-                _INSTRUMENTS_CACHE = {}
-    return _INSTRUMENTS_CACHE
+                print(f"[UPSTOX WARNING] Failed to refresh master instruments: {dl_err}")
+
+        if _INSTRUMENTS_CACHE is None:
+            _INSTRUMENTS_CACHE = {}
+        return _INSTRUMENTS_CACHE
+
+
+def refresh_instruments_if_expired() -> bool:
+    """Ensures Upstox instruments mapping is loaded and near-month futures contracts are unexpired."""
+    before = _INSTRUMENTS_CACHE
+    loaded = _load_instruments_map()
+    return bool(loaded) and loaded is not before
 
 
 def get_instrument_key(symbol: str) -> str | None:
@@ -540,6 +598,64 @@ def fetch_5m_futures_overlay(
     """Fetches 5m futures candles (volume + OI) with a 60-second in-memory cache."""
     fut_key, fut_5m, _ = fetch_futures_candles(symbol, full_range=full_range)
     return fut_key, fut_5m
+
+
+def extract_oi_row_from_futures_candles(
+    symbol: str,
+    fut_5m: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Derives an NSE-compatible OI spurt summary row from multi-day Upstox futures candles."""
+    if not fut_5m:
+        return None
+    by_day: dict[str, list[dict[str, Any]]] = {}
+    for c in fut_5m:
+        ts = c.get("timestamp")
+        if ts is None:
+            continue
+        day_str = datetime.fromtimestamp(int(ts), tz=INDIA_TZ).date().isoformat()
+        by_day.setdefault(day_str, []).append(c)
+
+    if not by_day:
+        return None
+    days = sorted(by_day)
+    latest_bars = by_day[days[-1]]
+
+    def _last_positive_oi(bars: list[dict[str, Any]]) -> float | None:
+        for b in reversed(bars):
+            val = b.get("oi")
+            if val is not None and float(val) > 0:
+                return float(val)
+        return None
+
+    oi_now = _last_positive_oi(latest_bars)
+    if oi_now is None:
+        return None
+
+    oi_prev = None
+    for d in reversed(days[:-1]):
+        oi_prev = _last_positive_oi(by_day[d])
+        if oi_prev is not None:
+            break
+
+    oi_change = (oi_now - oi_prev) if oi_prev is not None else None
+    oi_change_percent = ((oi_change / oi_prev) * 100.0) if (oi_prev and oi_change is not None) else None
+    volume_contracts = sum(float(b.get("volume") or 0.0) for b in latest_bars)
+    # calc_stock_activity expects futures_value in INR Lakhs.
+    futures_value_lakhs = sum(
+        float(b.get("volume") or 0.0) * float(b.get("close") or 0.0)
+        for b in latest_bars
+    ) / 100_000.0
+
+    return {
+        "symbol": symbol.upper().strip(),
+        "oi_now": oi_now,
+        "oi_prev": oi_prev,
+        "oi_change": oi_change,
+        "oi_change_percent": round(oi_change_percent, 2) if oi_change_percent is not None else None,
+        "volume_contracts": volume_contracts,
+        "futures_value": round(futures_value_lakhs, 2),
+        "source": "upstox_futures",
+    }
 
 
 def fetch_5m_candles_with_telemetry(

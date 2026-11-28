@@ -61,11 +61,105 @@ _INDEX_ALERT_LOCK = threading.Lock()
 # get the last result instead of queueing another subprocess.
 MIN_SCAN_INTERVAL_SECONDS = 45.0
 _SCAN_STATE: dict[str, Any] = {"ts": 0.0, "payload": None, "signature": None}
+_CLOUD_SNAPSHOT_CACHE: dict[str, Any] = {"ts": 0.0, "payload": None}
+_CLOUD_SNAPSHOT_LOCK = threading.Lock()
+_LAST_ALERT_CHECK_MONO = 0.0
+_WAKEUP_CATCHUP_LOCK = threading.Lock()
 _CLOSED_SESSION_RECOVERY_LOCK = threading.Lock()
 _INDEX_QUOTE_LOCK = threading.Lock()
 _INDEX_QUOTES: dict[str, Any] = {"ts": 0.0, "quotes": {}}
 _INDEX_OB_CACHE: dict[str, Any] = {"ts": 0.0, "obs": {}}
 _SERVE_CANDLE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _snapshot_rank_key(payload: dict[str, Any] | None) -> tuple[str, str, int]:
+    """Comparable freshness key preferring newer session/timestamp and OI-confirmed scans."""
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return ("", "", -1)
+    sess = str(payload.get("session_date") or "")
+    gen = str(payload.get("generated_at_ist") or "")
+    cov = payload.get("coverage") or {}
+    oi_cnt = int(cov.get("oi_symbols_loaded") or 0)
+    return (sess, gen, oi_cnt)
+
+
+def _snapshot_age_seconds(payload: dict[str, Any] | None, now_ist: datetime) -> float | None:
+    """Returns age in seconds since payload.generated_at_ist, or None if unavailable."""
+    if not isinstance(payload, dict):
+        return None
+    gen = payload.get("generated_at_ist")
+    if not gen:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(gen))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=now_ist.tzinfo)
+        return max(0.0, (now_ist - dt).total_seconds())
+    except Exception:
+        return None
+
+
+def _load_cloud_snapshot_cached() -> dict[str, Any] | None:
+    """Loads the newest persisted scanner snapshot from Neon Postgres (cached 30s)."""
+    now_m = time.monotonic()
+    with _CLOUD_SNAPSHOT_LOCK:
+        if now_m - float(_CLOUD_SNAPSHOT_CACHE.get("ts") or 0.0) < 30.0:
+            cached = _CLOUD_SNAPSHOT_CACHE.get("payload")
+            return dict(cached) if isinstance(cached, dict) else None
+    loaded = None
+    try:
+        import db_adapter
+        loaded = db_adapter.load_cloud_state("stock_suggestion_snapshot")
+    except Exception:
+        loaded = None
+    with _CLOUD_SNAPSHOT_LOCK:
+        _CLOUD_SNAPSHOT_CACHE["ts"] = time.monotonic()
+        _CLOUD_SNAPSHOT_CACHE["payload"] = loaded if isinstance(loaded, dict) else None
+    return dict(loaded) if isinstance(loaded, dict) else None
+
+
+def _maybe_trigger_wakeup_catchup() -> None:
+    """Non-blocking market-hours catch-up when container wakes from idle sleep."""
+    now_ist = get_ist_now()
+    _run_premarket_reset_if_due(now_ist)
+    if not is_ist_market_hours(now_ist):
+        return
+    if not _WAKEUP_CATCHUP_LOCK.acquire(blocking=False):
+        return
+
+    def _catchup() -> None:
+        try:
+            cur_ist = get_ist_now()
+            mins = cur_ist.hour * 60 + cur_ist.minute
+            if mins <= 14 * 60 + 45 and (time.monotonic() - _LAST_ALERT_CHECK_MONO) >= 280.0:
+                _dispatch_index_alerts_safe()
+            cur_payload = _SCAN_STATE.get("payload")
+            age = _snapshot_age_seconds(cur_payload, cur_ist)
+            stale = (
+                cur_payload is None
+                or cur_payload.get("session_date") != cur_ist.date().isoformat()
+                or (age is not None and age > 330.0)
+            )
+            if stale and mins <= AUTO_SCAN_LAST_RUN_MINUTES and not REFRESH_LOCK.locked():
+                exec_py = str(VENV_PYTHON if VENV_PYTHON.exists() else sys.executable)
+                if REFRESH_LOCK.acquire(blocking=False):
+                    try:
+                        res = run_command([exec_py, str(STOCK_SUGGESTION)], timeout=120)
+                        out = res.get("stdout") if isinstance(res.get("stdout"), dict) else {}
+                        if _payload_has_signal(out) and not out.get("_stale_kept"):
+                            _SCAN_STATE["ts"] = time.time()
+                            _SCAN_STATE["payload"] = out
+                            with _CLOUD_SNAPSHOT_LOCK:
+                                _CLOUD_SNAPSHOT_CACHE["payload"] = out
+                                _CLOUD_SNAPSHOT_CACHE["ts"] = time.monotonic()
+                    finally:
+                        REFRESH_LOCK.release()
+        except Exception:
+            pass
+        finally:
+            _WAKEUP_CATCHUP_LOCK.release()
+
+    threading.Thread(target=_catchup, name="CloudWakeupCatchup", daemon=True).start()
 
 
 def _apply_index_regime(quote: dict[str, Any]) -> None:
@@ -299,7 +393,10 @@ def _run_premarket_reset_if_due(now_ist: datetime) -> None:
         )
         empty_payload = res.get("stdout") if isinstance(res.get("stdout"), dict) else None
         if empty_payload:
+            _SCAN_STATE["payload"] = None
             _SCAN_STATE["opening_payload"] = empty_payload
+            with _CLOUD_SNAPSHOT_LOCK:
+                _CLOUD_SNAPSHOT_CACHE["ts"] = 0.0
             # Otherwise the Auto-Scan badge keeps showing yesterday's last-run
             # time/status until the first real 9:15+ scan overwrites it.
             LAST_AUTO_SCAN_INFO["status"] = "pre_market"
@@ -343,6 +440,11 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
         import scanner_trace
         scanner_trace.submit_health("scheduler_started", interval_seconds=interval_seconds,
                                     auto_scan_cutoff_ist="15:20", process_id=os.getpid())
+        try:
+            import upstox_provider
+            upstox_provider.refresh_instruments_if_expired()
+        except Exception:
+            pass
         time.sleep(5)  # Grace period on boot
         while True:
             try:
@@ -375,6 +477,9 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
                             # it changed - prevents blank/flicker broadcast storms.
                             if has_signal:
                                 _SCAN_STATE["payload"] = scan_payload
+                                with _CLOUD_SNAPSHOT_LOCK:
+                                    _CLOUD_SNAPSHOT_CACHE["payload"] = scan_payload
+                                    _CLOUD_SNAPSHOT_CACHE["ts"] = time.monotonic()
                                 sig = _payload_signature(scan_payload)
                                 if sig != _SCAN_STATE.get("signature"):
                                     _SCAN_STATE["signature"] = sig
@@ -432,7 +537,9 @@ def start_background_auto_scanner(interval_seconds: int = 300) -> None:
 
 def _dispatch_index_alerts_safe(payload: dict | None = None) -> list[str]:
     """Thread-safe wrapper around notify.dispatch_new_fresh_alerts decoupled from REFRESH_LOCK."""
+    global _LAST_ALERT_CHECK_MONO
     with _INDEX_ALERT_LOCK:
+        _LAST_ALERT_CHECK_MONO = time.monotonic()
         try:
             import notify
             return notify.dispatch_new_fresh_alerts(payload)
@@ -876,6 +983,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             return
 
         if parsed_path.path == "/api/health":
+            _maybe_trigger_wakeup_catchup()
             self._send_json(HTTPStatus.OK, {"ok": True, "service": "stock-suggestion-live-server"})
             return
 
@@ -1025,6 +1133,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
 
     def _serve_index_live(self) -> None:
         from stock_suggestion_index import fetch_index_context
+        _maybe_trigger_wakeup_catchup()
 
         with _INDEX_QUOTE_LOCK:
             if time.monotonic() - _INDEX_QUOTES["ts"] >= 5:
@@ -1322,6 +1431,7 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         """Serve the last available snapshot without waiting for an upstream scan."""
         now_ist = get_ist_now()
         today = now_ist.date().isoformat()
+        current_minutes = now_ist.hour * 60 + now_ist.minute
         best = self._cached_or_snapshot()
         if best is None:
             opening = _SCAN_STATE.get("opening_payload") or {}
@@ -1334,7 +1444,21 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 self._kick_background_refresh()
         elif best.get("session_date") != today:
             best["_previous_session"] = True
-        after_close = now_ist.weekday() < 5 and now_ist.hour * 60 + now_ist.minute > 15 * 60 + 30
+            if (
+                is_ist_market_hours(now_ist)
+                and (9 * 60 + 20) <= current_minutes <= AUTO_SCAN_LAST_RUN_MINUTES
+                and not REFRESH_LOCK.locked()
+            ):
+                self._kick_background_refresh()
+        elif (
+            is_ist_market_hours(now_ist)
+            and (9 * 60 + 20) <= current_minutes <= AUTO_SCAN_LAST_RUN_MINUTES
+            and not REFRESH_LOCK.locked()
+        ):
+            age_s = _snapshot_age_seconds(best, now_ist)
+            if age_s is not None and age_s > 330.0:
+                self._kick_background_refresh()
+        after_close = now_ist.weekday() < 5 and current_minutes > 15 * 60 + 30
         if after_close and (best.get("_previous_session") or best.get("_awaiting_scan")):
             with _CLOSED_SESSION_RECOVERY_LOCK:
                 if not REFRESH_LOCK.locked() and _SCAN_STATE.get("closed_session_recovery") != today:
@@ -1372,9 +1496,12 @@ class NiftyHandler(SimpleHTTPRequestHandler):
         threading.Thread(target=_run, name="BgSuggestionRefresh", daemon=True).start()
 
     def _cached_or_snapshot(self) -> dict[str, Any] | None:
-        """Find the last good scan without replacing it with an empty opening result."""
-        if _payload_has_signal(_SCAN_STATE.get("payload")):
-            return dict(_SCAN_STATE["payload"])
+        """Selects the newest valid scan across memory, configured snapshot files, and Neon Postgres."""
+        candidates: list[dict[str, Any]] = []
+        mem_payload = _SCAN_STATE.get("payload")
+        if _payload_has_signal(mem_payload):
+            candidates.append(dict(mem_payload))
+
         paths = (STOCK_SUGGESTION_SNAPSHOT,)
         if _scanner_data_dir and "DATA_DIR" in os.environ and "PERSISTENT_DATA_DIR" not in os.environ:
             paths += (DEFAULT_STOCK_SUGGESTION_SNAPSHOT,)
@@ -1384,8 +1511,24 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             except (OSError, ValueError):
                 continue
             if _payload_has_signal(payload):
-                return payload
-        return None
+                candidates.append(payload)
+
+        use_cloud_snapshot = bool(_scanner_data_dir)
+        if not use_cloud_snapshot:
+            try:
+                use_cloud_snapshot = STOCK_SUGGESTION_SNAPSHOT.resolve() == DEFAULT_STOCK_SUGGESTION_SNAPSHOT.resolve()
+            except Exception:
+                use_cloud_snapshot = STOCK_SUGGESTION_SNAPSHOT == DEFAULT_STOCK_SUGGESTION_SNAPSHOT
+        if use_cloud_snapshot:
+            cloud_payload = _load_cloud_snapshot_cached()
+            if _payload_has_signal(cloud_payload):
+                candidates.append(cloud_payload)
+
+        if not candidates:
+            return None
+        winner = max(candidates, key=_snapshot_rank_key)
+        _SCAN_STATE["payload"] = winner
+        return dict(winner)
 
     def _refresh_stock_suggestions_payload(self) -> tuple[HTTPStatus, dict[str, Any]]:
         """Refresh the stock suggestion index, debounced and non-blocking-safe."""
@@ -1434,6 +1577,9 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             if _payload_has_signal(payload) and not payload.get("_stale_kept"):
                 _attach_fresh_ob_to_index_context(payload)
                 _SCAN_STATE["payload"] = payload
+                with _CLOUD_SNAPSHOT_LOCK:
+                    _CLOUD_SNAPSHOT_CACHE["payload"] = payload
+                    _CLOUD_SNAPSHOT_CACHE["ts"] = time.monotonic()
                 signature = _payload_signature(payload)
                 # Only push to open tabs when the scan actually has data AND
                 # something changed - stops the blank/flicker broadcast storm.

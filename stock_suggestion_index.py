@@ -19,6 +19,7 @@ import http.cookiejar
 import json
 import math
 import os
+import re
 import sys
 import time as _time
 import urllib.parse
@@ -240,23 +241,139 @@ def load_fo_lot_sizes() -> dict[str, int]:
         try:
             with open(FO_LOT_SIZES_PATH, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
+                month_cols: list[str] | None = None
                 for r in reader:
                     c = {k.strip(): (v.strip() if v else "") for k, v in r.items() if k}
+                    if month_cols is None:
+                        month_cols = [
+                            k for k in c
+                            if re.match(r"^(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-\d{2}$", k, re.IGNORECASE)
+                        ]
                     sym = c.get("SYMBOL") or c.get("Symbol")
                     if not sym:
                         continue
-                    for col in ["SEP-26", "OCT-26", "NOV-26", "DEC-26"]:
+                    for col in month_cols:
                         val = c.get(col)
                         if val:
                             try:
-                                lot_sizes[sym.strip().upper()] = int(float(val))
-                                break
+                                parsed_lot = int(float(val))
+                                if parsed_lot > 0:
+                                    lot_sizes[sym.strip().upper()] = parsed_lot
+                                    break
                             except (ValueError, TypeError):
                                 pass
         except Exception as e:
             print(f"Error loading fo_lot_sizes.csv: {e}", file=sys.stderr)
     _FO_LOT_SIZES_CACHE = lot_sizes
     return _FO_LOT_SIZES_CACHE
+
+
+def _is_canonical_input_path(path: Path, filename: str) -> bool:
+    """Returns True when path points to the live INPUT_DIR file (not a unit-test tempdir override)."""
+    try:
+        return os.path.abspath(str(path)) == os.path.abspath(str(INPUT_DIR / filename))
+    except Exception:
+        return False
+
+
+def _load_cloud_backed_state(
+    path: Path,
+    canonical_filename: str,
+    cloud_key: str,
+    default_factory: Any,
+    *,
+    bak_path: Path | None = None,
+) -> dict[str, Any]:
+    """Loads daily scanner state from disk + Neon Postgres, keeping whichever session/timestamp is newer."""
+    local_state: dict[str, Any] | None = None
+    local_ts = 0.0
+    for candidate in ([path, bak_path] if bak_path is not None else [path]):
+        if candidate is None or not candidate.exists():
+            continue
+        try:
+            raw = candidate.read_text(encoding="utf-8")
+            if raw.strip():
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    local_state = parsed
+                    local_ts = candidate.stat().st_mtime
+                    break
+        except Exception as exc:
+            print(f"[{cloud_key}] State read failed ({exc}) on {candidate.name}", file=sys.stderr)
+
+    cloud_state: dict[str, Any] | None = None
+    if _is_canonical_input_path(path, canonical_filename):
+        try:
+            import db_adapter
+            loaded = db_adapter.load_cloud_state(cloud_key)
+            if isinstance(loaded, dict):
+                cloud_state = loaded
+        except Exception:
+            cloud_state = None
+
+    if cloud_state is not None:
+        cloud_ts = float(cloud_state.pop("_cloud_saved_at_epoch", 0.0) or 0.0)
+        if local_state is None:
+            chosen = cloud_state
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(chosen, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+            return chosen
+        local_rank = (str(local_state.get("session_date") or ""), local_ts)
+        cloud_rank = (str(cloud_state.get("session_date") or ""), cloud_ts)
+        if cloud_rank > local_rank:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(cloud_state, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+            return cloud_state
+
+    return local_state if local_state is not None else default_factory()
+
+
+def _save_cloud_backed_state(
+    path: Path,
+    canonical_filename: str,
+    cloud_key: str,
+    state: dict[str, Any],
+    *,
+    bak_path: Path | None = None,
+    atomic: bool = False,
+) -> None:
+    """Persists daily scanner state to disk and mirrors it to Neon Postgres when canonical."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if atomic:
+            if bak_path is not None and path.exists():
+                try:
+                    raw_primary = path.read_text(encoding="utf-8")
+                    if raw_primary.strip():
+                        bak_path.write_text(raw_primary, encoding="utf-8")
+                except Exception:
+                    pass
+            temp_path = path.with_name(f"{path.name}.{os.getpid()}.{_time.time_ns()}.tmp")
+            temp_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            os.replace(temp_path, path)
+        else:
+            path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[{cloud_key}] save skipped: {exc}", file=sys.stderr)
+
+    if _is_canonical_input_path(path, canonical_filename):
+        try:
+            import db_adapter
+            cloud_payload = dict(state)
+            cloud_payload["_cloud_saved_at_epoch"] = _time.time()
+            db_adapter.save_cloud_state(
+                cloud_key,
+                cloud_payload,
+                session_date=str(state.get("session_date")) if state.get("session_date") else None,
+            )
+        except Exception:
+            pass
 
 
 def get_fo_lot_size(symbol: str) -> int:
@@ -1044,12 +1161,56 @@ def fetch_5m_candles_for_symbol(symbol: str, full_range: bool = False) -> list[d
     return []
 
 
+def _upstox_quote_and_candles_fallback(symbol: str) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+    """Builds the F&O candidate row + completed 5m bars directly from public Upstox APIs."""
+    try:
+        import upstox_provider
+        upstox_res = upstox_provider.fetch_5m_candles_with_telemetry(symbol, full_range=True, include_futures=False)
+        if not upstox_res.get("ok"):
+            return None
+        all_bars = upstox_res.get("completed_candles") or upstox_res.get("all_candles") or []
+        if not all_bars:
+            return None
+
+        by_day: dict[date, list[dict[str, Any]]] = {}
+        for bar in all_bars:
+            d = datetime.fromtimestamp(int(bar["timestamp"]), INDIA_TZ).date()
+            by_day.setdefault(d, []).append(bar)
+        days = sorted(by_day)
+        latest_bars = by_day[days[-1]]
+        if not latest_bars:
+            return None
+
+        prev_close = float(by_day[days[-2]][-1]["close"]) if len(days) >= 2 else float(latest_bars[0]["open"])
+        if prev_close <= 0:
+            return None
+
+        if upstox_res.get("candles_1m"):
+            _CANDLE_1M_CACHE[symbol] = (_time.time(), upstox_res["candles_1m"])
+
+        ltp = float(latest_bars[-1]["close"])
+        pct = ((ltp - prev_close) / prev_close) * 100.0
+        row = {
+            "symbol": symbol,
+            "side": "gainer" if pct >= 0 else "loser",
+            "open": float(latest_bars[0]["open"]),
+            "high": max(float(c["high"]) for c in latest_bars),
+            "low": min(float(c["low"]) for c in latest_bars),
+            "prev_close": prev_close,
+            "ltp": ltp,
+            "percent_change": pct,
+            "volume": sum(float(c.get("volume") or 0.0) for c in latest_bars),
+            "value_lakhs": None,
+        }
+        return row, latest_bars
+    except Exception:
+        return None
+
+
 def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     """For a symbol that ISN'T in NSE's top-20 gainers/losers: build the same
-    row shape (open/high/low/ltp/percent_change/volume) directly from Yahoo's
-    intraday chart in one request, using its `previousClose` in the response
-    metadata - no dependency on the top-20 feed at all. Used to widen the
-    candidate pool beyond NSE's arbitrary top-20 cutoff."""
+    row shape (open/high/low/ltp/percent_change/volume) from Yahoo's intraday
+    chart, falling back cleanly to public Upstox 5m candles when Yahoo fails."""
     import scanner_trace
     trace_start = _time.monotonic()
     sym_clean = symbol.upper().strip()
@@ -1076,7 +1237,7 @@ def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], lis
         result = (data.get("chart") or {}).get("result")
         if not result:
             scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start, status="empty_response")
-            return None
+            return _upstox_quote_and_candles_fallback(symbol)
         quote = result[0]
         meta = quote.get("meta") or {}
         scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start,
@@ -1102,7 +1263,7 @@ def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], lis
                         "low": float(l), "close": float(c), "volume": float(v or 0),
                     })
         if not candles or not prev_close:
-            return None
+            return _upstox_quote_and_candles_fallback(symbol)
 
         ltp = candles[-1]["close"]
         pct = ((ltp - prev_close) / prev_close) * 100
@@ -1125,6 +1286,9 @@ def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], lis
     except Exception as e:
         scanner_trace.safe_source("Yahoo_extra_quote", symbol=symbol, started=trace_start,
                                  status="fetch_failed", error_type=type(e).__name__)
+        fallback = _upstox_quote_and_candles_fallback(symbol)
+        if fallback is not None:
+            return fallback
         print(f"fetch_quote_and_candles_for_symbol error for {symbol}: {type(e)} {e}", file=sys.stderr)
         return None
 
@@ -1132,22 +1296,22 @@ def fetch_quote_and_candles_for_symbol(symbol: str) -> tuple[dict[str, Any], lis
 def fetch_extra_candidates(
     symbols: Iterable[str],
     candles_by_symbol: dict[str, list[dict[str, Any]]],
+    *,
+    timeout_seconds: float | None = None,
 ) -> list[dict[str, Any]]:
     """Widen the candidate pool beyond NSE's top-20 gainers/losers: for every
-    OI-spurts symbol not already in that top-20, fetch its own quote+candles
+    F&O symbol not already in that top-20, fetch its own quote+candles
     directly and build a synthetic row in the same shape the top-20 feed
-    produces. These rows then go through the EXACT SAME scoring/blocker
-    pipeline as top-20 candidates - no lowered bar, just a wider net, so a
-    real breakout is never invisible purely because its day-change hasn't
-    cleared an arbitrary top-20 cutoff yet."""
+    produces."""
     symbols = list(symbols)
     if not symbols:
         return []
+    wait_budget = CANDLE_POOL_WAIT_SECONDS if timeout_seconds is None else float(timeout_seconds)
     rows: list[dict[str, Any]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(symbols), CANDLE_POOL_MAX_WORKERS)) as executor:
         future_to_sym = {executor.submit(fetch_quote_and_candles_for_symbol, sym): sym for sym in symbols}
         try:
-            for future in concurrent.futures.as_completed(future_to_sym, timeout=CANDLE_POOL_WAIT_SECONDS):
+            for future in concurrent.futures.as_completed(future_to_sym, timeout=wait_budget):
                 sym = future_to_sym[future]
                 try:
                     result = future.result()
@@ -2724,46 +2888,18 @@ def _lifecycle_file_lock():
 
 def _load_lifecycle_state() -> dict[str, Any]:
     base, bak, _ = _lifecycle_paths()
-    if base.exists():
-        try:
-            content = base.read_text(encoding="utf-8")
-            if content.strip():
-                return json.loads(content)
-        except Exception as exc:
-            print(f"[lifecycle] Primary state corrupted ({exc}), attempting backup...", file=sys.stderr)
-            if bak.exists():
-                try:
-                    bak_content = bak.read_text(encoding="utf-8")
-                    if bak_content.strip():
-                        print("[lifecycle] Successfully recovered state from backup file.", file=sys.stderr)
-                        return json.loads(bak_content)
-                except Exception as bak_exc:
-                    print(f"[lifecycle] Backup state also unreadable ({bak_exc}).", file=sys.stderr)
-
-    return {"session_date": None, "candidates": {}}
+    return _load_cloud_backed_state(
+        base, "candidate_lifecycle.json", "candidate_lifecycle",
+        lambda: {"session_date": None, "candidates": {}}, bak_path=bak,
+    )
 
 
 def _save_lifecycle_state(state: dict[str, Any]) -> None:
-    try:
-        base, bak, _ = _lifecycle_paths()
-        base.parent.mkdir(parents=True, exist_ok=True)
-        # 1. Update backup copy if valid primary file currently exists
-        if base.exists():
-            try:
-                raw_primary = base.read_text(encoding="utf-8")
-                if raw_primary.strip():
-                    bak.write_text(raw_primary, encoding="utf-8")
-            except Exception:
-                pass
-
-        # 2. Atomic write of primary file using unique temporary file + os.replace
-        temp_path = base.with_name(
-            f"{base.name}.{os.getpid()}.{_time.time_ns()}.tmp"
-        )
-        temp_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        os.replace(temp_path, base)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[lifecycle] save skipped: {exc}", file=sys.stderr)
+    base, bak, _ = _lifecycle_paths()
+    _save_cloud_backed_state(
+        base, "candidate_lifecycle.json", "candidate_lifecycle",
+        state, bak_path=bak, atomic=True,
+    )
 
 
 def _parse_time_minutes(time_str: str | None) -> int:
@@ -3412,18 +3548,16 @@ TOP5_ELIGIBLE_STATE_PATH = INPUT_DIR / "top5_eligible_state.json"
 
 
 def _load_tracked_state() -> dict[str, Any]:
-    try:
-        return json.loads(TRACKED_BREAKOUTS_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {"session_date": None, "items": []}
+    return _load_cloud_backed_state(
+        TRACKED_BREAKOUTS_PATH, "tracked_breakouts.json", "tracked_breakouts",
+        lambda: {"session_date": None, "items": []},
+    )
 
 
 def _save_tracked_state(state: dict[str, Any]) -> None:
-    try:
-        INPUT_DIR.mkdir(parents=True, exist_ok=True)
-        TRACKED_BREAKOUTS_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[tracked] save skipped: {exc}", file=sys.stderr)
+    _save_cloud_backed_state(
+        TRACKED_BREAKOUTS_PATH, "tracked_breakouts.json", "tracked_breakouts", state,
+    )
 
 
 def update_tracked_breakouts(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -3642,19 +3776,17 @@ def _current_top5_window_start(now_ist: datetime) -> str | None:
 
 
 def _load_daily_top5_state() -> dict[str, Any]:
-    try:
-        return json.loads(DAILY_TOP5_STATE_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {"session_date": None, "window_start_ist": None, "locked_at_ist": None,
-                 "top5": {"bullish": [], "bearish": []}}
+    return _load_cloud_backed_state(
+        DAILY_TOP5_STATE_PATH, "daily_top5.json", "daily_top5",
+        lambda: {"session_date": None, "window_start_ist": None, "locked_at_ist": None,
+                 "top5": {"bullish": [], "bearish": []}},
+    )
 
 
 def _save_daily_top5_state(state: dict[str, Any]) -> None:
-    try:
-        INPUT_DIR.mkdir(parents=True, exist_ok=True)
-        DAILY_TOP5_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[daily_top5] save skipped: {exc}", file=sys.stderr)
+    _save_cloud_backed_state(
+        DAILY_TOP5_STATE_PATH, "daily_top5.json", "daily_top5", state,
+    )
 
 
 def update_daily_top5(
@@ -3786,18 +3918,16 @@ def score_instant_trigger_factors(
 
 
 def _load_instant_triggers_state() -> dict[str, Any]:
-    try:
-        return json.loads(INSTANT_TRIGGERS_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {"session_date": None, "items": []}
+    return _load_cloud_backed_state(
+        INSTANT_TRIGGERS_PATH, "instant_triggers.json", "instant_triggers",
+        lambda: {"session_date": None, "items": []},
+    )
 
 
 def _save_instant_triggers_state(state: dict[str, Any]) -> None:
-    try:
-        INPUT_DIR.mkdir(parents=True, exist_ok=True)
-        INSTANT_TRIGGERS_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[instant_triggers] save skipped: {exc}", file=sys.stderr)
+    _save_cloud_backed_state(
+        INSTANT_TRIGGERS_PATH, "instant_triggers.json", "instant_triggers", state,
+    )
 
 
 def update_instant_triggers(
@@ -4163,18 +4293,16 @@ def compute_top5_eligible(
 
 
 def _load_top5_eligible_state() -> dict[str, Any]:
-    try:
-        return json.loads(TOP5_ELIGIBLE_STATE_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {"session_date": None, "first_seen": {}}
+    return _load_cloud_backed_state(
+        TOP5_ELIGIBLE_STATE_PATH, "top5_eligible_state.json", "top5_eligible_state",
+        lambda: {"session_date": None, "first_seen": {}},
+    )
 
 
 def _save_top5_eligible_state(state: dict[str, Any]) -> None:
-    try:
-        INPUT_DIR.mkdir(parents=True, exist_ok=True)
-        TOP5_ELIGIBLE_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[top5_eligible] save skipped: {exc}", file=sys.stderr)
+    _save_cloud_backed_state(
+        TOP5_ELIGIBLE_STATE_PATH, "top5_eligible_state.json", "top5_eligible_state", state,
+    )
 
 
 def annotate_top5_eligible_since(
@@ -4262,6 +4390,66 @@ def compute_pmh_pml_filter(
     return result
 
 
+def _enrich_missing_oi_from_upstox(
+    candidate_rows: list[dict[str, Any]],
+    oi_by_symbol: dict[str, dict[str, Any]],
+    *,
+    timeout_seconds: float = 20.0,
+) -> int:
+    """Fills missing Futures OI buildup metrics from public Upstox futures candles when NSE OI spurts is unavailable."""
+    missing_syms: list[str] = []
+    seen: set[str] = set()
+    for row in candidate_rows:
+        sym = str(row.get("symbol") or "").upper().strip()
+        if not sym or sym in seen or sym in oi_by_symbol:
+            continue
+        if not _passes_base_filter(sym, oi_by_symbol):
+            continue
+        pct = abs(float(row.get("percent_change") or 0.0))
+        if not oi_by_symbol or pct >= 0.45:
+            seen.add(sym)
+            missing_syms.append(sym)
+    if not missing_syms:
+        return 0
+
+    # Prioritize biggest absolute % movers first so tight timeouts capture the top setups.
+    pct_by_sym = {
+        str(r.get("symbol") or "").upper().strip(): abs(float(r.get("percent_change") or 0.0))
+        for r in candidate_rows
+    }
+    missing_syms.sort(key=lambda s: pct_by_sym.get(s, 0.0), reverse=True)
+
+    added = 0
+    try:
+        import upstox_provider
+    except Exception:
+        return 0
+
+    def _fetch_one(sym: str) -> tuple[str, dict[str, Any] | None]:
+        try:
+            _, fut_5m, _ = upstox_provider.fetch_futures_candles(sym, full_range=True)
+            return sym, upstox_provider.extract_oi_row_from_futures_candles(sym, fut_5m)
+        except Exception:
+            return sym, None
+
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=min(len(missing_syms), 16))
+    future_to_sym = {ex.submit(_fetch_one, s): s for s in missing_syms}
+    try:
+        for fut in concurrent.futures.as_completed(future_to_sym, timeout=timeout_seconds):
+            try:
+                sym, oi_row = fut.result()
+                if oi_row:
+                    oi_by_symbol[sym] = oi_row
+                    added += 1
+            except Exception:
+                pass
+    except concurrent.futures.TimeoutError:
+        pass
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+    return added
+
+
 def build_payload(top: int, *, require_current_session: bool = False) -> dict[str, Any]:
     import scanner_telemetry
     import scanner_trace
@@ -4271,26 +4459,30 @@ def build_payload(top: int, *, require_current_session: bool = False) -> dict[st
     scanner_trace.begin(scan_id, now_ist.isoformat())
     errors: list[str] = []
 
-    # The three upstream NSE reads are independent - run them concurrently.
+    # The three upstream NSE reads are independent - run them concurrently, but keep
+    # gainers/losers and OI spurts non-fatal so cloud deployments behind NSE IP blocks
+    # fall back cleanly to Upstox + Yahoo F&O scanning.
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
         f_var = ex.submit(fetch_top_gainers_losers)
         f_oi = ex.submit(fetch_change_in_oi)
         f_idx = ex.submit(fetch_index_context)
-        gainers, losers, variation_errors = f_var.result()
-        oi_by_symbol, oi_errors = f_oi.result()
+        try:
+            gainers, losers, variation_errors = f_var.result()
+        except Exception as var_exc:
+            gainers, losers, variation_errors = [], [], [f"nse variations unavailable (using F&O fallback): {var_exc}"]
+        try:
+            oi_by_symbol, oi_errors = f_oi.result()
+        except Exception as oi_exc:
+            oi_by_symbol, oi_errors = {}, [f"nse oi_spurts unavailable (using Upstox futures OI): {oi_exc}"]
         index_context, index_errors = f_idx.result()
     errors.extend(variation_errors)
     errors.extend(oi_errors)
     errors.extend(index_errors)
 
     # Widen intake beyond NSE's top-20 gainers/losers entirely: every F&O
-    # stock with lot size < LOT_SCAN_THRESHOLD is checked directly via its own
-    # quote+candles, regardless of whether NSE's top-20 OR its (dynamic,
-    # can-narrow-during-the-day) OI-spurts feed happens to include it. The
-    # stock's own lot size is a fixed, always-known fact - not something NSE
-    # decides moment to moment - so this makes NSE's lists an OPTIONAL extra
-    # signal (still used for OI/setup classification when available) rather
-    # than the sole gatekeeper for whether we ever look at a stock at all.
+    # stock with lot size <= MAX_ALLOWED_LOT_SIZE is checked directly via its own
+    # quote+candles, regardless of whether NSE's top-20 OR its OI-spurts feed
+    # is available (so cloud scans remain completely independent of NSE blocks).
     shared_candles: dict[str, list[dict[str, Any]]] = {}
     known_symbols = {r["symbol"] for r in gainers} | {r["symbol"] for r in losers}
     extra_symbols = [
@@ -4300,9 +4492,16 @@ def build_payload(top: int, *, require_current_session: bool = False) -> dict[st
         and 0 < lot <= MAX_ALLOWED_LOT_SIZE
     ]
     if extra_symbols:
-        extra_rows = fetch_extra_candidates(extra_symbols, shared_candles)
+        pool_wait = 25.0 if (not gainers and not losers) else CANDLE_POOL_WAIT_SECONDS
+        extra_rows = fetch_extra_candidates(extra_symbols, shared_candles, timeout_seconds=pool_wait)
         for row in extra_rows:
             (gainers if row["side"] == "gainer" else losers).append(row)
+
+    if not gainers and not losers:
+        raise LiveDataError("; ".join(errors) or "Unable to load market gainers/losers from NSE or fallback feeds.")
+
+    if not oi_by_symbol:
+        _enrich_missing_oi_from_upstox([*gainers, *losers], oi_by_symbol)
 
     # Warm the 5-minute candle cache once for the union of both sides'
     # candidates, so bullish and bearish do not each pay a separate fetch wait.
@@ -4715,18 +4914,16 @@ def _parse_clock_to_minutes(text: str | None) -> int | None:
 
 
 def _load_discovery_state() -> dict[str, Any]:
-    try:
-        return json.loads(DISCOVERY_STATE_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {"session_date": None, "logged_keys": []}
+    return _load_cloud_backed_state(
+        DISCOVERY_STATE_PATH, "discovery_state.json", "discovery_state",
+        lambda: {"session_date": None, "logged_keys": []},
+    )
 
 
 def _save_discovery_state(state: dict[str, Any]) -> None:
-    try:
-        INPUT_DIR.mkdir(parents=True, exist_ok=True)
-        DISCOVERY_STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[discovery] state save skipped: {exc}", file=sys.stderr)
+    _save_cloud_backed_state(
+        DISCOVERY_STATE_PATH, "discovery_state.json", "discovery_state", state,
+    )
 
 
 def log_discovery_delays(payload: dict[str, Any]) -> None:
@@ -4828,6 +5025,16 @@ def main() -> int:
             return exit_code
 
     output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    if _has_signal(payload) and _is_canonical_input_path(output, OUTPUT_PATH.name):
+        try:
+            import db_adapter
+            db_adapter.save_cloud_state(
+                "stock_suggestion_snapshot",
+                payload,
+                session_date=str(payload.get("session_date")) if payload.get("session_date") else None,
+            )
+        except Exception as db_err:
+            print(f"[cloud_snapshot] save skipped: {db_err}", file=sys.stderr)
     print(json.dumps(payload, indent=2))
     return exit_code
 

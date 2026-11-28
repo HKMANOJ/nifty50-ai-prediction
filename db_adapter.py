@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -240,6 +242,9 @@ class ConnectionWrapper:
             self.conn.close()
 
 _GLOBAL_CONN: ConnectionWrapper | None = None
+_CLOUD_STATE_LOCK = threading.Lock()
+_CLOUD_STATE_TABLE_READY = False
+
 
 def get_db_connection() -> ConnectionWrapper:
     global _GLOBAL_CONN
@@ -256,3 +261,108 @@ def get_db_connection() -> ConnectionWrapper:
             
     _GLOBAL_CONN = ConnectionWrapper().connect()
     return _GLOBAL_CONN
+
+
+def _open_cloud_pg_conn():
+    """Opens a short-lived dedicated PostgreSQL connection safe for multi-threaded use."""
+    if DB_ENGINE != "postgres" or not DATABASE_URL:
+        return None
+    import psycopg2
+    return psycopg2.connect(DATABASE_URL, connect_timeout=5)
+
+
+def _ensure_cloud_state_table(conn: Any) -> None:
+    """Ensures cloud_runtime_state exists in Postgres once per process."""
+    global _CLOUD_STATE_TABLE_READY
+    if _CLOUD_STATE_TABLE_READY:
+        return
+    with _CLOUD_STATE_LOCK:
+        if _CLOUD_STATE_TABLE_READY:
+            return
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cloud_runtime_state (
+                  state_key TEXT PRIMARY KEY,
+                  session_date TEXT,
+                  payload JSONB NOT NULL,
+                  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.commit()
+            _CLOUD_STATE_TABLE_READY = True
+        finally:
+            cur.close()
+
+
+def load_cloud_state(state_key: str) -> dict[str, Any] | None:
+    """Loads a JSON state dict from Neon PostgreSQL if configured; fails open cleanly."""
+    conn = None
+    try:
+        conn = _open_cloud_pg_conn()
+        if conn is None:
+            return None
+        _ensure_cloud_state_table(conn)
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT payload FROM cloud_runtime_state WHERE state_key = %s", (state_key,))
+            row = cur.fetchone()
+            if row and isinstance(row[0], dict):
+                return row[0]
+            if row and isinstance(row[0], str):
+                parsed = json.loads(row[0])
+                return parsed if isinstance(parsed, dict) else None
+            return None
+        finally:
+            cur.close()
+    except Exception:
+        return None
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def save_cloud_state(state_key: str, payload: dict[str, Any], session_date: str | None = None) -> bool:
+    """Upserts a JSON state dict into Neon PostgreSQL if configured; never raises."""
+    conn = None
+    try:
+        conn = _open_cloud_pg_conn()
+        if conn is None:
+            return False
+        _ensure_cloud_state_table(conn)
+        cur = conn.cursor()
+        try:
+            sess = session_date or (str(payload.get("session_date")) if payload.get("session_date") else None)
+            cur.execute(
+                """
+                INSERT INTO cloud_runtime_state (state_key, session_date, payload, updated_at)
+                VALUES (%s, %s, %s::jsonb, NOW())
+                ON CONFLICT (state_key) DO UPDATE SET
+                  session_date = EXCLUDED.session_date,
+                  payload = EXCLUDED.payload,
+                  updated_at = CURRENT_TIMESTAMP
+                """,
+                (state_key, sess, json.dumps(payload, default=str)),
+            )
+            conn.commit()
+            return True
+        finally:
+            cur.close()
+    except Exception:
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
