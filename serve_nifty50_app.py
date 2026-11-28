@@ -1002,6 +1002,11 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 cloud_snap = _load_cloud_snapshot_cached()
                 health_payload["snapshot_session"] = snap.get("session_date") if snap else None
                 health_payload["cloud_snapshot_session"] = cloud_snap.get("session_date") if cloud_snap else None
+                try:
+                    import db_adapter
+                    health_payload["cloud_db"] = db_adapter.get_cloud_state_health()
+                except Exception as db_exc:
+                    health_payload["cloud_db"] = {"error": type(db_exc).__name__}
             self._send_json(HTTPStatus.OK, health_payload)
             return
 

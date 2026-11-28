@@ -366,3 +366,45 @@ def save_cloud_state(state_key: str, payload: dict[str, Any], session_date: str 
                 conn.close()
             except Exception:
                 pass
+
+
+def get_cloud_state_health() -> dict[str, Any]:
+    """Returns non-secret connectivity & key-summary diagnostics for cloud_runtime_state."""
+    from urllib.parse import urlparse
+    host = None
+    if DATABASE_URL:
+        try:
+            host = urlparse(DATABASE_URL).hostname
+        except Exception:
+            host = None
+    info: dict[str, Any] = {
+        "db_configured": bool(DATABASE_URL),
+        "db_engine": DB_ENGINE,
+        "pg_host": host,
+        "cloud_db_ok": False,
+        "cloud_keys": {},
+        "error": None,
+    }
+    conn = None
+    try:
+        conn = _open_cloud_pg_conn()
+        if conn is None:
+            return info
+        _ensure_cloud_state_table(conn)
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT state_key, session_date FROM cloud_runtime_state ORDER BY state_key")
+            info["cloud_keys"] = {str(k): str(v) if v else None for k, v in cur.fetchall()}
+            info["cloud_db_ok"] = True
+            return info
+        finally:
+            cur.close()
+    except Exception as exc:
+        info["error"] = f"{type(exc).__name__}: {str(exc).split('@')[-1][:160]}"
+        return info
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
