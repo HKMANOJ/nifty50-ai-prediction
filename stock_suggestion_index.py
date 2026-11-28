@@ -3759,7 +3759,8 @@ def score_instant_trigger_factors(
     else:
         oi_setup_score = 100.0 if setup == "Short buildup" else 55.0 if setup == "Long unwinding" else 50.0
 
-    nifty_pct = (index_context.get("NIFTY 50") or {}).get("percent_change") or 0.0
+    nifty_pct = float((index_context.get("NIFTY 50") or {}).get("percent_change") or 0.0)
+    is_counter_trend = (is_bullish and nifty_pct <= -0.5) or ((not is_bullish) and nifty_pct >= 0.5)
     market_direction_score = _clamp100(((nifty_pct if is_bullish else -nifty_pct) / 1.0) * 100)
     sector_score = sector_alignment.get(item.symbol, 50.0)
     sector_index_alignment_score = round((market_direction_score + sector_score) / 2, 1)
@@ -3773,8 +3774,15 @@ def score_instant_trigger_factors(
         "Sector/Index Alignment": sector_index_alignment_score,
         "Volume Surge (this candle)": volume_surge_score,
     }
-    composite = round(sum(factors.values()) / len(factors), 1)
-    return {"factors": factors, "composite": composite}
+    raw_composite = sum(factors.values()) / len(factors)
+    penalty = 20.0 if is_counter_trend else 0.0
+    composite = round(max(0.0, raw_composite - penalty), 1)
+    return {
+        "factors": factors,
+        "composite": composite,
+        "is_counter_trend": is_counter_trend,
+        "counter_trend_penalty": penalty,
+    }
 
 
 def _load_instant_triggers_state() -> dict[str, Any]:
@@ -3846,6 +3854,9 @@ def update_instant_triggers(
                     continue  # only pin on a confirmed breakout or institutional block surge, not Near BO/BD
 
                 breakdown = score_instant_trigger_factors(item, side_name, index_context, sector_alignment)
+                nifty_pct = float((index_context.get("NIFTY 50") or {}).get("percent_change") or 0.0)
+                if breakdown.get("is_counter_trend") and abs(nifty_pct) >= 0.6 and not item.is_block_surge and breakdown["composite"] < 55.0:
+                    continue
                 is_upgraded = bool(item.status == "Priority Rally" and item.bell_rang)
                 new_item = {
                     "signal_id": signal_id(session_date, item.symbol, side_name, item.setup),
@@ -3861,6 +3872,7 @@ def update_instant_triggers(
                     "price_at_trigger": item.ltp,
                     "percent_change_at_trigger": item.percent_change,
                     "instant_score": breakdown["composite"],
+                    "is_counter_trend": bool(breakdown.get("is_counter_trend")),
                     "factors": breakdown["factors"],
                     "rally_score_at_trigger": item.one_side_rally_score,
                     "is_block_surge": item.is_block_surge,

@@ -832,6 +832,8 @@
       background: #ffffff;
       color: var(--text-dark);
       cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .tf-btn.active, .tf-btn:hover {
@@ -2416,7 +2418,7 @@
             <button class="tf-btn active" id="btnOvToggleFvg" style="background:#ecfdf5; color:#047857; border-color:#a7f3d0; font-weight:700;">📦 FVG (50% CE)</button>
             <button class="tf-btn" id="btnOvToggleTrendBand" onclick="toggleOvTrendBand()" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0; font-weight:700; opacity:0.5;" title="Toggle Monotonic Trailing Trend Band on Stock Overview chart">⚡ Trend Band</button>
             <button class="tf-btn active" id="btnOvToggleChannels" onclick="toggleOvTrendChannels()" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:700;" title="Toggle Session Trend Channels (Groww style parallel regression channels)">📐 Trend Channels</button>
-            <button class="tf-btn" id="btnOvTogglePatterns" onclick="toggleOvPatterns()" style="background:#fdf4ff; color:#9333ea; border-color:#f0abfc; font-weight:700; opacity:0.5;" title="Toggle 90%+ High Accuracy Institutional Patterns (Only draws when confidence >= 90%)">📐 Patterns (90%+)</button>
+            <button class="tf-btn active" id="btnOvTogglePatterns" onclick="toggleOvPatterns()" style="background:#fdf4ff; color:#9333ea; border-color:#f0abfc; font-weight:700;" title="Toggle Proven High-Win Chart Patterns Only (Double Bottom/Top, Inv H&S, Wedges, Cup & Handle)">📐 Patterns</button>
             <button class="tf-btn" id="btnOvToggleLiq" style="background:#fef2f2; color:#b91c1c; border-color:#fecaca; font-weight:700; opacity:0.5;">🎯 Liquidity</button>
             <button class="tf-btn" id="btnOvToggleCvd" style="background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:700; opacity:0.5;">📈 CVD</button>
             <button class="tf-btn active" id="btnOvToggleFpSummary" style="background:#f0fdf4; color:#166534; border-color:#86efac; font-weight:700;">📊 Flow Bar (5-Row)</button>
@@ -3352,6 +3354,7 @@
   let _ovExtensionData = null;
 
   function drawPillRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
     if (typeof ctx.roundRect === "function") {
       ctx.roundRect(x, y, width, height, radius);
     } else {
@@ -6868,11 +6871,16 @@
     requestAnimationFrame(renderVolumeProfileCanvas);
   }
 
-  let _ovShowPatterns = false;
+  let _ovShowPatterns = true;
+  try {
+    const savedPat = localStorage.getItem("mlai_show_patterns");
+    if (savedPat !== null) _ovShowPatterns = (savedPat === "true");
+  } catch(e) {}
   let _ovPatternsData = [];
 
   function toggleOvPatterns() {
     _ovShowPatterns = !_ovShowPatterns;
+    try { localStorage.setItem("mlai_show_patterns", _ovShowPatterns ? "true" : "false"); } catch(e) {}
     const btn = document.getElementById("btnOvTogglePatterns");
     if (btn) {
       btn.style.opacity = _ovShowPatterns ? "1" : "0.5";
@@ -6880,9 +6888,9 @@
     }
     const chip = document.getElementById("ovTelemetryChip");
     if (_ovShowPatterns) {
-      const q = (_ovPatternsData || []).filter(p => p.confidence >= 90.0);
+      const q = (_ovPatternsData || []).filter(p => p.confidence >= 70.0);
       if (q.length === 0 && chip) {
-        chip.textContent = "🛡️ Patterns: No Pattern >= 90% (Noise Shield Active)";
+        chip.textContent = "📐 Patterns: No Active Structure >= 70%";
         chip.style.background = "#faf5ff";
         chip.style.color = "#7e22ce";
         chip.style.borderColor = "#e9d5ff";
@@ -6896,13 +6904,13 @@
 
     ctx.save();
     for (const pat of patterns) {
-      if (pat.confidence < 90.0) continue; // Strict 90%+ rule: do not draw low-accuracy noise!
+      if (pat.confidence < 70.0) continue;
 
       const pts = pat.points || [];
       if (pts.length < 3) continue;
 
       const isBull = pat.direction === "bullish";
-      const strokeColor = isBull ? "#7c3aed" : "#c026d3"; // Vibrant Royal Violet / Fuchsia
+      const strokeColor = isBull ? "#7c3aed" : "#c026d3";
       const fillColor = isBull ? "rgba(124, 58, 237, 0.08)" : "rgba(192, 38, 211, 0.08)";
 
       const coords = [];
@@ -6916,45 +6924,60 @@
 
       if (coords.length < 3) continue;
 
-      // 1. Draw Pattern Shape Outline (e.g. W or M connecting lines)
-      ctx.beginPath();
-      ctx.moveTo(coords[0].x, coords[0].y);
-      for (let k = 1; k < coords.length; k++) {
-        ctx.lineTo(coords[k].x, coords[k].y);
-      }
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 2.4;
-      ctx.setLineDash([]);
-      ctx.stroke();
-
-      // Subtle translucent fill inside the pattern polygon
-      ctx.fillStyle = fillColor;
-      ctx.fill();
-
-      // 2. Draw Point Markers with Labels
-      coords.forEach((pt, idx) => {
+      // 1. Draw Clean Structure Geometry
+      if (pat.closed_polygon && coords.length === 4) {
+        // Fill translucent quadrilateral boundary
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.moveTo(coords[0].x, coords[0].y);
+        ctx.lineTo(coords[1].x, coords[1].y);
+        ctx.lineTo(coords[2].x, coords[2].y);
+        ctx.lineTo(coords[3].x, coords[3].y);
+        ctx.closePath();
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+
+        // Draw crisp Top & Bottom boundary trendlines only (clean channel/wedge/triangle edges)
+        ctx.beginPath();
+        ctx.moveTo(coords[0].x, coords[0].y);
+        ctx.lineTo(coords[1].x, coords[1].y);
+        ctx.moveTo(coords[3].x, coords[3].y);
+        ctx.lineTo(coords[2].x, coords[2].y);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2.2;
+        ctx.setLineDash([]);
+        ctx.stroke();
+      } else {
+        // Reversal W / M / H&S / Cup polyline
+        ctx.beginPath();
+        ctx.moveTo(coords[0].x, coords[0].y);
+        for (let k = 1; k < coords.length; k++) {
+          ctx.lineTo(coords[k].x, coords[k].y);
+        }
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2.2;
+        ctx.setLineDash([]);
+        ctx.stroke();
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+      }
+
+      // 2. Clean anchor dots (no cluttered micro-role text stacking inside candles)
+      coords.forEach((pt) => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
         ctx.fillStyle = "#ffffff";
         ctx.fill();
         ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.8;
         ctx.stroke();
-
-        if (pt.role) {
-          ctx.font = "bold 8px 'JetBrains Mono', monospace";
-          ctx.fillStyle = strokeColor;
-          ctx.textAlign = "center";
-          ctx.fillText(pt.role, pt.x, pt.y + (idx % 2 === 0 ? 12 : -8));
-        }
       });
 
-      // 3. Draw Neckline
-      if (pat.neckline_price) {
+      // 3. Draw Neckline (for W / M / H&S / Cup reversals where neckline isn't already drawn as a triangle edge)
+      if (pat.neckline_price && !pat.closed_polygon) {
         const yNeck = series.priceToCoordinate(pat.neckline_price);
         if (yNeck !== null) {
           const xStart = Math.min(...coords.map(c => c.x));
-          const xEnd = Math.max(...coords.map(c => c.x)) + 40;
+          const xEnd = Math.min(w - 75, Math.max(...coords.map(c => c.x)) + 45);
           ctx.beginPath();
           ctx.strokeStyle = strokeColor;
           ctx.lineWidth = 1.4;
@@ -6966,8 +6989,8 @@
 
           const neckTag = `NECK: ₹${pat.neckline_price.toFixed(1)}`;
           ctx.font = "bold 8px 'JetBrains Mono', monospace";
-          const tw = ctx.measureText(neckTag).width + 6;
-          ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+          const tw = ctx.measureText(neckTag).width + 8;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
           drawPillRect(ctx, xEnd - tw, yNeck - 7, tw, 14, 2);
           ctx.fill();
           ctx.strokeStyle = strokeColor;
@@ -6976,57 +6999,31 @@
           ctx.fillStyle = strokeColor;
           ctx.textBaseline = "middle";
           ctx.textAlign = "start";
-          ctx.fillText(neckTag, xEnd - tw + 3, yNeck);
+          ctx.fillText(neckTag, xEnd - tw + 4, yNeck);
         }
       }
 
-      // 4. Draw Measured Target Line
-      if (pat.target_price) {
-        const yTgt = series.priceToCoordinate(pat.target_price);
-        if (yTgt !== null) {
-          const xStart = coords[coords.length - 1].x;
-          const xEnd = Math.min(w - 70, xStart + 80);
-          ctx.beginPath();
-          ctx.strokeStyle = "#059669"; // Vivid Emerald Target
-          ctx.lineWidth = 1.6;
-          ctx.setLineDash([5, 4]);
-          ctx.moveTo(xStart, yTgt);
-          ctx.lineTo(xEnd, yTgt);
-          ctx.stroke();
-          ctx.setLineDash([]);
+      // 4. Pattern target lines intentionally omitted from chart canvas to keep OB Trade Plan unambiguous
 
-          const tgtTag = `🎯 TARGET: ₹${pat.target_price.toFixed(1)} (${pat.risk_reward || ''})`;
-          ctx.font = "bold 9px 'JetBrains Mono', monospace";
-          const tw = ctx.measureText(tgtTag).width + 8;
-          ctx.fillStyle = "rgba(255, 255, 255, 0.98)";
-          drawPillRect(ctx, xEnd - tw, yTgt - 9, tw, 18, 3);
-          ctx.fill();
-          ctx.strokeStyle = "#059669";
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
-          ctx.fillStyle = "#065f46";
-          ctx.textBaseline = "middle";
-          ctx.textAlign = "start";
-          ctx.fillText(tgtTag, xEnd - tw + 4, yTgt);
-        }
+      // 5. Draw Pattern Header Badge only while structure top is in/near view (prevents pinned overlap)
+      const minY = Math.min(...coords.map(c => c.y));
+      if (!coords.every(c => c.y < 0)) {
+        const headerX = Math.max(8, Math.min(...coords.map(c => c.x)));
+        const headerY = Math.max(6, minY - 22);
+        const titleTag = `📐 ${pat.short_name || pat.name} · ${pat.confidence.toFixed(0)}% CONF`;
+        ctx.font = "bold 10px 'JetBrains Mono', monospace";
+        const htw = ctx.measureText(titleTag).width + 12;
+        ctx.fillStyle = "rgba(245, 243, 255, 0.98)";
+        drawPillRect(ctx, headerX, headerY, htw, 18, 4);
+        ctx.fill();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.fillStyle = strokeColor;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "start";
+        ctx.fillText(titleTag, headerX + 6, headerY + 9);
       }
-
-      // 5. Draw Header Badge (90%+ Confidence Badge)
-      const headerX = coords[0].x;
-      const headerY = Math.max(20, Math.min(...coords.map(c => c.y)) - 24);
-      const titleTag = `🏆 ${pat.short_name || pat.name} · ${pat.confidence.toFixed(1)}% ACCURACY`;
-      ctx.font = "bold 10px 'JetBrains Mono', monospace";
-      const htw = ctx.measureText(titleTag).width + 12;
-      ctx.fillStyle = "rgba(245, 243, 255, 0.96)";
-      drawPillRect(ctx, headerX, headerY, htw, 18, 4);
-      ctx.fill();
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-      ctx.fillStyle = strokeColor;
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "start";
-      ctx.fillText(titleTag, headerX + 6, headerY + 9);
     }
     ctx.restore();
   }
@@ -7159,8 +7156,10 @@
       }
 
       // Small badge floating cleanly above upper channel line (avoids box overlap)
+      const priceSpan = Math.abs(slope * n);
+      const isFlat = priceSpan < (yBar * 0.0015);
       const isBull = slope > 0;
-      const tagText = `${isBull ? "▲ ASCENDING" : "▼ DESCENDING"} CHANNEL`;
+      const tagText = isFlat ? "↔ HORIZONTAL RANGE" : `${isBull ? "▲ ASCENDING" : "▼ DESCENDING"} CHANNEL`;
       ctx.font = "bold 9px 'JetBrains Mono', monospace";
       const tw = ctx.measureText(tagText).width + 8;
       const tagX = Math.max(10, xEnd - tw - 4);
@@ -7185,12 +7184,12 @@
     if (mode === "hide") {
       _ovVolumeSeries.applyOptions({ visible: false });
       _ovCandleSeries.priceScale().applyOptions({
-        scaleMargins: { top: 0.06, bottom: 0.06 },
+        scaleMargins: { top: 0.11, bottom: 0.06 },
       });
     } else if (mode === "compact") {
       _ovVolumeSeries.applyOptions({ visible: true });
       _ovCandleSeries.priceScale().applyOptions({
-        scaleMargins: { top: 0.06, bottom: 0.18 },
+        scaleMargins: { top: 0.11, bottom: 0.18 },
       });
       _ovChart.priceScale('ov_vol_scale').applyOptions({
         scaleMargins: { top: 0.86, bottom: 0.0 },
@@ -7198,7 +7197,7 @@
     } else if (mode === "normal") {
       _ovVolumeSeries.applyOptions({ visible: true });
       _ovCandleSeries.priceScale().applyOptions({
-        scaleMargins: { top: 0.06, bottom: 0.28 },
+        scaleMargins: { top: 0.11, bottom: 0.28 },
       });
       _ovChart.priceScale('ov_vol_scale').applyOptions({
         scaleMargins: { top: 0.74, bottom: 0.0 },
@@ -8022,13 +8021,17 @@
         ${summaryBars.map((b) => {
           const isPosDelta = (b.net_delta || 0) >= 0;
           const isPosCum = (b.cum_delta || 0) >= 0;
-          const isPosOi = (b.oi_change || 0) >= 0;
+          const hasRealOi = (b.oi !== null && b.oi !== undefined && b.oi_is_real !== false);
+          const isPosOi = hasRealOi ? ((b.oi_change || 0) >= 0) : true;
 
           const volStr = formatFpMetric(b.total_vol || b.volume || 0);
           const deltaStr = formatFpMetric(b.net_delta || 0, true);
           const cumStr = formatFpMetric(b.cum_delta || 0, true);
-          const oiStr = formatFpMetric(b.oi || 0);
-          const oiChgStr = formatFpMetric(b.oi_change || 0, true);
+          const oiStr = hasRealOi ? formatFpMetric(b.oi) : "—";
+          const oiChgStr = (hasRealOi && b.oi_change !== null && b.oi_change !== undefined) ? formatFpMetric(b.oi_change, true) : "—";
+          const oiBg = hasRealOi ? "#c2410c" : "#1e293b";
+          const oiChgBg = hasRealOi ? (isPosOi ? "#166534" : "#9f1239") : "#1e293b";
+          const oiColor = hasRealOi ? "#ffffff" : "#64748b";
           const timeLabel = formatFpTime(b.time);
 
           const isSelected = _ovSelectedFootprintTime && (Number(_ovSelectedFootprintTime) === Number(b.time));
@@ -8055,13 +8058,13 @@
                 ${cumStr}
               </div>
 
-              <!-- 4. Open Interest (Amber/Orange) -->
-              <div style="height:26px; background:#c2410c; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border-bottom:1px solid rgba(0,0,0,0.2);">
+              <!-- 4. Open Interest (Real Futures OI or —) -->
+              <div style="height:26px; background:${oiBg}; color:${oiColor}; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border-bottom:1px solid rgba(0,0,0,0.2);">
                 ${oiStr}
               </div>
 
-              <!-- 5. OI Change (Emerald/Rose) -->
-              <div style="height:26px; background:${isPosOi ? '#166534' : '#9f1239'}; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border-bottom:1px solid rgba(0,0,0,0.2);">
+              <!-- 5. OI Change (Real Futures OI Change or —) -->
+              <div style="height:26px; background:${oiChgBg}; color:${oiColor}; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; border-bottom:1px solid rgba(0,0,0,0.2);">
                 ${oiChgStr}
               </div>
 
@@ -8443,30 +8446,33 @@
           ctx.save();
           const colW = Math.max(18, Math.min(48, candleSpacing * 0.9));
 
-          // Soft translucent highlight over the single inspected candle
+          // Soft translucent highlight over the single inspected candle (clamped cleanly inside plot)
+          const boxTop = Math.max(2, yHigh - 6);
+          const boxBot = Math.min(h - 4, yLow + 6);
           ctx.fillStyle = "rgba(168, 85, 247, 0.12)";
-          ctx.fillRect(x - colW / 2, yHigh - 6, colW, (yLow - yHigh) + 12);
+          ctx.fillRect(x - colW / 2, boxTop, colW, Math.max(8, boxBot - boxTop));
 
           // Neat selection brackets around the candle
           ctx.strokeStyle = "#a855f7";
           ctx.lineWidth = 1.5;
-          ctx.strokeRect(x - colW / 2, yHigh - 6, colW, (yLow - yHigh) + 12);
+          ctx.strokeRect(x - colW / 2, boxTop, colW, Math.max(8, boxBot - boxTop));
 
           // Indicator pointer below candle pointing up
+          const ptrY = Math.min(h - 28, yLow + 8);
           ctx.fillStyle = "#8b5cf6";
           ctx.beginPath();
-          ctx.moveTo(x, yLow + 8);
-          ctx.lineTo(x - 5, yLow + 14);
-          ctx.lineTo(x + 5, yLow + 14);
+          ctx.moveTo(x, ptrY);
+          ctx.lineTo(x - 5, ptrY + 6);
+          ctx.lineTo(x + 5, ptrY + 6);
           ctx.closePath();
           ctx.fill();
 
           ctx.font = "bold 8px 'JetBrains Mono', monospace";
           ctx.fillStyle = "#7c3aed";
           ctx.textAlign = "center";
-          ctx.fillText("▲ INSPECTING", x, yLow + 24);
+          ctx.fillText("▲ INSPECTING", x, ptrY + 16);
 
-          // Show single Net Delta badge ONLY for this one inspected candle
+          // Show single Net Delta badge cleanly (placed below candle if wick near top edge)
           const fp = _ovFootprintData ? _ovFootprintData[String(targetCandle.time)] : null;
           if (fp && fp.net_delta !== undefined) {
             const delta = fp.net_delta || 0;
@@ -8476,12 +8482,11 @@
 
             ctx.font = "bold 9px 'JetBrains Mono', monospace";
             const tw = ctx.measureText(dText).width;
-            const badgeY = Math.max(16, yHigh - 10);
+            const badgeY = (yHigh >= 28) ? (yHigh - 10) : Math.min(h - 14, ptrY + 34);
 
             ctx.fillStyle = isPos ? "rgba(236, 253, 245, 0.95)" : "rgba(254, 242, 242, 0.95)";
             ctx.strokeStyle = isPos ? "#10b981" : "#ef4444";
             ctx.lineWidth = 1;
-            ctx.beginPath();
             const pillW = tw + 8;
             drawPillRect(ctx, x - pillW / 2, badgeY - 11, pillW, 13, 3);
             ctx.fill();
@@ -8629,6 +8634,11 @@
       _ovBreakoutsData = data.frozen_breakouts || null;
       _ovExtensionData = data.extension_gate || null;
       _ovPatternsData = data.high_conviction_patterns || [];
+      const btnPatCount = document.getElementById("btnOvTogglePatterns");
+      if (btnPatCount) {
+        const activeCount = (_ovPatternsData || []).filter(p => p.confidence >= 70.0).length;
+        btnPatCount.textContent = activeCount > 0 ? `📐 Patterns (${activeCount})` : "📐 Patterns";
+      }
 
       // Render Left Volume Profile, Order Blocks & FVG on Canvas (Mathematically aligned to price scale)
       setTimeout(() => {
@@ -8707,6 +8717,7 @@
       }
 
       const abs = of.absorption || {};
+      const volSrc = of.volume_source || data.volume_source || "spot";
       const isIndexSymbol = ["NIFTY50", "NIFTY 50", "NIFTY", "BANKNIFTY", "BANK NIFTY", "NIFTY BANK", "SENSEX", "BSESENSEX", "^BSESN"].includes((_overviewSymbol || "").toUpperCase());
       if (absBadge) {
         if (isIndexSymbol && (!of.total_volume || of.total_volume === 0)) {
@@ -8714,8 +8725,14 @@
           absBadge.style.background = "rgba(56,189,248,0.15)";
           absBadge.style.color = "#38bdf8";
           absBadge.style.borderColor = "rgba(56,189,248,0.3)";
+        } else if (volSrc === "estimated" && abs.type === "None") {
+          absBadge.textContent = "📊 Est. Flow";
+          absBadge.style.background = "rgba(245,158,11,0.15)";
+          absBadge.style.color = "#fbbf24";
+          absBadge.style.borderColor = "rgba(245,158,11,0.35)";
         } else {
-          absBadge.textContent = abs.label || "⚡ Neutral Order Flow";
+          const futSuffix = (volSrc === "futures" && abs.type === "None") ? " (Futures Flow)" : "";
+          absBadge.textContent = (abs.label || "⚡ Neutral Order Flow") + futSuffix;
           if (abs.type === "Buyer Side Absorption") {
             absBadge.style.background = "#ecfdf5";
             absBadge.style.color = "#065f46";
@@ -8724,6 +8741,10 @@
             absBadge.style.background = "#fef2f2";
             absBadge.style.color = "#991b1b";
             absBadge.style.borderColor = "#fecaca";
+          } else if (volSrc === "futures") {
+            absBadge.style.background = "rgba(16,185,129,0.14)";
+            absBadge.style.color = "#34d399";
+            absBadge.style.borderColor = "rgba(16,185,129,0.35)";
           } else {
             absBadge.style.background = "#f1f5f9";
             absBadge.style.color = "#475569";
@@ -8734,6 +8755,11 @@
       if (absDesc) {
         if (isIndexSymbol && (!of.total_volume || of.total_volume === 0)) {
           absDesc.textContent = "Spot index has no central limit order book (Vol: 0). Monitor Index Futures or constituents for true order flow.";
+        } else if (volSrc === "futures") {
+          const oiNote = of.oi_is_real ? " · Real Futures OI attached" : "";
+          absDesc.textContent = `${abs.description || "Normal order flow distribution."} (Live Index Futures Volume${oiNote})`;
+        } else if (volSrc === "estimated") {
+          absDesc.textContent = `${abs.description || "Range-estimated flow."} (Estimated from candle spread — Futures feed offline)`;
         } else {
           absDesc.textContent = abs.description || "Normal order flow distribution.";
         }

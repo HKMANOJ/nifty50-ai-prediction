@@ -339,6 +339,174 @@ class FreshOrderBlockTests(unittest.TestCase):
         self.assertEqual(gate["side"], "SHORT")
         self.assertTrue(gate["is_extended"])
 
+    def test_futures_merge_preserves_spot_ohlc_and_attaches_real_oi(self):
+        import upstox_provider
+
+        spot = [
+            {"timestamp": 1000, "open": 25600.0, "high": 25620.0, "low": 25590.0, "close": 25615.0, "volume": 0.0},
+            {"timestamp": 1300, "open": 25615.0, "high": 25625.0, "low": 25605.0, "close": 25610.0, "volume": 0.0},
+            {"timestamp": 1600, "open": 25610.0, "high": 25615.0, "low": 25595.0, "close": 25600.0, "volume": 0.0},
+        ]
+        fut = [
+            {"timestamp": 1000, "open": 25690.0, "high": 25710.0, "low": 25680.0, "close": 25705.0, "volume": 24500.0, "oi": 12450000.0},
+            {"timestamp": 1300, "open": 25705.0, "high": 25715.0, "low": 25695.0, "close": 25700.0, "volume": 18200.0, "oi": 12465000.0},
+        ]
+        meta = upstox_provider.merge_futures_into_candles(spot, fut)
+        self.assertEqual(meta["futures_matched"], 2)
+        self.assertTrue(meta["futures_oi_available"])
+        # Spot OHLC never overwritten by futures price
+        self.assertEqual(spot[0]["open"], 25600.0)
+        self.assertEqual(spot[0]["close"], 25615.0)
+        # Volume & OI attached from futures
+        self.assertEqual(spot[0]["volume"], 24500.0)
+        self.assertEqual(spot[0]["oi"], 12450000.0)
+        self.assertTrue(spot[0]["oi_is_real"])
+        self.assertEqual(spot[1]["oi"], 12465000.0)
+        # Missing futures timestamp does not fake OI
+        self.assertIsNone(spot[2]["oi"])
+        self.assertFalse(spot[2]["oi_is_real"])
+
+    def test_order_flow_and_footprint_parity_no_fake_oi(self):
+        from smc_volume_profile_engine import (
+            calculate_order_flow_and_absorption,
+            calculate_cvd_series,
+            compute_latest_delta_bar,
+            build_candle_footprints,
+        )
+
+        # Spot/offline candles with zero volume and no OI must NOT synthesize fake 1.25M OI
+        no_oi_bars = [{**candle(i, 100 + i, 104 + i, 99 + i, 103 + i), "volume": 0.0} for i in range(6)]
+        of = calculate_order_flow_and_absorption(no_oi_bars)
+        cvd = calculate_cvd_series(no_oi_bars)
+        self.assertGreater(of["total_volume"], 0)
+        self.assertEqual(of["volume_source"], "estimated")
+        self.assertEqual(round(of["delta"]), round(cvd[-1]["value"]))
+        fp_no_oi = build_candle_footprints(no_oi_bars)
+        last_fp = fp_no_oi["_summary"][-1]
+        self.assertIsNone(last_fp["oi"])
+        self.assertIsNone(last_fp["oi_change"])
+        self.assertFalse(last_fp["oi_is_real"])
+        self.assertEqual(last_fp["total_vol"], of["recent_clusters"][-1]["total_vol"])
+        self.assertEqual(compute_latest_delta_bar(no_oi_bars), round(of["recent_clusters"][-1]["delta"], 1))
+
+        # Candles with real futures OI compute exact OI difference, and 0-vol futures bars stay 0 (no 23K spike)
+        real_oi_bars = [
+            {**candle(0, 100, 105, 99, 104), "volume": 220.0, "oi": 500000.0, "oi_is_real": True, "volume_source": "futures"},
+            {**candle(1, 104, 109, 103, 108), "volume": 0.0, "oi": 500000.0, "oi_is_real": True, "volume_source": "futures"},
+            {**candle(2, 108, 112, 107, 110), "volume": 40.0, "oi": 518500.0, "oi_is_real": True, "volume_source": "futures"},
+        ]
+        fp_real = build_candle_footprints(real_oi_bars)
+        self.assertEqual(fp_real["_summary"][1]["total_vol"], 0)
+        self.assertEqual(fp_real["_summary"][1]["net_delta"], 0)
+        self.assertEqual(fp_real["_summary"][2]["total_vol"], 40)
+        self.assertEqual(fp_real["_summary"][2]["oi"], 518500)
+        self.assertEqual(fp_real["_summary"][2]["oi_change"], 18500)
+        self.assertTrue(fp_real["_summary"][2]["oi_is_real"])
+        # Ladder ask+bid sums must equal exact bar total volume (never round 220->236 or 40->42)
+        for idx, expected_v in ((0, 220), (1, 0), (2, 40)):
+            ts_key = str(real_oi_bars[idx]["timestamp"])
+            lv_sum = sum(lv["ask_vol"] + lv["bid_vol"] for lv in fp_real[ts_key]["levels"])
+            self.assertEqual(lv_sum, expected_v)
+
+    def test_pattern_engine_diverse_shapes_and_no_clones(self):
+        from high_conviction_pattern_engine import detect_high_conviction_patterns
+
+        # 1. Verify weak 40-48% patterns (Bull Flag) are excluded by default, allowed only with include_weak_patterns=True
+        bars = []
+        base_ts = 1700000000
+        for i in range(12):
+            bars.append({"time": base_ts + i * 300, "open": 100.0, "high": 100.6, "low": 99.4, "close": 100.1, "volume": 1000.0})
+        for i in range(6):
+            p = 100.0 + i * 2.3
+            bars.append({"time": base_ts + (12 + i) * 300, "open": p, "high": p + 2.5, "low": p - 0.2, "close": p + 2.3, "volume": 2500.0})
+        for i in range(8):
+            hi = 113.8 - i * 0.2
+            lo = 112.2 - i * 0.1
+            bars.append({"time": base_ts + (18 + i) * 300, "open": hi - 0.3, "high": hi, "low": lo, "close": lo + 0.3, "volume": 900.0})
+        bars.append({"time": base_ts + 26 * 300, "open": 112.8, "high": 115.4, "low": 112.6, "close": 115.0, "volume": 3200.0})
+
+        default_pats = detect_high_conviction_patterns(bars, min_confidence=70.0, max_patterns=5)
+        self.assertEqual([p["short_name"] for p in default_pats if "FLAG" in p["short_name"] or "TRIANGLE" in p["short_name"]], [])
+
+        opt_pats = detect_high_conviction_patterns(bars, min_confidence=70.0, max_patterns=5, include_weak_patterns=True)
+        self.assertIn("BULL FLAG", [p["short_name"] for p in opt_pats])
+
+        # 2. Verify strong Double Bottom (69% tier) is detected cleanly with zero overlapping clones
+        db_bars = []
+        prices = [
+            (110, 111, 108, 109), (109, 109.5, 106, 107), (107, 107.5, 104, 105),
+            (105, 105.5, 102, 103), (103, 103.5, 100.0, 101.0),  # Trough 1 @ 100
+            (101, 104, 100.8, 103.5), (103.5, 106.5, 103, 106), (106, 108.5, 105.5, 108),
+            (108, 110.2, 107.5, 109.8),  # Peak @ 110.2
+            (109.8, 110.0, 107, 107.5), (107.5, 108, 105, 105.5), (105.5, 106, 103, 103.5),
+            (103.5, 104, 100.2, 101.2),  # Trough 2 @ 100.2
+            (101.2, 104.5, 101, 104), (104, 107.5, 103.8, 107), (107, 111.5, 106.8, 111.0),  # Breakout > 110.2
+            (111, 112.5, 110.5, 112.0), (112, 113, 111.5, 112.5),
+        ]
+        # Pad initial bars so len >= 25
+        for k in range(10):
+            db_bars.append({"time": base_ts + k * 300, "open": 110.0, "high": 111.0, "low": 109.0, "close": 110.0, "volume": 1500.0})
+        for idx_p, (o, h, l, cl) in enumerate(prices):
+            db_bars.append({"time": base_ts + (10 + idx_p) * 300, "open": o, "high": h, "low": l, "close": cl, "volume": 1800.0})
+        # Use strict 3-bar swing around Trough 1 & Trough 2 -> verify 1 clean Double Bottom
+        db_res = detect_high_conviction_patterns(db_bars, min_confidence=70.0, max_patterns=4)
+        self.assertEqual([p["short_name"] for p in db_res].count("DOUBLE BOTTOM"), 1)
+
+    def test_gemini_approved_preserves_det_score_above_92(self):
+        import gemini_evaluator
+
+        snapshot = {
+            "setup_side": "SHORT", "ltp": 25710.0, "day_high": 25920.0, "day_low": 25700.0,
+            "orb_5h": 25909.0, "orb_5l": 25814.0, "ema20": 25760.0, "atr_rolling": 40.0,
+            "ob_top": 25750.0, "ob_bottom": 25720.0, "extension_atr": 1.25,
+            "signed_extension_atr": -1.25, "extension_side": "SHORT", "is_extended": False,
+            "above_5m_ema20": False, "mtf_overall": "BEARISH ▼",
+        }
+        det = gemini_evaluator.evaluate_trade_deterministic(snapshot)
+        self.assertGreaterEqual(int(det["conviction_score"]), 92)
+
+        with patch("gemini_evaluator.get_gemini_api_key", return_value="fake-key"), \
+             patch("gemini_evaluator.requests.post") as mock_post:
+            # Score 90 APPROVED should preserve quantitative >=92 conviction
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {
+                "candidates": [{"content": {"parts": [{"text": '{"conviction_score": 90, "verdict": "APPROVED", "rationale": "Strong trend"}'}]}}]
+            }
+            res = gemini_evaluator.evaluate_trade_with_gemini(snapshot, use_api=True)
+            self.assertEqual(res["verdict"], "APPROVED")
+            self.assertGreaterEqual(int(res["conviction_score"]), 92)
+
+            # Explicit REJECTED must still reject
+            mock_post.return_value.json.return_value = {
+                "candidates": [{"content": {"parts": [{"text": '{"conviction_score": 45, "verdict": "REJECTED", "rationale": "Exhausted"}'}]}}]
+            }
+            res_rej = gemini_evaluator.evaluate_trade_with_gemini(snapshot, use_api=True)
+            self.assertEqual(res_rej["verdict"], "REJECTED")
+            self.assertEqual(int(res_rej["conviction_score"]), 45)
+
+    def test_notify_recency_measures_from_bar_close(self):
+        import notify
+
+        ist = ZoneInfo("Asia/Kolkata")
+        f_dt = datetime(2026, 11, 27, 10, 50, 0, tzinfo=ist)
+        # 11:10:03 AM is 20m03s after open, 15m03s after bar close (10:55:00) -> should pass
+        now_ok = datetime(2026, 11, 27, 11, 10, 3, tzinfo=ist)
+        ok, _, _ = notify._is_recent_ob_formation(f_dt.timestamp(), now_ok)
+        self.assertTrue(ok)
+        # 11:20:00 AM is 25m after bar close -> should expire
+        now_old = datetime(2026, 11, 27, 11, 20, 0, tzinfo=ist)
+        ok_old, _, _ = notify._is_recent_ob_formation(f_dt.timestamp(), now_old)
+        self.assertFalse(ok_old)
+
+    def test_accuracy_dashboard_local_outcome_fallback(self):
+        import accuracy_dashboard
+
+        with patch("accuracy_dashboard.connect_mysql", side_effect=RuntimeError("empty db")):
+            summary = accuracy_dashboard.get_accuracy_dashboard_data()
+            self.assertEqual(summary["overall"]["data_source"], "local_outcome_log")
+            self.assertGreater(summary["overall"]["total_trades"], 0)
+            self.assertGreater(len(summary["patterns"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

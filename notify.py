@@ -16,7 +16,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -32,6 +32,7 @@ INDIA_TZ = ZoneInfo("Asia/Kolkata")
 ROOT = Path(__file__).resolve().parent
 SENT_STORE_PATH = ROOT / "inputs" / "telegram_sent_alerts.json"
 PENDING_STORE_PATH = ROOT / "inputs" / "telegram_pending_alerts.json"
+_DEFAULT_PENDING_STORE_PATH = PENDING_STORE_PATH
 DUAL_INDEX_WINDOW_SECONDS = 15 * 60
 _DISPATCH_LOCK = threading.Lock()
 _PENDING_LOCK = threading.Lock()
@@ -111,6 +112,13 @@ def _get_pg_conn():
                             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                         );
                         CREATE INDEX IF NOT EXISTS idx_tg_alerts_date ON telegram_sent_alerts(session_date);
+                        CREATE TABLE IF NOT EXISTS telegram_pending_alerts (
+                            pending_key VARCHAR(64) PRIMARY KEY,
+                            session_date DATE NOT NULL,
+                            payload JSONB NOT NULL,
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        );
+                        CREATE INDEX IF NOT EXISTS idx_tg_pending_date ON telegram_pending_alerts(session_date);
                         """
                     )
                     conn.commit()
@@ -460,20 +468,77 @@ def _has_recent_conflicting_alert(sent_keys: set[str], sym_display: str, opp_typ
 
 
 def _load_pending_candidates(session_date: str) -> dict[str, dict[str, Any]]:
-    """Load unexpired single-index pending confirmations for today's session."""
-    if not PENDING_STORE_PATH.is_file():
-        return {}
-    try:
-        data = json.loads(PENDING_STORE_PATH.read_text(encoding="utf-8"))
-        if data.get("session_date") == session_date and isinstance(data.get("candidates"), dict):
-            return dict(data["candidates"])
-    except Exception:
-        pass
-    return {}
+    """Load unexpired single-index pending confirmations (Neon Postgres first, local file fallback)."""
+    merged: dict[str, dict[str, Any]] = {}
+    use_pg = (PENDING_STORE_PATH == _DEFAULT_PENDING_STORE_PATH)
+    if use_pg:
+        conn = _get_pg_conn()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT pending_key, payload FROM telegram_pending_alerts WHERE session_date = %s",
+                    (session_date,),
+                )
+                rows = cur.fetchall()
+                cur.close()
+                conn.close()
+                for p_key, payload in rows:
+                    if isinstance(payload, str):
+                        payload = json.loads(payload)
+                    if isinstance(payload, dict):
+                        merged[str(p_key)] = payload
+            except Exception as exc:
+                logger.debug("Failed loading pending alerts from Postgres: %s", exc)
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    if PENDING_STORE_PATH.is_file():
+        try:
+            data = json.loads(PENDING_STORE_PATH.read_text(encoding="utf-8"))
+            if data.get("session_date") == session_date and isinstance(data.get("candidates"), dict):
+                for p_key, payload in data["candidates"].items():
+                    if p_key not in merged and isinstance(payload, dict):
+                        merged[str(p_key)] = payload
+        except Exception:
+            pass
+    return merged
 
 
 def _save_pending_candidates(session_date: str, candidates: dict[str, dict[str, Any]]) -> None:
-    """Persist pending single-index candidates waiting on partner confirmation."""
+    """Persist pending single-index candidates to Neon Postgres and local JSON fallback."""
+    use_pg = (PENDING_STORE_PATH == _DEFAULT_PENDING_STORE_PATH)
+    if use_pg:
+        conn = _get_pg_conn()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM telegram_pending_alerts WHERE session_date = %s", (session_date,))
+                for p_key, payload in candidates.items():
+                    cur.execute(
+                        """
+                        INSERT INTO telegram_pending_alerts (pending_key, session_date, payload, updated_at)
+                        VALUES (%s, %s, %s::jsonb, NOW())
+                        ON CONFLICT (pending_key) DO UPDATE SET
+                            session_date = EXCLUDED.session_date,
+                            payload = EXCLUDED.payload,
+                            updated_at = NOW()
+                        """,
+                        (p_key, session_date, json.dumps(payload)),
+                    )
+                conn.commit()
+                cur.close()
+                conn.close()
+            except Exception as exc:
+                logger.debug("Failed saving pending alerts to Postgres: %s", exc)
+                try:
+                    conn.rollback()
+                    conn.close()
+                except Exception:
+                    pass
+
     try:
         PENDING_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
         PENDING_STORE_PATH.write_text(
@@ -482,6 +547,19 @@ def _save_pending_candidates(session_date: str, candidates: dict[str, dict[str, 
         )
     except Exception as exc:
         logger.warning("Failed to persist pending index confirmations: %s", exc)
+
+
+def _is_recent_ob_formation(
+    f_time: Any,
+    now_ist: datetime,
+    max_age_after_close_min: int = 20,
+) -> tuple[bool, datetime, float]:
+    """Check whether OB formed recently, measuring 20m window from the 5m confirmation candle CLOSE."""
+    f_dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
+    close_dt = f_dt + timedelta(minutes=5)
+    age_after_close = (now_ist - close_dt).total_seconds()
+    is_recent = -360.0 <= age_after_close <= max_age_after_close_min * 60.0
+    return is_recent, f_dt, age_after_close
 
 
 def _resolve_dual_index_candidates(
@@ -556,6 +634,7 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
             calculate_extension_gate,
             calculate_rolling_atr,
             calculate_multi_timeframe_matrix,
+            compute_latest_delta_bar,
         )
     except Exception as exc:
         logger.warning("Could not import pipeline/SMC engine in dispatch: %s", exc)
@@ -665,18 +744,17 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
 
             day_high_so_far = max(float(c["high"]) for c in today_completed)
             day_low_so_far = min(float(c["low"]) for c in today_completed)
-            delta_bar = float(today_completed[-1].get("delta") or 0.0)
+            delta_bar = compute_latest_delta_bar(today_completed)
 
             # 1. EVALUATE DEMAND FRESH CANDIDATES
             for ob in demand_fresh:
                 f_time = ob.get("formation_time") or ob.get("time", 0)
-                f_dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
+                is_recent, f_dt, age_after_close = _is_recent_ob_formation(f_time, now_ist)
 
-                # RECENCY GUARD: Zone must have formed recently (within last 20 minutes)
-                age_seconds = (now_ist - f_dt).total_seconds()
-                if age_seconds < -60 or age_seconds > 20 * 60:
-                    logger.debug("Skipping aged Demand Fresh OB for %s formed at %s (age: %.1f mins)",
-                                 sym_display, f_dt.strftime('%H:%M'), age_seconds / 60.0)
+                # RECENCY GUARD: Within 20 minutes after the 5m confirmation candle closes
+                if not is_recent:
+                    logger.debug("Skipping aged Demand Fresh OB for %s formed at %s (age post-close: %.1f mins)",
+                                 sym_display, f_dt.strftime('%H:%M'), age_after_close / 60.0)
                     continue
 
                 clean_time = _format_time_str(f_time)
@@ -763,13 +841,12 @@ def dispatch_new_fresh_alerts(payload: dict | None = None) -> list[str]:
             # 2. EVALUATE BEAR OB FRESH CANDIDATES
             for ob in bear_fresh:
                 f_time = ob.get("formation_time") or ob.get("time", 0)
-                f_dt = datetime.fromtimestamp(f_time, tz=INDIA_TZ)
+                is_recent, f_dt, age_after_close = _is_recent_ob_formation(f_time, now_ist)
 
-                # RECENCY GUARD: Zone must have formed recently (within last 20 minutes)
-                age_seconds = (now_ist - f_dt).total_seconds()
-                if age_seconds < -60 or age_seconds > 20 * 60:
-                    logger.debug("Skipping aged Bear OB for %s formed at %s (age: %.1f mins)",
-                                 sym_display, f_dt.strftime('%H:%M'), age_seconds / 60.0)
+                # RECENCY GUARD: Within 20 minutes after the 5m confirmation candle closes
+                if not is_recent:
+                    logger.debug("Skipping aged Bear OB for %s formed at %s (age post-close: %.1f mins)",
+                                 sym_display, f_dt.strftime('%H:%M'), age_after_close / 60.0)
                     continue
 
                 clean_time = _format_time_str(f_time)

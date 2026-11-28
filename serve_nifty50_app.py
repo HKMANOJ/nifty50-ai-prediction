@@ -92,6 +92,7 @@ def _evaluate_index_ob_conviction(candles: list[dict[str, Any]], today_completed
         calculate_extension_gate,
         calculate_multi_timeframe_matrix,
         calculate_rolling_atr,
+        compute_latest_delta_bar,
     )
     from gemini_evaluator import evaluate_trade_deterministic
     from notify import MIN_ALERT_CONVICTION
@@ -138,7 +139,7 @@ def _evaluate_index_ob_conviction(candles: list[dict[str, Any]], today_completed
         "mtf_overall": mtf_overall,
         "above_5m_ema20": above_5m_ema20,
         "is_extended": bool(ext_gate.get("is_extended")),
-        "order_flow": {"delta_bar": float(today_completed[-1].get("delta") or 0.0) if today_completed else 0.0},
+        "order_flow": {"delta_bar": compute_latest_delta_bar(today_completed) if today_completed else 0.0},
     }
     res = evaluate_trade_deterministic(snapshot)
     score = int(res.get("conviction_score") or 0)
@@ -1713,6 +1714,15 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 if forming_c:
                     all_candles.append(forming_c)
 
+                if pipe_res.get("ok") and all_candles and not any(c.get("oi_is_real") for c in all_candles):
+                    fut_key, fut_5m, fut_1m = upstox_provider.fetch_futures_candles(symbol, full_range=True)
+                    if fut_5m:
+                        fut_meta = upstox_provider.merge_futures_into_candles(all_candles, fut_5m)
+                        pipe_res.setdefault("volume_source", fut_meta.get("volume_source"))
+                        pipe_res["oi_is_real"] = fut_meta.get("futures_oi_available", False)
+                    if fut_1m and pipe_res.get("candles_1m"):
+                        upstox_provider.merge_futures_into_candles(pipe_res["candles_1m"], fut_1m)
+
             # Only fall back to extended pipeline (Yahoo) if timeframe != "5m" or Upstox had zero data
             if not all_candles:
                 ext_candles = fetch_extended_candles_pipeline(symbol, timeframe=timeframe, range_str=range_param or None)
@@ -1758,8 +1768,13 @@ class NiftyHandler(SimpleHTTPRequestHandler):
             if index_quote is not None:
                 pct_change = index_quote["percent_change"]
 
-            # 5. Full analysis across all candles (for CVD, footprint, liquidity pools)
-            analysis = analyze_stock_overview(symbol, all_candles, completed_candles=candles)
+            # 5. Unified analysis across active candles (passing real 1m sub-bars for sharp Footprint & Delta)
+            analysis = analyze_stock_overview(
+                symbol,
+                all_candles,
+                completed_candles=candles,
+                candles_1m=pipe_res.get("candles_1m"),
+            )
 
             # 6. Intraday Session Overlays (Order Blocks, FVGs, POC, Anchors) matching Dashboard
             today_ob_struct = detect_order_blocks_and_structure(candles if candles else today_candles)
@@ -2236,11 +2251,15 @@ class NiftyHandler(SimpleHTTPRequestHandler):
                 "bins": today_vp.get("bins") or analysis["volume_profile"].get("bins", []),
             }
 
-            # 10. Run 90%+ High-Conviction Institutional Pattern Detection
+            # 10. Run Calibrated Classical Chart Pattern Detection (Double Top/Bottom, H&S, Triangles, Flags, Wedges, Cup & Handle)
             high_conviction_patterns = []
             try:
                 from high_conviction_pattern_engine import detect_high_conviction_patterns
-                high_conviction_patterns = detect_high_conviction_patterns(tv_candles, min_confidence=90.0)
+                pattern_candles = [
+                    {**tc, "volume": float(rc.get("volume") or 0.0)}
+                    for tc, rc in zip(tv_candles, all_candles)
+                ]
+                high_conviction_patterns = detect_high_conviction_patterns(pattern_candles, min_confidence=70.0, max_patterns=2)
             except Exception as pe:
                 print(f"[stock-overview] Pattern detection error: {pe}", file=sys.stderr)
 

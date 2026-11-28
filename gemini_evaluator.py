@@ -31,12 +31,12 @@ You must differentiate between:
 1. HIGH CONVICTION INSTITUTIONAL BREAKDOWNS & CONFIRMED REVERSALS (SHORT):
    - Bearish momentum breakdown below ORB 5L AND below 20 EMA (not oversold < -1.8x ATR below EMA20).
    - OR Top reversal ONLY after price has cracked BELOW 5m 20 EMA following prior expansion above ORB 5H.
-   -> APPROVED (Score: 85-95)
+   -> APPROVED (Score: 92-98)
 
 2. HIGH CONVICTION VALUE BOUNCE & BULL BREAKOUTS (LONG):
    - Price MUST actively hold ABOVE 5m 20 EMA (above_5m_ema20=true) and align with BULLISH multi-timeframe trend (mtf_overall).
    - Swept ORB 5L / Day Low and reclaimed above 20 EMA, OR broke cleanly above ORB 5H without being overextended (> +1.8x ATR).
-   -> APPROVED (Score: 85-95)
+   -> APPROVED (Score: 92-98)
 
 3. DANGEROUS TRAPS & CHOP TO REJECT:
    - Shorting Bear OBs while price is STILL ABOVE 5m 20 EMA (runaway bull trend squeeze trap).
@@ -87,7 +87,7 @@ def evaluate_trade_with_gemini(
     market_snapshot: dict[str, Any],
     api_key: Optional[str] = None,
     model: str = DEFAULT_MODEL,
-    timeout_sec: float = 15.0,
+    timeout_sec: float = 6.0,
     use_api: bool = True,
 ) -> dict[str, Any]:
     """Enforce hard structural pre-gates first, then optionally audit via Google Gemini API.
@@ -140,11 +140,16 @@ def evaluate_trade_with_gemini(
 
         raw_text = parts[0].get("text", "").strip()
         parsed = json.loads(raw_text)
-        # Preserve stricter risk verdict between quantitative engine and Gemini AI auditor
+        # Preserve quantitative score >=92 when Gemini confirms APPROVED with strong alignment (>=88);
+        # clamp with min() only when Gemini scores weak (<88) or explicitly REJECTS.
         llm_score = int(parsed.get("conviction_score") or 0)
         det_score = int(det_res.get("conviction_score") or 0)
-        parsed["conviction_score"] = min(llm_score, det_score)
-        if str(parsed.get("verdict") or "").upper() != "REJECTED" and parsed["conviction_score"] < 80:
+        llm_verdict = str(parsed.get("verdict") or "").upper()
+        if llm_verdict == "APPROVED" and llm_score >= 88 and det_score >= 92:
+            parsed["conviction_score"] = det_score
+        else:
+            parsed["conviction_score"] = min(llm_score, det_score)
+        if llm_verdict != "REJECTED" and parsed["conviction_score"] < 80:
             parsed["verdict"] = "REJECTED"
         parsed["source"] = f"GEMINI_{model.upper()}"
         return parsed

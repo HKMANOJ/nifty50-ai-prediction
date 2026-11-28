@@ -19,6 +19,223 @@ FIVE_MINUTES = 300
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
 
 
+def _estimate_bar_flow(
+    c: dict[str, Any],
+    atr: float,
+    allow_synthetic: bool = True,
+) -> tuple[float, float, float, float, str]:
+    """Computes consistent (vol, buy_vol, sell_vol, delta, vol_source) for a candle.
+    Preserves real spot/futures volume whenever > 0 or when volume_source is already futures/spot
+    (so quiet 0-vol futures bars stay 0 instead of injecting synthetic spikes).
+    """
+    raw_vol = float(c.get("volume", 0) or 0)
+    explicit_source = str(c.get("volume_source") or "")
+    c_high = float(c.get("high", 0) or 0)
+    c_low = float(c.get("low", 0) or 0)
+    c_close = float(c.get("close", 0) or 0)
+    spread = max(0.01, c_high - c_low)
+    if raw_vol > 0:
+        vol = raw_vol
+        vol_source = explicit_source or "real"
+    elif explicit_source == "futures" or not allow_synthetic:
+        vol = 0.0
+        vol_source = explicit_source or "futures"
+    else:
+        vol = max(10000.0, round(45000.0 * (spread / max(atr, 0.5)), 0))
+        vol_source = "estimated"
+    body_ratio = max(0.0, min(1.0, (c_close - c_low) / spread))
+    buy_vol = vol * body_ratio
+    sell_vol = vol * (1.0 - body_ratio)
+    delta = buy_vol - sell_vol
+    return vol, buy_vol, sell_vol, delta, vol_source
+
+
+def _group_1m_by_5m(candles_1m: list[dict[str, Any]] | None) -> dict[int, list[dict[str, Any]]]:
+    """Buckets 1-minute candles into their parent 5-minute epoch timestamp."""
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for m in candles_1m or []:
+        ts = m.get("timestamp")
+        if ts is None:
+            continue
+        t_int = int(ts)
+        bucket = t_int - (t_int % FIVE_MINUTES)
+        grouped.setdefault(bucket, []).append(m)
+    return grouped
+
+
+def _compute_candle_footprint_and_totals(
+    c: dict[str, Any],
+    sub_1m: list[dict[str, Any]] | None,
+    atr: float,
+    levels_per_candle: int = 8,
+    allow_synthetic: bool = True,
+) -> tuple[int, int, int, int, str, str, list[dict[str, Any]]]:
+    """Single source of truth for per-candle Volume, Buy/Sell Split, Delta, and Price-Level Footprint.
+    Uses 1m sub-bars when >=3 active 1m volume bars exist inside the 5m bucket; falls back cleanly to
+    full-bar OHLC profile on thin futures bars so illiquid ticks don't invert directional delta.
+    """
+    vol_raw, _, _, _, vol_source = _estimate_bar_flow(c, atr, allow_synthetic=allow_synthetic)
+    vol = max(0, int(round(vol_raw)))
+    c_open = float(c.get("open", 0))
+    c_close = float(c.get("close", 0))
+    c_high = float(c.get("high", 0))
+    c_low = float(c.get("low", 0))
+    spread = max(0.01, c_high - c_low)
+    step = spread / levels_per_candle
+    is_bullish = c_close >= c_open
+    body_top = max(c_open, c_close)
+    body_bottom = min(c_open, c_close)
+    body_pct = min(1.0, max(0.01, body_top - body_bottom) / spread)
+
+    level_prices = [round(c_low + step * (lv + 0.5), 2) for lv in range(levels_per_candle)]
+    raw_ask = [0.0] * levels_per_candle
+    raw_bid = [0.0] * levels_per_candle
+
+    valid_1m = [m for m in (sub_1m or []) if float(m.get("high", 0)) >= float(m.get("low", 0))]
+    active_1m_bars = [m for m in valid_1m if float(m.get("volume", 0) or 0) > 0]
+    use_1m_subbar = (len(active_1m_bars) >= 3) and vol > 0
+
+    if use_1m_subbar:
+        delta_method = "1m_subbar"
+        for m in valid_1m:
+            m_low = float(m.get("low", c_low))
+            m_high = float(m.get("high", c_high))
+            m_close = float(m.get("close", m_low))
+            m_vol = float(m.get("volume", 0) or 0)
+            if m_vol <= 0:
+                continue
+            m_spread = max(0.01, m_high - m_low)
+            close_pos = max(0.0, min(1.0, (m_close - m_low) / m_spread))
+            m_ask_ratio = max(0.18, min(0.82, 0.22 + 0.56 * close_pos))
+            start_lv = max(0, min(levels_per_candle - 1, int((m_low - c_low) / step)))
+            end_lv = max(0, min(levels_per_candle - 1, int((m_high - c_low) / step)))
+            lv_count = max(1, end_lv - start_lv + 1)
+            per_lv_vol = m_vol / lv_count
+            for lv in range(start_lv, end_lv + 1):
+                raw_ask[lv] += per_lv_vol * m_ask_ratio
+                raw_bid[lv] += per_lv_vol * (1.0 - m_ask_ratio)
+
+        raw_sum = sum(raw_ask) + sum(raw_bid)
+        if raw_sum > 0:
+            scale = vol / raw_sum
+            raw_ask = [v * scale for v in raw_ask]
+            raw_bid = [v * scale for v in raw_bid]
+    else:
+        delta_method = "ohlc_profile"
+        weights = [2.0 if body_bottom <= lp <= body_top else 0.6 for lp in level_prices]
+        total_weight = sum(weights) or 1.0
+        for lv, (lp, w) in enumerate(zip(level_prices, weights)):
+            lv_vol = vol * (w / total_weight)
+            if is_bullish:
+                if lp < body_bottom:
+                    ask_ratio = 0.76
+                elif lp <= c_close:
+                    ask_ratio = min(0.78, 0.55 + 0.23 * body_pct)
+                else:
+                    ask_ratio = 0.38
+            else:
+                if lp > body_top:
+                    ask_ratio = 0.24
+                elif lp >= c_close:
+                    ask_ratio = max(0.22, 0.45 - 0.23 * body_pct)
+                else:
+                    ask_ratio = 0.60
+            raw_ask[lv] = lv_vol * ask_ratio
+            raw_bid[lv] = lv_vol * (1.0 - ask_ratio)
+
+    levels: list[dict[str, Any]] = []
+    total_ask = 0
+    total_bid = 0
+    for lp, a_f, b_f in zip(level_prices, raw_ask, raw_bid):
+        a_i = int(round(a_f))
+        b_i = int(round(b_f))
+        d_i = a_i - b_i
+        total_ask += a_i
+        total_bid += b_i
+        imbalance = None
+        if a_i > 0 and b_i > 0:
+            if a_i / b_i >= 2.5:
+                imbalance = "BUY_IMBALANCE"
+            elif b_i / a_i >= 2.5:
+                imbalance = "SELL_IMBALANCE"
+        levels.append({
+            "price": lp,
+            "bid_vol": b_i,
+            "ask_vol": a_i,
+            "delta": d_i,
+            "imbalance": imbalance,
+        })
+
+    # Exact integer reconciliation (both +diff and -diff) so sum(ask + bid) == vol
+    exact_vol = total_ask + total_bid
+    if vol == 0:
+        for lv_d in levels:
+            lv_d["ask_vol"] = 0
+            lv_d["bid_vol"] = 0
+            lv_d["delta"] = 0
+            lv_d["imbalance"] = None
+        total_ask = 0
+        total_bid = 0
+        exact_vol = 0
+    elif exact_vol != vol and levels:
+        diff = vol - exact_vol
+        step_dir = 1 if diff > 0 else -1
+        rem = abs(diff)
+        order = sorted(
+            range(len(levels)),
+            key=lambda idx: levels[idx]["ask_vol"] + levels[idx]["bid_vol"],
+            reverse=True,
+        )
+        ptr = 0
+        while rem > 0 and order:
+            idx = order[ptr % len(order)]
+            lv_d = levels[idx]
+            if step_dir > 0:
+                if lv_d["ask_vol"] >= lv_d["bid_vol"]:
+                    lv_d["ask_vol"] += 1
+                    total_ask += 1
+                else:
+                    lv_d["bid_vol"] += 1
+                    total_bid += 1
+                rem -= 1
+            else:
+                if lv_d["bid_vol"] >= lv_d["ask_vol"] and lv_d["bid_vol"] > 0:
+                    lv_d["bid_vol"] -= 1
+                    total_bid -= 1
+                    rem -= 1
+                elif lv_d["ask_vol"] > 0:
+                    lv_d["ask_vol"] -= 1
+                    total_ask -= 1
+                    rem -= 1
+            lv_d["delta"] = lv_d["ask_vol"] - lv_d["bid_vol"]
+            ptr += 1
+            if ptr > len(order) * (rem + 4):
+                break
+        exact_vol = total_ask + total_bid
+
+    net_delta = total_ask - total_bid
+    return exact_vol, total_ask, total_bid, net_delta, vol_source, delta_method, levels
+
+
+def compute_latest_delta_bar(
+    candles: list[dict[str, Any]],
+    lookback: int = 14,
+    candles_1m: list[dict[str, Any]] | None = None,
+) -> float:
+    """Computes the latest completed candle's order-flow delta consistently across scanner & alerts."""
+    if not candles:
+        return 0.0
+    tail = candles[-lookback:]
+    trs = [max(float(c.get("high", 0)) - float(c.get("low", 0)), 0.01) for c in tail]
+    atr = (sum(trs) / len(trs)) if trs else 1.0
+    grouped_1m = _group_1m_by_5m(candles_1m)
+    last_c = candles[-1]
+    _, _, _, net_delta, _, _, _ = _compute_candle_footprint_and_totals(
+        last_c, grouped_1m.get(int(last_c["timestamp"])), atr
+    )
+    return float(net_delta)
+
+
 def calculate_volume_profile(
     candles: list[dict[str, Any]],
     num_bins: int = 50,
@@ -47,20 +264,16 @@ def calculate_volume_profile(
 
     trs = [max(float(c.get("high", 0)) - float(c.get("low", 0)), 0.01) for c in candles]
     atr = (sum(trs) / len(trs)) if trs else 1.0
+    allow_synthetic = not any(
+        float(c.get("volume", 0) or 0) > 0 or c.get("volume_source") == "futures"
+        for c in candles
+    )
 
     # Distribute each candle's volume across the bins it spans
     for c in candles:
-        raw_vol = float(c.get("volume", 0) or 0)
         c_low = float(c.get("low", 0))
         c_high = float(c.get("high", 0))
-        spread = max(0.01, c_high - c_low)
-
-        # For spot cash indices (SENSEX, NIFTY) where exchange spot feed volume is 0:
-        # Synthesize realistic institutional futures volume proportional to candle range/spread
-        if raw_vol <= 0:
-            vol = max(10000.0, round(45000.0 * (spread / max(atr, 0.5)), 0))
-        else:
-            vol = raw_vol
+        vol, _, _, _, _ = _estimate_bar_flow(c, atr, allow_synthetic=allow_synthetic)
 
         if vol <= 0 or c_high <= c_low:
             continue
@@ -294,8 +507,16 @@ def detect_order_blocks_and_structure(
             if vpoc < ob_bottom or vpoc > ob_top:
                 vpoc = round(ob_bottom + (ob_top - ob_bottom) * 0.40, 2)
 
-            # Order Flow Grade: Confirm strong displacement volume & range
-            flow_grade = "A+" if (curr_body_bull >= atr * 0.8) else "A"
+            # Order Flow Grade: Confirm strong displacement body & futures/equity volume expansion
+            local_vols = [
+                float(candles[j].get("volume") or 0)
+                for j in range(max(session_start, i - 13), i + 1)
+                if float(candles[j].get("volume") or 0) > 0
+            ]
+            avg_local_vol = (sum(local_vols) / len(local_vols)) if local_vols else 0.0
+            curr_vol = float(c_curr.get("volume") or 0.0)
+            vol_confirmed = avg_local_vol > 0 and curr_vol >= avg_local_vol * 1.15
+            flow_grade = "A+" if (curr_body_bull >= atr * 0.8 or (curr_body_bull >= atr * 0.65 and vol_confirmed)) else "A"
 
             mitigated = False
             tested = False
@@ -374,7 +595,15 @@ def detect_order_blocks_and_structure(
             if vpoc < ob_bottom or vpoc > ob_top:
                 vpoc = round(ob_top - (ob_top - ob_bottom) * 0.40, 2)
 
-            flow_grade = "A+" if (curr_body_bear >= atr * 0.8) else "A"
+            local_vols = [
+                float(candles[j].get("volume") or 0)
+                for j in range(max(session_start, i - 13), i + 1)
+                if float(candles[j].get("volume") or 0) > 0
+            ]
+            avg_local_vol = (sum(local_vols) / len(local_vols)) if local_vols else 0.0
+            curr_vol = float(c_curr.get("volume") or 0.0)
+            vol_confirmed = avg_local_vol > 0 and curr_vol >= avg_local_vol * 1.15
+            flow_grade = "A+" if (curr_body_bear >= atr * 0.8 or (curr_body_bear >= atr * 0.65 and vol_confirmed)) else "A"
 
             mitigated = False
             tested = False
@@ -550,6 +779,7 @@ def calculate_order_flow_and_absorption(
     candles: list[dict[str, Any]],
     val_level: float | None = None,
     vah_level: float | None = None,
+    candles_1m: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Computes Footprint Delta (Buy vs Sell Volume) and detects Buyer/Seller Absorption."""
     if not candles:
@@ -562,22 +792,33 @@ def calculate_order_flow_and_absorption(
             "clusters": [],
         }
 
-    total_buy = 0.0
-    total_sell = 0.0
+    trs = [max(float(c.get("high", 0)) - float(c.get("low", 0)), 0.01) for c in candles]
+    atr = (sum(trs) / len(trs)) if trs else 1.0
+    grouped_1m = _group_1m_by_5m(candles_1m)
+    allow_synthetic = not any(
+        float(c.get("volume", 0) or 0) > 0 or c.get("volume_source") == "futures"
+        for c in candles
+    )
+
+    total_buy = 0
+    total_sell = 0
     clusters = []
+    seen_sources: set[str] = set()
+    seen_methods: set[str] = set()
+    resolved_vols: list[int] = []
 
     for c in candles:
-        vol = float(c.get("volume", 0) or 0)
+        sub_1m = grouped_1m.get(int(c["timestamp"])) if c.get("timestamp") is not None else None
+        vol, buy_vol, sell_vol, delta, vol_source, delta_method, _ = _compute_candle_footprint_and_totals(
+            c, sub_1m, atr, allow_synthetic=allow_synthetic
+        )
+        seen_sources.add(vol_source)
+        seen_methods.add(delta_method)
+        resolved_vols.append(vol)
         c_open = float(c.get("open", 0))
         c_close = float(c.get("close", 0))
         c_high = float(c.get("high", 0))
         c_low = float(c.get("low", 0))
-        spread = max(0.01, c_high - c_low)
-
-        # Estimate intra-candle buy/sell volume from bar body and wicks
-        body_ratio = (c_close - c_low) / spread
-        buy_vol = vol * body_ratio
-        sell_vol = vol * (1.0 - body_ratio)
 
         total_buy += buy_vol
         total_sell += sell_vol
@@ -588,28 +829,28 @@ def calculate_order_flow_and_absorption(
             "close": c_close,
             "high": c_high,
             "low": c_low,
-            "buy_vol": round(buy_vol, 0),
-            "sell_vol": round(sell_vol, 0),
-            "delta": round(buy_vol - sell_vol, 0),
-            "total_vol": round(vol, 0),
+            "buy_vol": buy_vol,
+            "sell_vol": sell_vol,
+            "delta": delta,
+            "total_vol": vol,
+            "volume_source": vol_source,
+            "delta_method": delta_method,
         })
 
     net_delta = total_buy - total_sell
     total_vol = total_buy + total_sell
 
-    # Absorption Detection:
-    # Buyer Side Absorption: Large selling volume executed at or below VAL/support,
-    # but price closes up with strong lower wick (buyers absorbed all sell orders).
-    recent = candles[-5:] if len(candles) >= 5 else candles
-    avg_vol = (total_vol / len(candles)) if candles else 1.0
+    # Absorption Detection over recent session baseline
+    recent_window = resolved_vols[-40:] if len(resolved_vols) >= 40 else resolved_vols
+    avg_vol = (sum(recent_window) / len(recent_window)) if recent_window else 1.0
+    recent_pairs = list(zip(candles[-5:], resolved_vols[-5:]))
 
     absorption_detected = False
     absorption_type = "None"
     absorption_label = "Neutral Order Flow"
     absorption_desc = "Normal order flow distribution."
 
-    for c in reversed(recent):
-        vol = float(c.get("volume", 0) or 0)
+    for c, vol in reversed(recent_pairs):
         c_open = float(c.get("open", 0))
         c_close = float(c.get("close", 0))
         c_high = float(c.get("high", 0))
@@ -618,7 +859,6 @@ def calculate_order_flow_and_absorption(
         lower_wick = min(c_open, c_close) - c_low
         upper_wick = c_high - max(c_open, c_close)
 
-        # Buyer absorption check
         if vol > avg_vol * 1.3 and (lower_wick / spread) > 0.35 and c_close >= c_open:
             if val_level is None or c_low <= (val_level * 1.005):
                 absorption_detected = True
@@ -627,7 +867,6 @@ def calculate_order_flow_and_absorption(
                 absorption_desc = f"Heavy selling absorbed near ₹{round(c_low, 2)} with strong buyer response (+Delta)."
                 break
 
-        # Seller absorption check
         if vol > avg_vol * 1.3 and (upper_wick / spread) > 0.35 and c_close <= c_open:
             if vah_level is None or c_high >= (vah_level * 0.995):
                 absorption_detected = True
@@ -636,12 +875,22 @@ def calculate_order_flow_and_absorption(
                 absorption_desc = f"Heavy buying absorbed near ₹{round(c_high, 2)} with institutional sell resistance (-Delta)."
                 break
 
+    if "futures" in seen_sources:
+        volume_source = "futures"
+    elif "spot" in seen_sources or "real" in seen_sources:
+        volume_source = "spot"
+    else:
+        volume_source = "estimated"
+
     return {
-        "total_volume": round(total_vol, 0),
-        "buy_volume": round(total_buy, 0),
-        "sell_volume": round(total_sell, 0),
-        "delta": round(net_delta, 0),
+        "total_volume": int(total_vol),
+        "buy_volume": int(total_buy),
+        "sell_volume": int(total_sell),
+        "delta": int(net_delta),
         "delta_pct": round((net_delta / total_vol) * 100, 1) if total_vol > 0 else 0,
+        "volume_source": volume_source,
+        "delta_method": "1m_subbar" if "1m_subbar" in seen_methods else "ohlc_profile",
+        "oi_is_real": any(bool(c.get("oi_is_real")) for c in candles),
         "absorption": {
             "detected": absorption_detected,
             "type": absorption_type,
@@ -840,20 +1089,23 @@ def analyze_stock_overview(
     candles: list[dict[str, Any]],
     *,
     completed_candles: list[dict[str, Any]] | None = None,
+    candles_1m: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Unified master analysis: Volume Profile + Order Blocks + Order Flow Footprint + Trade Plan
     + FVG + Liquidity Pools + CVD + Per-Candle Footprint."""
     vp = calculate_volume_profile(candles)
     smc = detect_order_blocks_and_structure(candles if completed_candles is None else completed_candles)
-    of = calculate_order_flow_and_absorption(candles, val_level=vp.get("val"), vah_level=vp.get("vah"))
+    # Scope Order Flow, CVD, and Footprint onto the exact same active window (last 90 bars)
+    # so Order Flow Total Volume == sum(Footprint bars) and Order Flow Delta == CVD == Footprint Cum Delta.
+    active_of_candles = candles[-90:] if len(candles) > 90 else candles
+    of = calculate_order_flow_and_absorption(
+        active_of_candles, val_level=vp.get("val"), vah_level=vp.get("vah"), candles_1m=candles_1m
+    )
     plan = generate_institutional_trade_plan(candles, vp, smc, of)
     fvgs = detect_fair_value_gaps(candles)
     liquidity = detect_liquidity_pools(candles)
-    cvd = calculate_cvd_series(candles)
-    # Optimize: Build detailed footprint ladders for active sessions (~2 days / 90 bars),
-    # preserving sub-second network transfer speeds without sending redundant aged history
-    recent_fp_candles = candles[-90:] if len(candles) > 90 else candles
-    footprints = build_candle_footprints(recent_fp_candles)
+    cvd = calculate_cvd_series(active_of_candles, candles_1m=candles_1m)
+    footprints = build_candle_footprints(active_of_candles, candles_1m=candles_1m)
     mtf = calculate_multi_timeframe_matrix(candles)
     trend_band = calculate_monotonic_trend_band(candles)
     extension_gate = calculate_extension_gate(candles)
@@ -1152,37 +1404,32 @@ def detect_liquidity_pools(
 
 def calculate_cvd_series(
     candles: list[dict[str, Any]],
+    candles_1m: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Computes Cumulative Volume Delta (CVD) for each candle.
-
-    At each candle, delta = estimated buy_vol - sell_vol (same as order flow engine).
-    CVD[i] = CVD[i-1] + delta[i]
-
-    This creates a line chart showing whether institutional buying or selling is dominating
-    the session overall, including divergence detection vs price.
-    """
+    """Computes Cumulative Volume Delta (CVD) matching Order Flow & Footprint bar-by-bar."""
     if not candles:
         return []
 
     series = []
-    cumulative = 0.0
+    cumulative = 0
+    trs = [max(float(c.get("high", 0)) - float(c.get("low", 0)), 0.01) for c in candles]
+    atr = (sum(trs) / len(trs)) if trs else 1.0
+    grouped_1m = _group_1m_by_5m(candles_1m)
+    allow_synthetic = not any(
+        float(c.get("volume", 0) or 0) > 0 or c.get("volume_source") == "futures"
+        for c in candles
+    )
 
     for c in candles:
-        vol = float(c.get("volume", 0) or 0)
-        c_high = float(c.get("high", 0))
-        c_low = float(c.get("low", 0))
-        c_close = float(c.get("close", 0))
-        spread = max(0.01, c_high - c_low)
-
-        body_ratio = (c_close - c_low) / spread
-        buy_vol = vol * body_ratio
-        sell_vol = vol * (1.0 - body_ratio)
-        delta = buy_vol - sell_vol
+        sub_1m = grouped_1m.get(int(c["timestamp"])) if c.get("timestamp") is not None else None
+        _, _, _, delta, _, _, _ = _compute_candle_footprint_and_totals(
+            c, sub_1m, atr, allow_synthetic=allow_synthetic
+        )
         cumulative += delta
 
         series.append({
             "time": c["timestamp"],
-            "value": round(cumulative, 0),
+            "value": int(cumulative),
         })
 
     return series
@@ -1195,6 +1442,7 @@ def calculate_cvd_series(
 def build_candle_footprints(
     candles: list[dict[str, Any]],
     levels_per_candle: int = 8,
+    candles_1m: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Builds a per-candle footprint ladder (bid vs ask volume at each price level)
     and synchronized 5-row order flow summary (Volume, Delta, Cum Delta, OI, OI Change).
@@ -1204,106 +1452,42 @@ def build_candle_footprints(
 
     trs = [max(c["high"] - c["low"], 0.01) for c in candles]
     atr = (sum(trs) / len(trs)) if trs else 1.0
+    grouped_1m = _group_1m_by_5m(candles_1m)
+    allow_synthetic = not any(
+        float(c.get("volume", 0) or 0) > 0 or c.get("volume_source") == "futures"
+        for c in candles
+    )
 
     result: dict[str, Any] = {}
     summary_bars: list[dict[str, Any]] = []
 
-    running_cum_delta = 0.0
-    first_sym = str(candles[0].get("symbol", "")).upper()
-    is_index = any(k in first_sym for k in ("NIFTY", "SENSEX", "BANK"))
-    base_oi = 14450000.0 if ("NIFTY" in first_sym or "BANK" in first_sym) else (4500000.0 if "SENSEX" in first_sym else 1250000.0)
-    running_oi = base_oi
+    running_cum_delta = 0
+    prev_real_oi: float | None = None
 
     for c in candles:
-        raw_vol = float(c.get("volume", 0) or 0)
         c_open = float(c.get("open", 0))
         c_close = float(c.get("close", 0))
         c_high = float(c.get("high", 0))
         c_low = float(c.get("low", 0))
-        spread = max(0.01, c_high - c_low)
         ts = str(c["timestamp"])
-
         is_bullish = c_close >= c_open
-        body_top = max(c_open, c_close)
-        body_bottom = min(c_open, c_close)
-        body_size = max(0.01, body_top - body_bottom)
-        body_pct = min(1.0, body_size / spread)
 
-        # Realistic institutional volume derivation when spot volume is 0
-        if raw_vol <= 0:
-            vol = max(15000.0, round(55000.0 * (spread / max(atr, 0.5)), 0))
-        else:
-            vol = raw_vol
-
-        # Distribute volume across price levels
-        step = spread / levels_per_candle
-        level_vols = []
-
-        for lv in range(levels_per_candle):
-            level_price = c_low + step * (lv + 0.5)
-            # More volume near POC (body center), less at wicks
-            if body_bottom <= level_price <= body_top:
-                weight = 2.0  # Body area gets 2x weight
-            else:
-                weight = 0.6  # Wick area gets less
-
-            level_vols.append((round(level_price, 2), weight))
-
-        total_weight = sum(w for _, w in level_vols)
-        if total_weight <= 0:
-            total_weight = 1.0
-
-        candle_total_delta = 0.0
-        levels = []
-        for price, weight in level_vols:
-            lv_vol = vol * (weight / total_weight)
-
-            # At each price level, estimate bid vs ask based on institutional order flow
-            if is_bullish:
-                if price < body_bottom:
-                    # Lower wick: aggressive buyers stepped in at bottom
-                    ask_ratio = 0.76  # 3.1:1 buy imbalance
-                elif price <= c_close:
-                    # Bullish body: buyers lifting the ask
-                    ask_ratio = min(0.78, 0.55 + 0.23 * body_pct)
-                else:
-                    # Upper wick resistance
-                    ask_ratio = 0.38
-            else:
-                if price > body_top:
-                    # Upper wick: aggressive sellers rejecting highs
-                    ask_ratio = 0.24  # 3.1:1 sell imbalance (76% bid)
-                elif price >= c_close:
-                    # Bearish body: sellers dumping into bid
-                    ask_ratio = max(0.22, 0.45 - 0.23 * body_pct)
-                else:
-                    # Lower wick dip buying
-                    ask_ratio = 0.60
-
-            ask_vol = round(lv_vol * ask_ratio, 0)
-            bid_vol = round(lv_vol * (1 - ask_ratio), 0)
-            delta = ask_vol - bid_vol
-            candle_total_delta += delta
-
-            # Detect imbalance (≥ 2.5:1 ratio standard in institutional order flow)
-            imbalance = None
-            if ask_vol > 0 and bid_vol > 0:
-                if ask_vol / bid_vol >= 2.5:
-                    imbalance = "BUY_IMBALANCE"
-                elif bid_vol / ask_vol >= 2.5:
-                    imbalance = "SELL_IMBALANCE"
-
-            levels.append({
-                "price": price,
-                "bid_vol": int(bid_vol),
-                "ask_vol": int(ask_vol),
-                "delta": int(delta),
-                "imbalance": imbalance,
-            })
+        sub_1m = grouped_1m.get(int(c["timestamp"])) if c.get("timestamp") is not None else None
+        vol, _, _, candle_total_delta, vol_source, delta_method, levels = _compute_candle_footprint_and_totals(
+            c, sub_1m, atr, levels_per_candle=levels_per_candle, allow_synthetic=allow_synthetic
+        )
 
         running_cum_delta += candle_total_delta
-        oi_delta = int(candle_total_delta * 0.40)
-        running_oi += oi_delta
+        raw_oi = c.get("oi")
+        has_real_oi = raw_oi is not None and (bool(c.get("oi_is_real")) or float(raw_oi or 0) > 0)
+        if has_real_oi:
+            curr_oi = float(raw_oi)
+            oi_delta = int(round(curr_oi - prev_real_oi)) if prev_real_oi is not None else 0
+            prev_real_oi = curr_oi
+            oi_val: int | None = int(round(curr_oi))
+        else:
+            oi_val = None
+            oi_delta = None
 
         bar_info = {
             "time": c["timestamp"],
@@ -1312,10 +1496,13 @@ def build_candle_footprints(
             "high": round(c_high, 2),
             "low": round(c_low, 2),
             "total_vol": int(vol),
+            "volume_source": vol_source,
+            "delta_method": delta_method,
             "net_delta": int(candle_total_delta),
             "cum_delta": int(running_cum_delta),
-            "oi": int(running_oi),
-            "oi_change": int(oi_delta),
+            "oi": oi_val,
+            "oi_change": oi_delta,
+            "oi_is_real": has_real_oi,
             "is_up": is_bullish,
         }
 

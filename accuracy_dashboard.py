@@ -19,35 +19,140 @@ if str(ROOT) not in sys.path:
 
 from store_candles_mysql import connect_mysql
 
+def _load_local_outcome_trades() -> List[Dict[str, Any]]:
+    """Builds evaluated trade records from local outcome_log/*.jsonl & outcome_tracker_state.json when DB is empty."""
+    inputs_dir = ROOT / "inputs"
+    records_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+
+    log_dir = inputs_dir / "outcome_log"
+    if log_dir.is_dir():
+        for fp in sorted(log_dir.glob("*.jsonl")):
+            try:
+                for line in fp.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    row = json.loads(line)
+                    sess = str(row.get("session_date") or "")
+                    sid = str(row.get("signal_id") or f"{row.get('symbol')}_{row.get('side')}")
+                    if sess and sid:
+                        records_by_key[(sess, sid)] = row
+            except Exception:
+                continue
+
+    tracker_file = inputs_dir / "outcome_tracker_state.json"
+    if tracker_file.is_file():
+        try:
+            tdata = json.loads(tracker_file.read_text(encoding="utf-8"))
+            for row in tdata.get("items", []):
+                sess = str(row.get("session_date") or tdata.get("session_date") or "")
+                sid = str(row.get("signal_id") or f"{row.get('symbol')}_{row.get('side')}")
+                if sess and sid:
+                    records_by_key[(sess, sid)] = row
+        except Exception:
+            pass
+
+    synthesized: List[Dict[str, Any]] = []
+    for (sess, _sid), row in records_by_key.items():
+        trig_time = str(row.get("trigger_time_ist") or "09:30:00")
+        if trig_time < "09:15:00":
+            continue
+        trig_price = float(row.get("trigger_price") or row.get("price_at_trigger") or 0.0)
+        if trig_price <= 0:
+            continue
+
+        cps = row.get("checkpoints") or {}
+        eval_price = None
+        for cp_key in ("t60", "t30", "t15"):
+            cp = cps.get(cp_key)
+            if isinstance(cp, dict) and cp.get("price") is not None:
+                eval_price = float(cp["price"])
+                break
+        if eval_price is None:
+            lp = row.get("latest_price")
+            if lp is not None and float(lp) != trig_price:
+                eval_price = float(lp)
+        if eval_price is None:
+            continue
+
+        side = str(row.get("side") or "bullish").lower()
+        dir_sign = 1.0 if side == "bullish" else -1.0
+        move_pct = dir_sign * ((eval_price - trig_price) / trig_price) * 100.0
+        pts = round(dir_sign * (eval_price - trig_price), 2)
+
+        if move_pct >= 0.35:
+            status = "SUCCESS"
+        elif move_pct > 0:
+            status = "PARTIAL_SUCCESS"
+        else:
+            status = "FAILED"
+
+        try:
+            opened_dt = datetime.fromisoformat(f"{sess}T{trig_time[:8]}")
+        except Exception:
+            opened_dt = None
+
+        score_bucket = int(float(row.get("instant_score") or 0) // 10) * 10
+        synthesized.append({
+            "id": row.get("signal_id"),
+            "opened_market_time": opened_dt,
+            "option_side": "CE" if side == "bullish" else "PE",
+            "status": status,
+            "entry_price": trig_price,
+            "target_price": round(trig_price * (1.0 + 0.005 * dir_sign), 2),
+            "stop_loss": round(trig_price * (1.0 - 0.003 * dir_sign), 2),
+            "current_price": eval_price,
+            "confidence": float(row.get("instant_score") or 0.0),
+            "pattern_name": f"{row.get('setup') or side.title()} ({side})",
+            "result_points": pts,
+            "premium_entry": 0.0,
+            "premium_exit": 0.0,
+            "pnl_premium": 0.0,
+            "option_type": f"Score {score_bucket}+",
+            "option_name": row.get("symbol") or "",
+            "mfe": max(0.0, pts),
+            "mae": min(0.0, pts),
+        })
+    return synthesized
+
+
 def get_accuracy_dashboard_data() -> Dict[str, Any]:
-    conn = connect_mysql()
-    cursor = conn.cursor(dictionary=True)
-    
-    # ------------------------------------------------
-    # 1. Fetch evaluated trades from ai_options
-    # ------------------------------------------------
-    cursor.execute("""
-        SELECT id, opened_market_time, option_side, status, 
-               entry_price, target_price, stop_loss, current_price,
-               confidence, pattern_name, result_points,
-               premium_entry, premium_exit, pnl_premium, option_type, option_name, mfe, mae
-        FROM ai_options
-        ORDER BY opened_market_time DESC
-    """)
-    trades = cursor.fetchall()
-    
-    # ------------------------------------------------
-    # 2. Fetch rejected opportunities from opportunity_audit
-    # ------------------------------------------------
-    cursor.execute("""
-        SELECT id, market_time, signal_side, pattern_name, 
-               rejection_reasons, final_verdict, future_max_move_points
-        FROM opportunity_audit
-        ORDER BY market_time DESC
-    """)
-    audits = cursor.fetchall()
-    
-    conn.close()
+    trades = []
+    audits = []
+    data_source = "database"
+    try:
+        conn = connect_mysql()
+        cursor = conn.cursor(dictionary=True)
+
+        # 1. Fetch evaluated trades from ai_options
+        cursor.execute("""
+            SELECT id, opened_market_time, option_side, status, 
+                   entry_price, target_price, stop_loss, current_price,
+                   confidence, pattern_name, result_points,
+                   premium_entry, premium_exit, pnl_premium, option_type, option_name, mfe, mae
+            FROM ai_options
+            ORDER BY opened_market_time DESC
+        """)
+        trades = cursor.fetchall()
+
+        # 2. Fetch rejected opportunities from opportunity_audit
+        cursor.execute("""
+            SELECT id, market_time, signal_side, pattern_name, 
+                   rejection_reasons, final_verdict, future_max_move_points
+            FROM opportunity_audit
+            ORDER BY market_time DESC
+        """)
+        audits = cursor.fetchall()
+        conn.close()
+    except Exception:
+        trades = []
+        audits = []
+
+    if not trades:
+        local_trades = _load_local_outcome_trades()
+        if local_trades:
+            trades = local_trades
+            data_source = "local_outcome_log"
     
     # --- Compute Overall Statistics ---
     wins_count = 0
@@ -313,7 +418,8 @@ def get_accuracy_dashboard_data() -> Dict[str, Any]:
             "worst_pattern": worst_pattern,
             "most_blocking_gate": most_blocking_gate,
             "total_paper_pnl": round(total_paper_pnl, 2),
-            "best_strike": best_strike
+            "best_strike": best_strike,
+            "data_source": data_source,
         },
         "patterns": pattern_report,
         "options": option_report,

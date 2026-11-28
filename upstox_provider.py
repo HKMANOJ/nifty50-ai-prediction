@@ -26,6 +26,12 @@ INDIA_TZ = timezone(timedelta(hours=5, minutes=30))
 UPSTOX_API_BASE = "https://api.upstox.com/v2"
 
 _INSTRUMENTS_CACHE: dict[str, Any] | None = None
+_FUTURES_CACHE: dict[tuple[str, bool], tuple[float, list[dict[str, Any]]]] = {}
+_FUTURES_CACHE_TTL_SEC = 60.0
+_CHROME_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 
 
 def load_credentials() -> dict[str, str]:
@@ -137,11 +143,9 @@ def get_user_profile() -> dict[str, Any] | None:
     return None
 
 
-def get_instrument_key(symbol: str) -> str | None:
-    """Dynamically resolves instrument key from Upstox official master catalog with zero hardcoding."""
+def _load_instruments_map() -> dict[str, Any]:
+    """Loads cached Upstox instruments mapping, downloading on first use."""
     global _INSTRUMENTS_CACHE
-    sym = symbol.upper().strip()
-
     if _INSTRUMENTS_CACHE is None:
         if INSTRUMENTS_FILE.exists():
             try:
@@ -155,10 +159,44 @@ def get_instrument_key(symbol: str) -> str | None:
             except Exception as dl_err:
                 print(f"[UPSTOX WARNING] Failed to download master instruments: {dl_err}")
                 _INSTRUMENTS_CACHE = {}
+    return _INSTRUMENTS_CACHE
 
-    entry = _INSTRUMENTS_CACHE.get(sym)
+
+def get_instrument_key(symbol: str) -> str | None:
+    """Dynamically resolves instrument key from Upstox official master catalog with zero hardcoding."""
+    sym = symbol.upper().strip()
+    instruments = _load_instruments_map()
+    entry = instruments.get(sym)
     if entry and isinstance(entry, dict):
         return entry.get("instrument_key")
+    return None
+
+
+def get_futures_instrument_key(symbol: str) -> str | None:
+    """Resolves active near-month futures instrument key (NSE_FO / BSE_FO) for index or F&O stock."""
+    raw = symbol.upper().strip()
+    if not raw:
+        return None
+    alias_map = {
+        "^NSEI": "NIFTY",
+        "NIFTY 50": "NIFTY",
+        "NIFTY50": "NIFTY",
+        "^NSEBANK": "BANKNIFTY",
+        "NIFTY BANK": "BANKNIFTY",
+        "^BSESN": "SENSEX",
+        "BSE SENSEX": "SENSEX",
+        "BSESENSEX": "SENSEX",
+    }
+    base = alias_map.get(raw, raw)
+    if base.endswith(".NS") or base.endswith(".BO"):
+        base = base[:-3]
+    instruments = _load_instruments_map()
+    for candidate in (f"{base}_FUT", f"{raw}_FUT", base if base.endswith("_FUT") else ""):
+        if not candidate:
+            continue
+        entry = instruments.get(candidate)
+        if entry and isinstance(entry, dict):
+            return entry.get("instrument_key")
     return None
 
 
@@ -217,14 +255,20 @@ def aggregate_1m_to_5m(candles_1m: list[list[Any]]) -> list[dict[str, Any]]:
         l = min(float(x[3]) for x in group)
         c = float(group[-1][4])
         v = sum(float(x[5]) for x in group)
-        res.append({
+        candle: dict[str, Any] = {
             "timestamp": bucket_epoch,
             "open": o,
             "high": h,
             "low": l,
             "close": c,
             "volume": v,
-        })
+        }
+        last_raw = group[-1]
+        if len(last_raw) > 6 and last_raw[6] is not None:
+            oi_val = float(last_raw[6])
+            if oi_val > 0:
+                candle["oi"] = oi_val
+        res.append(candle)
     return res
 
 
@@ -330,45 +374,28 @@ def separate_completed_and_forming(
     return completed, forming
 
 
-def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> dict[str, Any]:
-    """Fetches high-speed intraday 5-minute candles via Upstox API v2.
-    When full_range=True, combines the past 5 trading days with today's live session for full chart context.
-    Measures observed latency, validates session date, monotonic spacing, and OHLC integrity,
-    and isolates the forming in-progress candle from completed candles.
-    """
-    t0 = time.monotonic()
-    now_ist = datetime.now(INDIA_TZ)
-
-    inst_key = get_instrument_key(symbol)
-    if not inst_key:
-        return {
-            "ok": False,
-            "symbol": symbol,
-            "provider": "Upstox",
-            "completed_candles": [],
-            "forming_candle": None,
-            "all_candles": [],
-            "latest_completed_candle_ist": None,
-            "latest_completed_candle_epoch": None,
-            "observed_latency_ms": int((time.monotonic() - t0) * 1000),
-            "fallback_used": False,
-            "is_stale": False,
-            "error": "Instrument key not found in NSE master index",
-        }
-
-    encoded_key = urllib.parse.quote(inst_key)
+def _upstox_request_headers() -> dict[str, str]:
     headers = {
         "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": _CHROME_UA,
     }
     token = load_token().get("access_token")
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    return headers
 
-    raw_candles_1m = []
-    error_reason = None
 
-    # 1. Try intraday endpoint first (fastest for today's live session)
+def _fetch_upstox_1m_raw(
+    inst_key: str,
+    now_ist: datetime,
+    full_range: bool = False,
+) -> tuple[list[list[Any]], str | None]:
+    """Fetches raw 1-minute Upstox candles (intraday + historical backfill when needed)."""
+    encoded_key = urllib.parse.quote(inst_key)
+    headers = _upstox_request_headers()
+    raw_candles_1m: list[list[Any]] = []
+    error_reason: str | None = None
+
     url = f"{UPSTOX_API_BASE}/historical-candle/intraday/{encoded_key}/1minute"
     req = urllib.request.Request(url, headers=headers)
     try:
@@ -383,8 +410,7 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
     except Exception as exc:
         error_reason = f"Upstox request failed/unauthorized ({type(exc).__name__})"
 
-    # 2. When full_range=True (for 5-Day chart) or intraday is empty, fetch historical 5-day candles
-    hist_candles_1m = []
+    hist_candles_1m: list[list[Any]] = []
     if full_range or not raw_candles_1m:
         to_date = now_ist.strftime("%Y-%m-%d")
         from_date = (now_ist - timedelta(days=14)).strftime("%Y-%m-%d")
@@ -426,6 +452,127 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
     elif not raw_candles_1m and hist_candles_1m:
         raw_candles_1m = hist_candles_1m
 
+    return raw_candles_1m, error_reason
+
+
+def merge_futures_into_candles(
+    spot_candles: list[dict[str, Any]],
+    fut_candles: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Overlays futures volume (when spot volume is zero) and real OI by exact 5m timestamp.
+    Never modifies spot OHLC prices.
+    """
+    fut_by_ts = {int(fc["timestamp"]): fc for fc in (fut_candles or []) if fc.get("timestamp") is not None}
+    matched = 0
+    real_oi_bars = 0
+    used_fut_volume = False
+
+    for sc in spot_candles or []:
+        ts = sc.get("timestamp")
+        fc = fut_by_ts.get(int(ts)) if ts is not None else None
+        if fc is None:
+            if not (sc.get("oi") and sc.get("oi_is_real")):
+                sc["oi"] = None
+                sc["oi_is_real"] = False
+            sc.setdefault("volume_source", "spot")
+            continue
+
+        matched += 1
+        fut_vol = float(fc.get("volume") or 0.0)
+        fut_oi = fc.get("oi")
+        spot_vol = float(sc.get("volume") or 0.0)
+        sc["futures_volume"] = fut_vol
+        # When futures bar exists for this timestamp, trust real futures volume (even if 0 contracts traded)
+        if spot_vol <= 0:
+            sc["volume"] = fut_vol
+            sc["volume_source"] = "futures"
+            if fut_vol > 0:
+                used_fut_volume = True
+        else:
+            sc.setdefault("volume_source", "spot")
+
+        if fut_oi is not None and float(fut_oi) > 0:
+            sc["oi"] = float(fut_oi)
+            sc["oi_is_real"] = True
+            real_oi_bars += 1
+        else:
+            sc["oi"] = None
+            sc["oi_is_real"] = False
+
+    return {
+        "futures_matched": matched,
+        "futures_oi_available": real_oi_bars > 0,
+        "volume_source": "futures" if used_fut_volume else "spot",
+    }
+
+
+def fetch_futures_candles(
+    symbol: str,
+    full_range: bool = False,
+) -> tuple[str | None, list[dict[str, Any]], list[dict[str, Any]]]:
+    """Fetches both 5m and 1m futures candles (volume + OI) with a 60-second in-memory cache."""
+    fut_key = get_futures_instrument_key(symbol)
+    if not fut_key:
+        return None, [], []
+
+    cache_key = (fut_key, bool(full_range))
+    now_mono = time.monotonic()
+    cached = _FUTURES_CACHE.get(cache_key)
+    if cached and len(cached) == 3 and (now_mono - cached[0]) < _FUTURES_CACHE_TTL_SEC:
+        return fut_key, cached[1], cached[2]
+
+    now_ist = datetime.now(INDIA_TZ)
+    raw_fut, _ = _fetch_upstox_1m_raw(fut_key, now_ist, full_range=full_range)
+    if not raw_fut:
+        return fut_key, [], []
+
+    fut_5m = aggregate_1m_to_5m(raw_fut)
+    fut_1m = parse_1m_candles(raw_fut)
+    if fut_5m:
+        _FUTURES_CACHE[cache_key] = (now_mono, fut_5m, fut_1m)  # type: ignore[assignment]
+    return fut_key, fut_5m, fut_1m
+
+
+def fetch_5m_futures_overlay(
+    symbol: str,
+    full_range: bool = False,
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """Fetches 5m futures candles (volume + OI) with a 60-second in-memory cache."""
+    fut_key, fut_5m, _ = fetch_futures_candles(symbol, full_range=full_range)
+    return fut_key, fut_5m
+
+
+def fetch_5m_candles_with_telemetry(
+    symbol: str,
+    full_range: bool = False,
+    include_futures: bool | None = None,
+) -> dict[str, Any]:
+    """Fetches high-speed intraday 5-minute candles via Upstox API v2.
+    When full_range=True, combines the past 5 trading days with today's live session for full chart context.
+    Measures observed latency, validates session date, monotonic spacing, and OHLC integrity,
+    and isolates the forming in-progress candle from completed candles.
+    """
+    t0 = time.monotonic()
+    now_ist = datetime.now(INDIA_TZ)
+
+    inst_key = get_instrument_key(symbol)
+    if not inst_key:
+        return {
+            "ok": False,
+            "symbol": symbol,
+            "provider": "Upstox",
+            "completed_candles": [],
+            "forming_candle": None,
+            "all_candles": [],
+            "latest_completed_candle_ist": None,
+            "latest_completed_candle_epoch": None,
+            "observed_latency_ms": int((time.monotonic() - t0) * 1000),
+            "fallback_used": False,
+            "is_stale": False,
+            "error": "Instrument key not found in NSE master index",
+        }
+
+    raw_candles_1m, error_reason = _fetch_upstox_1m_raw(inst_key, now_ist, full_range=full_range)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
     if not raw_candles_1m:
@@ -470,6 +617,17 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
             "error": f"Upstox candle validation failed: {reason}",
         }
 
+    total_spot_vol = sum(float(c.get("volume") or 0.0) for c in all_5m)
+    should_enrich_futures = (include_futures is True) or (include_futures is None and total_spot_vol <= 0)
+    fut_meta = {"futures_matched": 0, "futures_oi_available": False, "volume_source": "spot"}
+    fut_key = None
+    if should_enrich_futures:
+        fut_key, fut_5m, fut_1m = fetch_futures_candles(symbol, full_range=full_range)
+        if fut_5m:
+            fut_meta = merge_futures_into_candles(all_5m, fut_5m)
+        if fut_1m and parsed_1m:
+            merge_futures_into_candles(parsed_1m, fut_1m)
+
     # Exclude the forming candle from completed candles
     completed_candles, forming_candle = separate_completed_and_forming(all_5m, now_ist)
 
@@ -490,18 +648,25 @@ def fetch_5m_candles_with_telemetry(symbol: str, full_range: bool = False) -> di
         "candles_1m": parsed_1m,
         "latest_completed_candle_ist": latest_ist,
         "latest_completed_candle_epoch": latest_epoch,
-        "observed_latency_ms": latency_ms,
+        "observed_latency_ms": int((time.monotonic() - t0) * 1000),
         "fallback_used": False,
         "is_stale": False,
+        "futures_instrument_key": fut_key,
+        "volume_source": fut_meta["volume_source"],
+        "oi_is_real": fut_meta["futures_oi_available"],
         "error": None,
     }
 
 
-def fetch_5m_candles(symbol: str, full_range: bool = False) -> list[dict[str, Any]]:
+def fetch_5m_candles(
+    symbol: str,
+    full_range: bool = False,
+    include_futures: bool | None = None,
+) -> list[dict[str, Any]]:
     """Fetches high-speed intraday 5-minute candles via Upstox API.
     Returns only completed, validated candles (forming candle excluded).
     """
-    res = fetch_5m_candles_with_telemetry(symbol, full_range=full_range)
+    res = fetch_5m_candles_with_telemetry(symbol, full_range=full_range, include_futures=include_futures)
     if res.get("ok"):
         return res.get("completed_candles", [])
     return []

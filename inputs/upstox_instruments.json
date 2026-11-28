@@ -2484,6 +2484,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "VCL": {
+    "instrument_key": "NSE_EQ|INE098201036",
+    "name": "VAXTEX COTFAB LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "VAXTEX COTFAB LIMITED": {
+    "instrument_key": "NSE_EQ|INE098201036",
+    "name": "VAXTEX COTFAB LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "INFY": {
     "instrument_key": "NSE_EQ|INE009A01021",
     "name": "INFOSYS LIMITED",
@@ -3023,6 +3037,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "MITSU": {
+    "instrument_key": "NSE_EQ|INE317V01016",
+    "name": "MITSU CHEM PLAST LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MITSU CHEM PLAST LIMITED": {
+    "instrument_key": "NSE_EQ|INE317V01016",
+    "name": "MITSU CHEM PLAST LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "BERGEPAINT": {
     "instrument_key": "NSE_EQ|INE463A01038",
     "name": "BERGER PAINTS (I) LTD",
@@ -3187,6 +3215,20 @@
   "SATIA INDUSTRIES LIMITED": {
     "instrument_key": "NSE_EQ|INE170E01023",
     "name": "SATIA INDUSTRIES LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "AARNAV": {
+    "instrument_key": "NSE_EQ|INE750R01016",
+    "name": "AARNAV FASHIONS LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "AARNAV FASHIONS LIMITED": {
+    "instrument_key": "NSE_EQ|INE750R01016",
+    "name": "AARNAV FASHIONS LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -4731,6 +4773,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "SHARDUL": {
+    "instrument_key": "NSE_EQ|INE037B01020",
+    "name": "SHARDUL SECURITIES LTD.",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "SHARDUL SECURITIES LTD.": {
+    "instrument_key": "NSE_EQ|INE037B01020",
+    "name": "SHARDUL SECURITIES LTD.",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "SEMAC": {
     "instrument_key": "NSE_EQ|INE617A01013",
     "name": "SEMAC CONSTRUCTION LTD",
@@ -5683,16 +5739,16 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "SHUKRAPHAR": {
+  "SHUKRAMED": {
     "instrument_key": "NSE_EQ|INE551C01044",
-    "name": "SHUKRA PHARMACEUTICALS L",
+    "name": "SHUKRA MEDTECH LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "SHUKRA PHARMACEUTICALS L": {
+  "SHUKRA MEDTECH LIMITED": {
     "instrument_key": "NSE_EQ|INE551C01044",
-    "name": "SHUKRA PHARMACEUTICALS L",
+    "name": "SHUKRA MEDTECH LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -5711,20 +5767,6 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "ACGL": {
-    "instrument_key": "NSE_EQ|INE451C01013",
-    "name": "AUTOMOBILE CORPN OF GOA L",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "AUTOMOBILE CORPN OF GOA L": {
-    "instrument_key": "NSE_EQ|INE451C01013",
-    "name": "AUTOMOBILE CORPN OF GOA L",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
   "LAHOTIOV": {
     "instrument_key": "NSE_EQ|INE515C01023",
     "name": "LAHOTI OVERSEAS LTD.",
@@ -5735,6 +5777,20 @@
   "LAHOTI OVERSEAS LTD.": {
     "instrument_key": "NSE_EQ|INE515C01023",
     "name": "LAHOTI OVERSEAS LTD.",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "ACGL": {
+    "instrument_key": "NSE_EQ|INE451C01013",
+    "name": "AUTOMOBILE CORPN OF GOA L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "AUTOMOBILE CORPN OF GOA L": {
+    "instrument_key": "NSE_EQ|INE451C01013",
+    "name": "AUTOMOBILE CORPN OF GOA L",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -6792,6 +6848,20 @@
   "NIIT LEARNING SYSTEMS LTD": {
     "instrument_key": "NSE_EQ|INE342G01023",
     "name": "NIIT LEARNING SYSTEMS LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "KICL": {
+    "instrument_key": "NSE_EQ|INE029L01018",
+    "name": "KALYANI INVEST CO LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "KALYANI INVEST CO LTD": {
+    "instrument_key": "NSE_EQ|INE029L01018",
+    "name": "KALYANI INVEST CO LTD",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -9925,6 +9995,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "CRYSTALCP": {
+    "instrument_key": "NSE_EQ|INE101P01016",
+    "name": "CRYSTAL CROP PROTECTION L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "CRYSTAL CROP PROTECTION L": {
+    "instrument_key": "NSE_EQ|INE101P01016",
+    "name": "CRYSTAL CROP PROTECTION L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "WAAREEENER": {
     "instrument_key": "NSE_EQ|INE377N01017",
     "name": "WAAREE ENERGIES LIMITED",
@@ -10219,20 +10303,6 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "PARASHLTH": {
-    "instrument_key": "NSE_EQ|INE661T01029",
-    "name": "PARAS HEALTHCARE LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "PARAS HEALTHCARE LIMITED": {
-    "instrument_key": "NSE_EQ|INE661T01029",
-    "name": "PARAS HEALTHCARE LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
   "KRITIKA": {
     "instrument_key": "NSE_EQ|INE00Z501029",
     "name": "KRITIKA WIRES LIMITED",
@@ -10243,6 +10313,20 @@
   "KRITIKA WIRES LIMITED": {
     "instrument_key": "NSE_EQ|INE00Z501029",
     "name": "KRITIKA WIRES LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "PARASHLTH": {
+    "instrument_key": "NSE_EQ|INE661T01029",
+    "name": "PARAS HEALTHCARE LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "PARAS HEALTHCARE LIMITED": {
+    "instrument_key": "NSE_EQ|INE661T01029",
+    "name": "PARAS HEALTHCARE LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -10299,6 +10383,20 @@
   "HILTON METAL FORGING LTD": {
     "instrument_key": "NSE_EQ|INE788H01017",
     "name": "HILTON METAL FORGING LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MILKYMIST": {
+    "instrument_key": "NSE_EQ|INE00IT01020",
+    "name": "MILKY MIST DAIRY FOOD L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MILKY MIST DAIRY FOOD L": {
+    "instrument_key": "NSE_EQ|INE00IT01020",
+    "name": "MILKY MIST DAIRY FOOD L",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -10961,6 +11059,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "EENERGY": {
+    "instrument_key": "NSE_EQ|INF754K01XZ1",
+    "name": "EDELAMC - EENERGY",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "EDELAMC - EENERGY": {
+    "instrument_key": "NSE_EQ|INF754K01XZ1",
+    "name": "EDELAMC - EENERGY",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "EXCELINDUS": {
     "instrument_key": "NSE_EQ|INE369A01029",
     "name": "EXCEL INDUSTRIES LTD",
@@ -11601,6 +11713,34 @@
   "UNIVERSAL CABLES LTD": {
     "instrument_key": "NSE_EQ|INE279A01012",
     "name": "UNIVERSAL CABLES LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "BCSSL": {
+    "instrument_key": "NSE_EQ|INE0XFY01011",
+    "name": "BOMBAY COATED N SPECL S L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "BOMBAY COATED N SPECL S L": {
+    "instrument_key": "NSE_EQ|INE0XFY01011",
+    "name": "BOMBAY COATED N SPECL S L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "SILINV": {
+    "instrument_key": "NSE_EQ|INE923A01015",
+    "name": "SIL INVESTMENTS LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "SIL INVESTMENTS LIMITED": {
+    "instrument_key": "NSE_EQ|INE923A01015",
+    "name": "SIL INVESTMENTS LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -13005,20 +13145,6 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "SHADOWFAX": {
-    "instrument_key": "NSE_EQ|INE12UN01015",
-    "name": "SHADOWFAX TECHNOLOGIES L",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "SHADOWFAX TECHNOLOGIES L": {
-    "instrument_key": "NSE_EQ|INE12UN01015",
-    "name": "SHADOWFAX TECHNOLOGIES L",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
   "VEEFIN": {
     "instrument_key": "NSE_EQ|INE0Q0M01015",
     "name": "VEEFIN SOLUTIONS LIMITED",
@@ -13029,6 +13155,20 @@
   "VEEFIN SOLUTIONS LIMITED": {
     "instrument_key": "NSE_EQ|INE0Q0M01015",
     "name": "VEEFIN SOLUTIONS LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "SHADOWFAX": {
+    "instrument_key": "NSE_EQ|INE12UN01015",
+    "name": "SHADOWFAX TECHNOLOGIES L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "SHADOWFAX TECHNOLOGIES L": {
+    "instrument_key": "NSE_EQ|INE12UN01015",
+    "name": "SHADOWFAX TECHNOLOGIES L",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -13071,6 +13211,20 @@
   "M TEK COPPER LIMITED": {
     "instrument_key": "NSE_EQ|INE813V01022",
     "name": "M TEK COPPER LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "SCPL": {
+    "instrument_key": "NSE_EQ|INE501Y01019",
+    "name": "SHEETAL COOL PRODUCTS LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "SHEETAL COOL PRODUCTS LTD": {
+    "instrument_key": "NSE_EQ|INE501Y01019",
+    "name": "SHEETAL COOL PRODUCTS LTD",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -14328,20 +14482,6 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "MASTERTR": {
-    "instrument_key": "NSE_EQ|INE677D01037",
-    "name": "MASTER TRUST LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "MASTER TRUST LIMITED": {
-    "instrument_key": "NSE_EQ|INE677D01037",
-    "name": "MASTER TRUST LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
   "GUJAPOLLO": {
     "instrument_key": "NSE_EQ|INE826C01016",
     "name": "GUJ. APOLLO IND. LTD.",
@@ -14352,6 +14492,20 @@
   "GUJ. APOLLO IND. LTD.": {
     "instrument_key": "NSE_EQ|INE826C01016",
     "name": "GUJ. APOLLO IND. LTD.",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MASTERTR": {
+    "instrument_key": "NSE_EQ|INE677D01037",
+    "name": "MASTER TRUST LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MASTER TRUST LIMITED": {
+    "instrument_key": "NSE_EQ|INE677D01037",
+    "name": "MASTER TRUST LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -14867,6 +15021,34 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "MOPVTBANK": {
+    "instrument_key": "NSE_EQ|INF247L01IB6",
+    "name": "MOTILALAMC - MOPVTBANK",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MOTILALAMC - MOPVTBANK": {
+    "instrument_key": "NSE_EQ|INF247L01IB6",
+    "name": "MOTILALAMC - MOPVTBANK",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MOREIT": {
+    "instrument_key": "NSE_EQ|INF247L01IC4",
+    "name": "MOTILALAMC - MOREIT",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MOTILALAMC - MOREIT": {
+    "instrument_key": "NSE_EQ|INF247L01IC4",
+    "name": "MOTILALAMC - MOREIT",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "PERNIASPOP": {
     "instrument_key": "NSE_EQ|INE0I1B01016",
     "name": "PURPLE STYLE LABS LIMITED",
@@ -14909,6 +15091,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "MOPSUBANK": {
+    "instrument_key": "NSE_EQ|INF247L01IA8",
+    "name": "MOTILALAMC - MOPSUBANK",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MOTILALAMC - MOPSUBANK": {
+    "instrument_key": "NSE_EQ|INF247L01IA8",
+    "name": "MOTILALAMC - MOPSUBANK",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "ZIMLAB": {
     "instrument_key": "NSE_EQ|INE518E01015",
     "name": "ZIM LABORATORIES LIMITED",
@@ -14940,6 +15136,34 @@
   "BIGBLOC CONSTRUCTION LTD": {
     "instrument_key": "NSE_EQ|INE412U01025",
     "name": "BIGBLOC CONSTRUCTION LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MO10YGSEC": {
+    "instrument_key": "NSE_EQ|INF247L01HY0",
+    "name": "MOTILALAMC - MO10YGSEC",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MOTILALAMC - MO10YGSEC": {
+    "instrument_key": "NSE_EQ|INF247L01HY0",
+    "name": "MOTILALAMC - MO10YGSEC",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MOGROWTH": {
+    "instrument_key": "NSE_EQ|INF247L01HZ7",
+    "name": "MOTILALAMC - MOGROWTH",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MOTILALAMC - MOGROWTH": {
+    "instrument_key": "NSE_EQ|INF247L01HZ7",
+    "name": "MOTILALAMC - MOGROWTH",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -15490,20 +15714,6 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "MAITHANALL": {
-    "instrument_key": "NSE_EQ|INE683C01011",
-    "name": "MAITHAN ALLOYS LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "MAITHAN ALLOYS LTD": {
-    "instrument_key": "NSE_EQ|INE683C01011",
-    "name": "MAITHAN ALLOYS LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
   "WAAREEINDO": {
     "instrument_key": "NSE_EQ|INE866K01023",
     "name": "INDOSOLAR LIMITED",
@@ -15514,6 +15724,20 @@
   "INDOSOLAR LIMITED": {
     "instrument_key": "NSE_EQ|INE866K01023",
     "name": "INDOSOLAR LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MAITHANALL": {
+    "instrument_key": "NSE_EQ|INE683C01011",
+    "name": "MAITHAN ALLOYS LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MAITHAN ALLOYS LTD": {
+    "instrument_key": "NSE_EQ|INE683C01011",
+    "name": "MAITHAN ALLOYS LTD",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -15997,20 +16221,6 @@
   "ABB INDIA LIMITED": {
     "instrument_key": "NSE_EQ|INE117A01022",
     "name": "ABB INDIA LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "DCI": {
-    "instrument_key": "NSE_EQ|INE0A1101019",
-    "name": "DC INFOTECH AND COMUN LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "DC INFOTECH AND COMUN LTD": {
-    "instrument_key": "NSE_EQ|INE0A1101019",
-    "name": "DC INFOTECH AND COMUN LTD",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -17100,20 +17310,6 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "HBSL": {
-    "instrument_key": "NSE_EQ|INE550B01022",
-    "name": "HB STOCKHOLDINGS LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "HB STOCKHOLDINGS LIMITED": {
-    "instrument_key": "NSE_EQ|INE550B01022",
-    "name": "HB STOCKHOLDINGS LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
   "ANUHPHR": {
     "instrument_key": "NSE_EQ|INE489G01022",
     "name": "ANUH PHARMA LIMITED",
@@ -17124,6 +17320,20 @@
   "ANUH PHARMA LIMITED": {
     "instrument_key": "NSE_EQ|INE489G01022",
     "name": "ANUH PHARMA LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "HBSL": {
+    "instrument_key": "NSE_EQ|INE550B01022",
+    "name": "HB STOCKHOLDINGS LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "HB STOCKHOLDINGS LIMITED": {
+    "instrument_key": "NSE_EQ|INE550B01022",
+    "name": "HB STOCKHOLDINGS LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -17471,6 +17681,20 @@
     "instrument_type": "INDEX",
     "exchange": "NSE"
   },
+  "ABINFRA": {
+    "instrument_key": "NSE_EQ|INE00YB01025",
+    "name": "A B INFRABUILD LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "A B INFRABUILD LIMITED": {
+    "instrument_key": "NSE_EQ|INE00YB01025",
+    "name": "A B INFRABUILD LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "COUNCODOS": {
     "instrument_key": "NSE_EQ|INE695B01025",
     "name": "COUNTRY CONDO S LIMITED",
@@ -17495,6 +17719,20 @@
   "HINDUSTAN OIL EXPLORATION": {
     "instrument_key": "NSE_EQ|INE345A01011",
     "name": "HINDUSTAN OIL EXPLORATION",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "ALPHAGEO": {
+    "instrument_key": "NSE_EQ|INE137C01018",
+    "name": "ALPHAGEO (INDIA) LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "ALPHAGEO (INDIA) LIMITED": {
+    "instrument_key": "NSE_EQ|INE137C01018",
+    "name": "ALPHAGEO (INDIA) LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -18185,6 +18423,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "MAHACOAL": {
+    "instrument_key": "NSE_EQ|INE03K401026",
+    "name": "MAHANADI COALFIELDS LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MAHANADI COALFIELDS LTD": {
+    "instrument_key": "NSE_EQ|INE03K401026",
+    "name": "MAHANADI COALFIELDS LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "NEWGEN": {
     "instrument_key": "NSE_EQ|INE619B01017",
     "name": "NEWGEN SOFTWARE TECH LTD",
@@ -18699,6 +18951,20 @@
   "EFC (I) LIMITED": {
     "instrument_key": "NSE_EQ|INE886D01026",
     "name": "EFC (I) LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "ENNATURE": {
+    "instrument_key": "NSE_EQ|INE2WCT01016",
+    "name": "ENNATURE BIO PHARMA LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "ENNATURE BIO PHARMA LTD": {
+    "instrument_key": "NSE_EQ|INE2WCT01016",
+    "name": "ENNATURE BIO PHARMA LTD",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -19490,6 +19756,20 @@
   "RISHABH INSTRUMENTS LTD": {
     "instrument_key": "NSE_EQ|INE0N2P01017",
     "name": "RISHABH INSTRUMENTS LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MHLXMIRU": {
+    "instrument_key": "NSE_EQ|INE112D01035",
+    "name": "MAHALAXMI RUBTECH LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "MAHALAXMI RUBTECH LIMITED": {
+    "instrument_key": "NSE_EQ|INE112D01035",
+    "name": "MAHALAXMI RUBTECH LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -20344,20 +20624,6 @@
   "BANNARI AM SPIN MILL LTD.": {
     "instrument_key": "NSE_EQ|INE186H01022",
     "name": "BANNARI AM SPIN MILL LTD.",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "BALAXI": {
-    "instrument_key": "NSE_EQ|INE618N01022",
-    "name": "BALAXI PHARMA LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "BALAXI PHARMA LTD": {
-    "instrument_key": "NSE_EQ|INE618N01022",
-    "name": "BALAXI PHARMA LTD",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -22301,6 +22567,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "TPHQ": {
+    "instrument_key": "NSE_EQ|INE065J01024",
+    "name": "TEAMO PRODUCTIONS HQ LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "TEAMO PRODUCTIONS HQ LTD": {
+    "instrument_key": "NSE_EQ|INE065J01024",
+    "name": "TEAMO PRODUCTIONS HQ LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "FORCEMOT": {
     "instrument_key": "NSE_EQ|INE451A01017",
     "name": "FORCE MOTORS LIMITED",
@@ -22395,6 +22675,20 @@
   "TVS MOTOR COMPANY  LTD": {
     "instrument_key": "NSE_EQ|INE494B01023",
     "name": "TVS MOTOR COMPANY  LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "IVZSILVER": {
+    "instrument_key": "NSE_EQ|INF205KA1CP9",
+    "name": "RELIGARAMC - IVZSILVER",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "RELIGARAMC - IVZSILVER": {
+    "instrument_key": "NSE_EQ|INF205KA1CP9",
+    "name": "RELIGARAMC - IVZSILVER",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -23638,6 +23932,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "IGLSPIRITS": {
+    "instrument_key": "NSE_EQ|INE2W6901017",
+    "name": "IGL SPIRITS LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "IGL SPIRITS LIMITED": {
+    "instrument_key": "NSE_EQ|INE2W6901017",
+    "name": "IGL SPIRITS LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "MIDCAPADD": {
     "instrument_key": "NSE_EQ|INF740KA1WW5",
     "name": "DSPAMC - MIDCAPADD",
@@ -24513,6 +24821,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "AMBALALSA": {
+    "instrument_key": "NSE_EQ|INE432A01017",
+    "name": "AMBALAL SARABHAI ENT L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "AMBALAL SARABHAI ENT L": {
+    "instrument_key": "NSE_EQ|INE432A01017",
+    "name": "AMBALAL SARABHAI ENT L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "AJOONI": {
     "instrument_key": "NSE_EQ|INE820Y01021",
     "name": "AJOONI BIOTECH LIMITED",
@@ -24989,20 +25311,6 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "CHOICEIN": {
-    "instrument_key": "NSE_EQ|INE102B01014",
-    "name": "CHOICE INTERNATIONAL LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "CHOICE INTERNATIONAL LTD": {
-    "instrument_key": "NSE_EQ|INE102B01014",
-    "name": "CHOICE INTERNATIONAL LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
   "AEROPLANE": {
     "instrument_key": "NSE_EQ|INE05TO01019",
     "name": "AMIR CHAND JAG KUM (E) L",
@@ -25013,6 +25321,20 @@
   "AMIR CHAND JAG KUM (E) L": {
     "instrument_key": "NSE_EQ|INE05TO01019",
     "name": "AMIR CHAND JAG KUM (E) L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "CHOICEIN": {
+    "instrument_key": "NSE_EQ|INE102B01014",
+    "name": "CHOICE INTERNATIONAL LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "CHOICE INTERNATIONAL LTD": {
+    "instrument_key": "NSE_EQ|INE102B01014",
+    "name": "CHOICE INTERNATIONAL LTD",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -26322,20 +26644,6 @@
   "TATA MOTORS PASS VEH LTD": {
     "instrument_key": "NSE_EQ|INE155A01022",
     "name": "TATA MOTORS PASS VEH LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "UFBL": {
-    "instrument_key": "NSE_EQ|INE382M01027",
-    "name": "UNITED FOODBRANDS LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "UNITED FOODBRANDS LIMITED": {
-    "instrument_key": "NSE_EQ|INE382M01027",
-    "name": "UNITED FOODBRANDS LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -27813,20 +28121,6 @@
   "ALLIED BLEND N DISTILS L": {
     "instrument_key": "NSE_EQ|INE552Z01027",
     "name": "ALLIED BLEND N DISTILS L",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "RUSHIL": {
-    "instrument_key": "NSE_EQ|INE573K01025",
-    "name": "RUSHIL DECOR LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "RUSHIL DECOR LIMITED": {
-    "instrument_key": "NSE_EQ|INE573K01025",
-    "name": "RUSHIL DECOR LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -30127,20 +30421,6 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "CUB": {
-    "instrument_key": "NSE_EQ|INE491A01021",
-    "name": "CITY UNION BANK LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "CITY UNION BANK LTD": {
-    "instrument_key": "NSE_EQ|INE491A01021",
-    "name": "CITY UNION BANK LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
   "PRADPME": {
     "instrument_key": "NSE_EQ|INE770A01010",
     "name": "PRADEEP METALS LTD.",
@@ -30151,6 +30431,20 @@
   "PRADEEP METALS LTD.": {
     "instrument_key": "NSE_EQ|INE770A01010",
     "name": "PRADEEP METALS LTD.",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "CUB": {
+    "instrument_key": "NSE_EQ|INE491A01021",
+    "name": "CITY UNION BANK LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "CITY UNION BANK LTD": {
+    "instrument_key": "NSE_EQ|INE491A01021",
+    "name": "CITY UNION BANK LTD",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -33851,16 +34145,16 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "UMIYA-MRO": {
+  "MROTEK": {
     "instrument_key": "NSE_EQ|INE398B01018",
-    "name": "UMIYA BUILDCON LIMITED",
+    "name": "MRO-TEK NETWORKS LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "UMIYA BUILDCON LIMITED": {
+  "MRO-TEK NETWORKS LIMITED": {
     "instrument_key": "NSE_EQ|INE398B01018",
-    "name": "UMIYA BUILDCON LIMITED",
+    "name": "MRO-TEK NETWORKS LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -36539,6 +36833,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "BI": {
+    "instrument_key": "NSE_EQ|INE986A01012",
+    "name": "BILCARE LTD.",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "BILCARE LTD.": {
+    "instrument_key": "NSE_EQ|INE986A01012",
+    "name": "BILCARE LTD.",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "SPENCERS": {
     "instrument_key": "NSE_EQ|INE020801028",
     "name": "SPENCER S RETAIL LIMITED",
@@ -36675,6 +36983,20 @@
   "ICICI LOMBARD GIC LIMITED": {
     "instrument_key": "NSE_EQ|INE765G01017",
     "name": "ICICI LOMBARD GIC LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "OLIL": {
+    "instrument_key": "NSE_EQ|INE0OPS01011",
+    "name": "ONECLICK LOGISTICS IND L",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "ONECLICK LOGISTICS IND L": {
+    "instrument_key": "NSE_EQ|INE0OPS01011",
+    "name": "ONECLICK LOGISTICS IND L",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -36952,6 +37274,20 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
+  "VGL": {
+    "instrument_key": "NSE_EQ|INE273D01035",
+    "name": "VARVEE GLOBAL LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "VARVEE GLOBAL LIMITED": {
+    "instrument_key": "NSE_EQ|INE273D01035",
+    "name": "VARVEE GLOBAL LIMITED",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
   "ROHLTD": {
     "instrument_key": "NSE_EQ|INE283H01019",
     "name": "ROYAL ORCHID HOTELS LTD",
@@ -36962,20 +37298,6 @@
   "ROYAL ORCHID HOTELS LTD": {
     "instrument_key": "NSE_EQ|INE283H01019",
     "name": "ROYAL ORCHID HOTELS LTD",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "VGL": {
-    "instrument_key": "NSE_EQ|INE273D01027",
-    "name": "VARVEE GLOBAL LIMITED",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "VARVEE GLOBAL LIMITED": {
-    "instrument_key": "NSE_EQ|INE273D01027",
-    "name": "VARVEE GLOBAL LIMITED",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -37865,6 +38187,20 @@
   "SUKHJIT STARCH & CHEM LTD": {
     "instrument_key": "NSE_EQ|INE450E01029",
     "name": "SUKHJIT STARCH & CHEM LTD",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "DHABRIYA": {
+    "instrument_key": "NSE_EQ|INE260R01016",
+    "name": "DHABRIYA POLYWOOD LTD.",
+    "lot_size": 1,
+    "instrument_type": "EQ",
+    "exchange": "NSE"
+  },
+  "DHABRIYA POLYWOOD LTD.": {
+    "instrument_key": "NSE_EQ|INE260R01016",
+    "name": "DHABRIYA POLYWOOD LTD.",
     "lot_size": 1,
     "instrument_type": "EQ",
     "exchange": "NSE"
@@ -39318,20 +39654,6 @@
     "instrument_type": "EQ",
     "exchange": "NSE"
   },
-  "FLEXITUFF": {
-    "instrument_key": "NSE_EQ|INE060J01017",
-    "name": "FLEXITUFF VENTURES INT L",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
-  "FLEXITUFF VENTURES INT L": {
-    "instrument_key": "NSE_EQ|INE060J01017",
-    "name": "FLEXITUFF VENTURES INT L",
-    "lot_size": 1,
-    "instrument_type": "EQ",
-    "exchange": "NSE"
-  },
   "FLAIR": {
     "instrument_key": "NSE_EQ|INE00Y201027",
     "name": "FLAIR WRITING INDUST LTD",
@@ -40760,6 +41082,2301 @@
     "instrument_type": "INDEX",
     "exchange": "BSE"
   },
+  "VEDL_FUT": {
+    "instrument_key": "NSE_FO|59150",
+    "name": "VEDANTA LIMITED",
+    "trading_symbol": "VEDL FUT 29 DEC 26",
+    "lot_size": 1150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "VMM_FUT": {
+    "instrument_key": "NSE_FO|59151",
+    "name": "VISHAL MEGA MART LIMITED",
+    "trading_symbol": "VMM FUT 29 DEC 26",
+    "lot_size": 4850,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "VOLTAS_FUT": {
+    "instrument_key": "NSE_FO|59152",
+    "name": "VOLTAS LTD",
+    "trading_symbol": "VOLTAS FUT 29 DEC 26",
+    "lot_size": 375,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "WAAREEENER_FUT": {
+    "instrument_key": "NSE_FO|59153",
+    "name": "WAAREE ENERGIES LIMITED",
+    "trading_symbol": "WAAREEENER FUT 29 DEC 26",
+    "lot_size": 175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "WIPRO_FUT": {
+    "instrument_key": "NSE_FO|59154",
+    "name": "WIPRO LTD",
+    "trading_symbol": "WIPRO FUT 29 DEC 26",
+    "lot_size": 3000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "YESBANK_FUT": {
+    "instrument_key": "NSE_FO|59155",
+    "name": "YES BANK LIMITED",
+    "trading_symbol": "YESBANK FUT 29 DEC 26",
+    "lot_size": 31100,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ZYDUSLIFE_FUT": {
+    "instrument_key": "NSE_FO|59156",
+    "name": "ZYDUS LIFESCIENCES LTD",
+    "trading_symbol": "ZYDUSLIFE FUT 29 DEC 26",
+    "lot_size": 450,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "UJJIVANSFB_FUT": {
+    "instrument_key": "NSE_FO|59142",
+    "name": "UJJIVAN SMALL FINANC BANK",
+    "trading_symbol": "UJJIVANSFB FUT 29 DEC 26",
+    "lot_size": 8000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "UNOMINDA_FUT": {
+    "instrument_key": "NSE_FO|59147",
+    "name": "UNO MINDA LIMITED",
+    "trading_symbol": "UNOMINDA FUT 29 DEC 26",
+    "lot_size": 550,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "UPL_FUT": {
+    "instrument_key": "NSE_FO|59148",
+    "name": "UPL LIMITED",
+    "trading_symbol": "UPL FUT 29 DEC 26",
+    "lot_size": 1355,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "VBL_FUT": {
+    "instrument_key": "NSE_FO|59149",
+    "name": "VARUN BEVERAGES LIMITED",
+    "trading_symbol": "VBL FUT 29 DEC 26",
+    "lot_size": 1275,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ULTRACEMCO_FUT": {
+    "instrument_key": "NSE_FO|59144",
+    "name": "ULTRATECH CEMENT LIMITED",
+    "trading_symbol": "ULTRACEMCO FUT 29 DEC 26",
+    "lot_size": 50,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "UNIONBANK_FUT": {
+    "instrument_key": "NSE_FO|59145",
+    "name": "UNION BANK OF INDIA",
+    "trading_symbol": "UNIONBANK FUT 29 DEC 26",
+    "lot_size": 4425,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "UNITDSPR_FUT": {
+    "instrument_key": "NSE_FO|59146",
+    "name": "UNITED SPIRITS LIMITED",
+    "trading_symbol": "UNITDSPR FUT 29 DEC 26",
+    "lot_size": 400,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SONACOMS_FUT": {
+    "instrument_key": "NSE_FO|59114",
+    "name": "SONA BLW PRECISION FRGS L",
+    "trading_symbol": "SONACOMS FUT 29 DEC 26",
+    "lot_size": 1225,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SRF_FUT": {
+    "instrument_key": "NSE_FO|59115",
+    "name": "SRF LTD",
+    "trading_symbol": "SRF FUT 29 DEC 26",
+    "lot_size": 200,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SUNPHARMA_FUT": {
+    "instrument_key": "NSE_FO|59116",
+    "name": "SUN PHARMACEUTICAL IND L",
+    "trading_symbol": "SUNPHARMA FUT 29 DEC 26",
+    "lot_size": 350,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SHREECEM_FUT": {
+    "instrument_key": "NSE_FO|59110",
+    "name": "SHREE CEMENT LIMITED",
+    "trading_symbol": "SHREECEM FUT 29 DEC 26",
+    "lot_size": 25,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SHRIRAMFIN_FUT": {
+    "instrument_key": "NSE_FO|59111",
+    "name": "SHRIRAM FINANCE LIMITED",
+    "trading_symbol": "SHRIRAMFIN FUT 29 DEC 26",
+    "lot_size": 825,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SIEMENS_FUT": {
+    "instrument_key": "NSE_FO|59112",
+    "name": "SIEMENS LTD",
+    "trading_symbol": "SIEMENS FUT 29 DEC 26",
+    "lot_size": 175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SOLARINDS_FUT": {
+    "instrument_key": "NSE_FO|59113",
+    "name": "SOLAR INDUSTRIES (I) LTD",
+    "trading_symbol": "SOLARINDS FUT 29 DEC 26",
+    "lot_size": 25,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SBICARD_FUT": {
+    "instrument_key": "NSE_FO|59107",
+    "name": "SBI CARDS & PAY SER LTD",
+    "trading_symbol": "SBICARD FUT 29 DEC 26",
+    "lot_size": 800,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SBILIFE_FUT": {
+    "instrument_key": "NSE_FO|59108",
+    "name": "SBI LIFE INSURANCE CO LTD",
+    "trading_symbol": "SBILIFE FUT 29 DEC 26",
+    "lot_size": 375,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SBIN_FUT": {
+    "instrument_key": "NSE_FO|59109",
+    "name": "STATE BANK OF INDIA",
+    "trading_symbol": "SBIN FUT 29 DEC 26",
+    "lot_size": 750,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SAIL_FUT": {
+    "instrument_key": "NSE_FO|59106",
+    "name": "STEEL AUTHORITY OF INDIA",
+    "trading_symbol": "SAIL FUT 29 DEC 26",
+    "lot_size": 4700,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TATASTEEL_FUT": {
+    "instrument_key": "NSE_FO|59131",
+    "name": "TATA STEEL LIMITED",
+    "trading_symbol": "TATASTEEL FUT 29 DEC 26",
+    "lot_size": 2750,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TMPV_FUT": {
+    "instrument_key": "NSE_FO|59136",
+    "name": "TATA MOTORS PASS VEH LTD",
+    "trading_symbol": "TMPV FUT 29 DEC 26",
+    "lot_size": 1600,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TORNTPHARM_FUT": {
+    "instrument_key": "NSE_FO|59137",
+    "name": "TORRENT PHARMACEUTICALS L",
+    "trading_symbol": "TORNTPHARM FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TRENT_FUT": {
+    "instrument_key": "NSE_FO|59138",
+    "name": "TRENT LTD",
+    "trading_symbol": "TRENT FUT 29 DEC 26",
+    "lot_size": 225,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TVSMOTOR_FUT": {
+    "instrument_key": "NSE_FO|59139",
+    "name": "TVS MOTOR COMPANY  LTD",
+    "trading_symbol": "TVSMOTOR FUT 29 DEC 26",
+    "lot_size": 175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TCS_FUT": {
+    "instrument_key": "NSE_FO|59132",
+    "name": "TATA CONSULTANCY SERV LT",
+    "trading_symbol": "TCS FUT 29 DEC 26",
+    "lot_size": 225,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TECHM_FUT": {
+    "instrument_key": "NSE_FO|59133",
+    "name": "TECH MAHINDRA LIMITED",
+    "trading_symbol": "TECHM FUT 29 DEC 26",
+    "lot_size": 600,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TIINDIA_FUT": {
+    "instrument_key": "NSE_FO|59134",
+    "name": "TUBE INVEST OF INDIA LTD",
+    "trading_symbol": "TIINDIA FUT 29 DEC 26",
+    "lot_size": 200,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TITAN_FUT": {
+    "instrument_key": "NSE_FO|59135",
+    "name": "TITAN COMPANY LIMITED",
+    "trading_symbol": "TITAN FUT 29 DEC 26",
+    "lot_size": 175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TATAELXSI_FUT": {
+    "instrument_key": "NSE_FO|59125",
+    "name": "TATA ELXSI LIMITED",
+    "trading_symbol": "TATAELXSI FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TATAPOWER_FUT": {
+    "instrument_key": "NSE_FO|59126",
+    "name": "TATA POWER CO LTD",
+    "trading_symbol": "TATAPOWER FUT 29 DEC 26",
+    "lot_size": 1450,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SWIGGY_FUT": {
+    "instrument_key": "NSE_FO|59123",
+    "name": "SWIGGY LIMITED",
+    "trading_symbol": "SWIGGY FUT 29 DEC 26",
+    "lot_size": 1825,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "TATACONSUM_FUT": {
+    "instrument_key": "NSE_FO|59124",
+    "name": "TATA CONSUMER PRODUCT LTD",
+    "trading_symbol": "TATACONSUM FUT 29 DEC 26",
+    "lot_size": 550,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SUPREMEIND_FUT": {
+    "instrument_key": "NSE_FO|59118",
+    "name": "SUPREME INDUSTRIES LTD",
+    "trading_symbol": "SUPREMEIND FUT 29 DEC 26",
+    "lot_size": 175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SUZLON_FUT": {
+    "instrument_key": "NSE_FO|59119",
+    "name": "SUZLON ENERGY LIMITED",
+    "trading_symbol": "SUZLON FUT 29 DEC 26",
+    "lot_size": 12700,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "M&M_FUT": {
+    "instrument_key": "NSE_FO|59030",
+    "name": "MAHINDRA & MAHINDRA LTD",
+    "trading_symbol": "M&M FUT 29 DEC 26",
+    "lot_size": 200,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MAHABANK_FUT": {
+    "instrument_key": "NSE_FO|59031",
+    "name": "BANK OF MAHARASHTRA",
+    "trading_symbol": "MAHABANK FUT 29 DEC 26",
+    "lot_size": 6500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MANAPPURAM_FUT": {
+    "instrument_key": "NSE_FO|59032",
+    "name": "MANAPPURAM FINANCE LTD",
+    "trading_symbol": "MANAPPURAM FUT 29 DEC 26",
+    "lot_size": 3000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MAXHEALTH_FUT": {
+    "instrument_key": "NSE_FO|59037",
+    "name": "MAX HEALTHCARE INS LTD",
+    "trading_symbol": "MAXHEALTH FUT 29 DEC 26",
+    "lot_size": 525,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MAZDOCK_FUT": {
+    "instrument_key": "NSE_FO|59038",
+    "name": "MAZAGON DOCK SHIPBUIL LTD",
+    "trading_symbol": "MAZDOCK FUT 29 DEC 26",
+    "lot_size": 225,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MCX_FUT": {
+    "instrument_key": "NSE_FO|59039",
+    "name": "MULTI COMMODITY EXCHANGE",
+    "trading_symbol": "MCX FUT 29 DEC 26",
+    "lot_size": 225,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MANKIND_FUT": {
+    "instrument_key": "NSE_FO|59033",
+    "name": "MANKIND PHARMA LIMITED",
+    "trading_symbol": "MANKIND FUT 29 DEC 26",
+    "lot_size": 250,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MARICO_FUT": {
+    "instrument_key": "NSE_FO|59035",
+    "name": "MARICO LIMITED",
+    "trading_symbol": "MARICO FUT 29 DEC 26",
+    "lot_size": 1200,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MARUTI_FUT": {
+    "instrument_key": "NSE_FO|59036",
+    "name": "MARUTI SUZUKI INDIA LTD.",
+    "trading_symbol": "MARUTI FUT 29 DEC 26",
+    "lot_size": 50,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "LICI_FUT": {
+    "instrument_key": "NSE_FO|59021",
+    "name": "LIFE INSURA CORP OF INDIA",
+    "trading_symbol": "LICI FUT 29 DEC 26",
+    "lot_size": 1400,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "LTM_FUT": {
+    "instrument_key": "NSE_FO|59028",
+    "name": "LTM LIMITED",
+    "trading_symbol": "LTM FUT 29 DEC 26",
+    "lot_size": 150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "LUPIN_FUT": {
+    "instrument_key": "NSE_FO|59029",
+    "name": "LUPIN LIMITED",
+    "trading_symbol": "LUPIN FUT 29 DEC 26",
+    "lot_size": 425,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "LODHA_FUT": {
+    "instrument_key": "NSE_FO|59022",
+    "name": "LODHA DEVELOPERS LIMITED",
+    "trading_symbol": "LODHA FUT 29 DEC 26",
+    "lot_size": 625,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "LT_FUT": {
+    "instrument_key": "NSE_FO|59024",
+    "name": "LARSEN & TOUBRO LTD.",
+    "trading_symbol": "LT FUT 29 DEC 26",
+    "lot_size": 175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "LTF_FUT": {
+    "instrument_key": "NSE_FO|59025",
+    "name": "L&T FINANCE LIMITED",
+    "trading_symbol": "LTF FUT 29 DEC 26",
+    "lot_size": 2250,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NHPC_FUT": {
+    "instrument_key": "NSE_FO|59051",
+    "name": "NHPC LTD",
+    "trading_symbol": "NHPC FUT 29 DEC 26",
+    "lot_size": 6950,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NMDC_FUT": {
+    "instrument_key": "NSE_FO|59052",
+    "name": "NMDC LTD.",
+    "trading_symbol": "NMDC FUT 29 DEC 26",
+    "lot_size": 6750,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NESTLEIND_FUT": {
+    "instrument_key": "NSE_FO|59050",
+    "name": "NESTLE INDIA LIMITED",
+    "trading_symbol": "NESTLEIND FUT 29 DEC 26",
+    "lot_size": 500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "OIL_FUT": {
+    "instrument_key": "NSE_FO|59059",
+    "name": "OIL INDIA LTD",
+    "trading_symbol": "OIL FUT 29 DEC 26",
+    "lot_size": 1400,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NTPC_FUT": {
+    "instrument_key": "NSE_FO|59055",
+    "name": "NTPC LTD",
+    "trading_symbol": "NTPC FUT 29 DEC 26",
+    "lot_size": 1500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NYKAA_FUT": {
+    "instrument_key": "NSE_FO|59056",
+    "name": "FSN E COMMERCE VENTURES",
+    "trading_symbol": "NYKAA FUT 29 DEC 26",
+    "lot_size": 3125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "OBEROIRLTY_FUT": {
+    "instrument_key": "NSE_FO|59057",
+    "name": "OBEROI REALTY LIMITED",
+    "trading_symbol": "OBEROIRLTY FUT 29 DEC 26",
+    "lot_size": 350,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "OFSS_FUT": {
+    "instrument_key": "NSE_FO|59058",
+    "name": "ORACLE FIN SERV SOFT LTD.",
+    "trading_symbol": "OFSS FUT 29 DEC 26",
+    "lot_size": 50,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MFSL_FUT": {
+    "instrument_key": "NSE_FO|59040",
+    "name": "MAX FINANCIAL SERV LTD",
+    "trading_symbol": "MFSL FUT 29 DEC 26",
+    "lot_size": 400,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MOTHERSON_FUT": {
+    "instrument_key": "NSE_FO|59041",
+    "name": "SAMVRDHNA MTHRSN INTL LTD",
+    "trading_symbol": "MOTHERSON FUT 29 DEC 26",
+    "lot_size": 6150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MOTILALOFS_FUT": {
+    "instrument_key": "NSE_FO|59042",
+    "name": "MOTILAL OSWAL FIN LTD",
+    "trading_symbol": "MOTILALOFS FUT 29 DEC 26",
+    "lot_size": 775,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MPHASIS_FUT": {
+    "instrument_key": "NSE_FO|59043",
+    "name": "MPHASIS LIMITED",
+    "trading_symbol": "MPHASIS FUT 29 DEC 26",
+    "lot_size": 275,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NAUKRI_FUT": {
+    "instrument_key": "NSE_FO|59048",
+    "name": "INFO EDGE (I) LTD",
+    "trading_symbol": "NAUKRI FUT 29 DEC 26",
+    "lot_size": 550,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NBCC_FUT": {
+    "instrument_key": "NSE_FO|59049",
+    "name": "NBCC (INDIA) LIMITED",
+    "trading_symbol": "NBCC FUT 29 DEC 26",
+    "lot_size": 6500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MUTHOOTFIN_FUT": {
+    "instrument_key": "NSE_FO|59044",
+    "name": "MUTHOOT FINANCE LIMITED",
+    "trading_symbol": "MUTHOOTFIN FUT 29 DEC 26",
+    "lot_size": 275,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NAM-INDIA_FUT": {
+    "instrument_key": "NSE_FO|59046",
+    "name": "NIPPON L I A M LTD",
+    "trading_symbol": "NAM-INDIA FUT 29 DEC 26",
+    "lot_size": 625,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NATIONALUM_FUT": {
+    "instrument_key": "NSE_FO|59047",
+    "name": "NATIONAL ALUMINIUM CO LTD",
+    "trading_symbol": "NATIONALUM FUT 29 DEC 26",
+    "lot_size": 1875,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "JUBLFOOD_FUT": {
+    "instrument_key": "NSE_FO|59010",
+    "name": "JUBILANT FOODWORKS LTD",
+    "trading_symbol": "JUBLFOOD FUT 29 DEC 26",
+    "lot_size": 1250,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "KOTAKBANK_FUT": {
+    "instrument_key": "NSE_FO|59015",
+    "name": "KOTAK MAHINDRA BANK LTD",
+    "trading_symbol": "KOTAKBANK FUT 29 DEC 26",
+    "lot_size": 2000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "KPITTECH_FUT": {
+    "instrument_key": "NSE_FO|59016",
+    "name": "KPIT TECHNOLOGIES LIMITED",
+    "trading_symbol": "KPITTECH FUT 29 DEC 26",
+    "lot_size": 775,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "LAURUSLABS_FUT": {
+    "instrument_key": "NSE_FO|59017",
+    "name": "LAURUS LABS LIMITED",
+    "trading_symbol": "LAURUSLABS FUT 29 DEC 26",
+    "lot_size": 425,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "LICHSGFIN_FUT": {
+    "instrument_key": "NSE_FO|59018",
+    "name": "LIC HOUSING FINANCE LTD",
+    "trading_symbol": "LICHSGFIN FUT 29 DEC 26",
+    "lot_size": 1000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "KALYANKJIL_FUT": {
+    "instrument_key": "NSE_FO|59011",
+    "name": "KALYAN JEWELLERS IND LTD",
+    "trading_symbol": "KALYANKJIL FUT 29 DEC 26",
+    "lot_size": 1350,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "KAYNES_FUT": {
+    "instrument_key": "NSE_FO|59012",
+    "name": "KAYNES TECHNOLOGY IND LTD",
+    "trading_symbol": "KAYNES FUT 29 DEC 26",
+    "lot_size": 150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "KEI_FUT": {
+    "instrument_key": "NSE_FO|59013",
+    "name": "KEI INDUSTRIES LTD.",
+    "trading_symbol": "KEI FUT 29 DEC 26",
+    "lot_size": 175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "KFINTECH_FUT": {
+    "instrument_key": "NSE_FO|59014",
+    "name": "KFIN TECHNOLOGIES LIMITED",
+    "trading_symbol": "KFINTECH FUT 29 DEC 26",
+    "lot_size": 575,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "JSWENERGY_FUT": {
+    "instrument_key": "NSE_FO|59008",
+    "name": "JSW ENERGY LIMITED",
+    "trading_symbol": "JSWENERGY FUT 29 DEC 26",
+    "lot_size": 1075,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "JSWSTEEL_FUT": {
+    "instrument_key": "NSE_FO|59009",
+    "name": "JSW STEEL LIMITED",
+    "trading_symbol": "JSWSTEEL FUT 29 DEC 26",
+    "lot_size": 675,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "IRFC_FUT": {
+    "instrument_key": "NSE_FO|59004",
+    "name": "INDIAN RAILWAY FIN CORP L",
+    "trading_symbol": "IRFC FUT 29 DEC 26",
+    "lot_size": 5425,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ITC_FUT": {
+    "instrument_key": "NSE_FO|59005",
+    "name": "ITC LTD",
+    "trading_symbol": "ITC FUT 29 DEC 26",
+    "lot_size": 1725,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "JINDALSTEL_FUT": {
+    "instrument_key": "NSE_FO|59006",
+    "name": "JINDAL STEEL LIMITED",
+    "trading_symbol": "JINDALSTEL FUT 29 DEC 26",
+    "lot_size": 625,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "JIOFIN_FUT": {
+    "instrument_key": "NSE_FO|59007",
+    "name": "JIO FIN SERVICES LTD",
+    "trading_symbol": "JIOFIN FUT 29 DEC 26",
+    "lot_size": 2350,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "INDUSTOWER_FUT": {
+    "instrument_key": "NSE_FO|59000",
+    "name": "INDUS TOWERS LIMITED",
+    "trading_symbol": "INDUSTOWER FUT 29 DEC 26",
+    "lot_size": 1700,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "INFY_FUT": {
+    "instrument_key": "NSE_FO|59001",
+    "name": "INFOSYS LIMITED",
+    "trading_symbol": "INFY FUT 29 DEC 26",
+    "lot_size": 400,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "INOXWIND_FUT": {
+    "instrument_key": "NSE_FO|59002",
+    "name": "INOX WIND LIMITED",
+    "trading_symbol": "INOXWIND FUT 29 DEC 26",
+    "lot_size": 6400,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "IOC_FUT": {
+    "instrument_key": "NSE_FO|59003",
+    "name": "INDIAN OIL CORP LTD",
+    "trading_symbol": "IOC FUT 29 DEC 26",
+    "lot_size": 4875,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PATANJALI_FUT": {
+    "instrument_key": "NSE_FO|59074",
+    "name": "PATANJALI FOODS LIMITED",
+    "trading_symbol": "PATANJALI FUT 29 DEC 26",
+    "lot_size": 1075,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PAYTM_FUT": {
+    "instrument_key": "NSE_FO|59077",
+    "name": "ONE 97 COMMUNICATIONS LTD",
+    "trading_symbol": "PAYTM FUT 29 DEC 26",
+    "lot_size": 725,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PERSISTENT_FUT": {
+    "instrument_key": "NSE_FO|59078",
+    "name": "PERSISTENT SYSTEMS LTD",
+    "trading_symbol": "PERSISTENT FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PETRONET_FUT": {
+    "instrument_key": "NSE_FO|59079",
+    "name": "PETRONET LNG LIMITED",
+    "trading_symbol": "PETRONET FUT 29 DEC 26",
+    "lot_size": 1900,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ONGC_FUT": {
+    "instrument_key": "NSE_FO|59060",
+    "name": "OIL AND NATURAL GAS CORP.",
+    "trading_symbol": "ONGC FUT 29 DEC 26",
+    "lot_size": 2250,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PAGEIND_FUT": {
+    "instrument_key": "NSE_FO|59061",
+    "name": "PAGE INDUSTRIES LTD",
+    "trading_symbol": "PAGEIND FUT 29 DEC 26",
+    "lot_size": 20,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "RBLBANK_FUT": {
+    "instrument_key": "NSE_FO|59095",
+    "name": "RBL BANK LIMITED",
+    "trading_symbol": "RBLBANK FUT 29 DEC 26",
+    "lot_size": 3175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "RECLTD_FUT": {
+    "instrument_key": "NSE_FO|59096",
+    "name": "REC LIMITED",
+    "trading_symbol": "RECLTD FUT 29 DEC 26",
+    "lot_size": 1575,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "RELIANCE_FUT": {
+    "instrument_key": "NSE_FO|59097",
+    "name": "RELIANCE INDUSTRIES LTD",
+    "trading_symbol": "RELIANCE FUT 29 DEC 26",
+    "lot_size": 500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "RVNL_FUT": {
+    "instrument_key": "NSE_FO|59098",
+    "name": "RAIL VIKAS NIGAM LIMITED",
+    "trading_symbol": "RVNL FUT 29 DEC 26",
+    "lot_size": 1925,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "POWERINDIA_FUT": {
+    "instrument_key": "NSE_FO|59091",
+    "name": "HITACHI ENERGY INDIA LTD",
+    "trading_symbol": "POWERINDIA FUT 29 DEC 26",
+    "lot_size": 25,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PREMIERENE_FUT": {
+    "instrument_key": "NSE_FO|59092",
+    "name": "PREMIER ENERGIES LIMITED",
+    "trading_symbol": "PREMIERENE FUT 29 DEC 26",
+    "lot_size": 650,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PRESTIGE_FUT": {
+    "instrument_key": "NSE_FO|59093",
+    "name": "PRESTIGE ESTATE LTD",
+    "trading_symbol": "PRESTIGE FUT 29 DEC 26",
+    "lot_size": 450,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "RADICO_FUT": {
+    "instrument_key": "NSE_FO|59094",
+    "name": "RADICO KHAITAN LTD",
+    "trading_symbol": "RADICO FUT 29 DEC 26",
+    "lot_size": 150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SAGILITY_FUT": {
+    "instrument_key": "NSE_FO|59099",
+    "name": "SAGILITY LIMITED",
+    "trading_symbol": "SAGILITY FUT 29 DEC 26",
+    "lot_size": 12000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "POWERGRID_FUT": {
+    "instrument_key": "NSE_FO|59090",
+    "name": "POWER GRID CORP. LTD.",
+    "trading_symbol": "POWERGRID FUT 29 DEC 26",
+    "lot_size": 1900,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PIIND_FUT": {
+    "instrument_key": "NSE_FO|59084",
+    "name": "PI INDUSTRIES LTD",
+    "trading_symbol": "PIIND FUT 29 DEC 26",
+    "lot_size": 175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PNB_FUT": {
+    "instrument_key": "NSE_FO|59086",
+    "name": "PUNJAB NATIONAL BANK",
+    "trading_symbol": "PNB FUT 29 DEC 26",
+    "lot_size": 8000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PNBHOUSING_FUT": {
+    "instrument_key": "NSE_FO|59087",
+    "name": "PNB HOUSING FIN LTD.",
+    "trading_symbol": "PNBHOUSING FUT 29 DEC 26",
+    "lot_size": 650,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PFC_FUT": {
+    "instrument_key": "NSE_FO|59080",
+    "name": "POWER FIN CORP LTD.",
+    "trading_symbol": "PFC FUT 29 DEC 26",
+    "lot_size": 1300,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PGEL_FUT": {
+    "instrument_key": "NSE_FO|59081",
+    "name": "PG ELECTROPLAST LTD",
+    "trading_symbol": "PGEL FUT 29 DEC 26",
+    "lot_size": 950,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PHOENIXLTD_FUT": {
+    "instrument_key": "NSE_FO|59082",
+    "name": "THE PHOENIX MILLS LTD",
+    "trading_symbol": "PHOENIXLTD FUT 29 DEC 26",
+    "lot_size": 350,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "PIDILITIND_FUT": {
+    "instrument_key": "NSE_FO|59083",
+    "name": "PIDILITE INDUSTRIES LTD",
+    "trading_symbol": "PIDILITIND FUT 29 DEC 26",
+    "lot_size": 500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "POLICYBZR_FUT": {
+    "instrument_key": "NSE_FO|59088",
+    "name": "PB FINTECH LIMITED",
+    "trading_symbol": "POLICYBZR FUT 29 DEC 26",
+    "lot_size": 350,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "POLYCAB_FUT": {
+    "instrument_key": "NSE_FO|59089",
+    "name": "POLYCAB INDIA LIMITED",
+    "trading_symbol": "POLYCAB FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GBPINR_FUT": {
+    "instrument_key": "NCD_FO|3312",
+    "name": "GBPINR",
+    "trading_symbol": "GBPINR FUT 27 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1795804199000
+  },
+  "EURINR_FUT": {
+    "instrument_key": "NCD_FO|3308",
+    "name": "EURINR",
+    "trading_symbol": "EURINR FUT 27 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1795804199000
+  },
+  "JPYINR_FUT": {
+    "instrument_key": "NCD_FO|3324",
+    "name": "JPYINR",
+    "trading_symbol": "JPYINR FUT 27 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1795804199000
+  },
+  "USDINR_FUT": {
+    "instrument_key": "NCD_FO|3325",
+    "name": "USDINR",
+    "trading_symbol": "USDINR FUT 27 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1795804199000
+  },
+  "GOLD_FUT": {
+    "instrument_key": "NSE_COM|123424",
+    "name": "GOLD",
+    "trading_symbol": "GOLD FUT 04 DEC 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796408999000
+  },
+  "CRUDEOIL_FUT": {
+    "instrument_key": "NSE_COM|135332",
+    "name": "CRUDEOIL",
+    "trading_symbol": "CRUDEOIL FUT 18 DEC 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1797618599000
+  },
+  "CRUDEOILM_FUT": {
+    "instrument_key": "NSE_COM|135333",
+    "name": "CRUDEOILM",
+    "trading_symbol": "CRUDEOILM FUT 18 DEC 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1797618599000
+  },
+  "ALUMINIUM_FUT": {
+    "instrument_key": "NSE_COM|122288",
+    "name": "ALUMINIUM",
+    "trading_symbol": "ALUMINIUM FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "COPPER_FUT": {
+    "instrument_key": "NSE_COM|122289",
+    "name": "COPPER",
+    "trading_symbol": "COPPER FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "LEAD_FUT": {
+    "instrument_key": "NSE_COM|122329",
+    "name": "LEAD",
+    "trading_symbol": "LEAD FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "LEADMINI_FUT": {
+    "instrument_key": "NSE_COM|122338",
+    "name": "LEADMINI",
+    "trading_symbol": "LEADMINI FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "SILVER100_FUT": {
+    "instrument_key": "NSE_COM|123069",
+    "name": "SILVER100",
+    "trading_symbol": "SILVER100 FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "ZINC_FUT": {
+    "instrument_key": "NSE_COM|122341",
+    "name": "ZINC",
+    "trading_symbol": "ZINC FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "ZINCMINI_FUT": {
+    "instrument_key": "NSE_COM|122343",
+    "name": "ZINCMINI",
+    "trading_symbol": "ZINCMINI FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "GOLD10G_FUT": {
+    "instrument_key": "NSE_COM|122459",
+    "name": "GOLD10G",
+    "trading_symbol": "GOLD10G FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "GOLDGUINEA_FUT": {
+    "instrument_key": "NSE_COM|122421",
+    "name": "GOLDGUINEA",
+    "trading_symbol": "GOLDGUINEA FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "NICKEL_FUT": {
+    "instrument_key": "NSE_COM|122340",
+    "name": "NICKEL",
+    "trading_symbol": "NICKEL FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "HDFCAMC_FUT": {
+    "instrument_key": "NSE_FO|58978",
+    "name": "HDFC AMC LIMITED",
+    "trading_symbol": "HDFCAMC FUT 29 DEC 26",
+    "lot_size": 300,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HCLTECH_FUT": {
+    "instrument_key": "NSE_FO|58977",
+    "name": "HCL TECHNOLOGIES LTD",
+    "trading_symbol": "HCLTECH FUT 29 DEC 26",
+    "lot_size": 400,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HDFCLIFE_FUT": {
+    "instrument_key": "NSE_FO|58980",
+    "name": "HDFC LIFE INS CO LTD",
+    "trading_symbol": "HDFCLIFE FUT 29 DEC 26",
+    "lot_size": 1100,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HDFCBANK_FUT": {
+    "instrument_key": "NSE_FO|58979",
+    "name": "HDFC BANK LTD",
+    "trading_symbol": "HDFCBANK FUT 29 DEC 26",
+    "lot_size": 650,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HEROMOTOCO_FUT": {
+    "instrument_key": "NSE_FO|58981",
+    "name": "HERO MOTOCORP LIMITED",
+    "trading_symbol": "HEROMOTOCO FUT 29 DEC 26",
+    "lot_size": 150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HINDPETRO_FUT": {
+    "instrument_key": "NSE_FO|58983",
+    "name": "HINDUSTAN PETROLEUM CORP",
+    "trading_symbol": "HINDPETRO FUT 29 DEC 26",
+    "lot_size": 2025,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HINDALCO_FUT": {
+    "instrument_key": "NSE_FO|58982",
+    "name": "HINDALCO  INDUSTRIES  LTD",
+    "trading_symbol": "HINDALCO FUT 29 DEC 26",
+    "lot_size": 700,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HINDZINC_FUT": {
+    "instrument_key": "NSE_FO|58987",
+    "name": "HINDUSTAN ZINC LIMITED",
+    "trading_symbol": "HINDZINC FUT 29 DEC 26",
+    "lot_size": 1225,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HINDUNILVR_FUT": {
+    "instrument_key": "NSE_FO|58984",
+    "name": "HINDUSTAN UNILEVER LTD.",
+    "trading_symbol": "HINDUNILVR FUT 29 DEC 26",
+    "lot_size": 300,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ICICIBANK_FUT": {
+    "instrument_key": "NSE_FO|58989",
+    "name": "ICICI BANK LTD.",
+    "trading_symbol": "ICICIBANK FUT 29 DEC 26",
+    "lot_size": 700,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HYUNDAI_FUT": {
+    "instrument_key": "NSE_FO|58988",
+    "name": "HYUNDAI MOTOR INDIA LTD",
+    "trading_symbol": "HYUNDAI FUT 29 DEC 26",
+    "lot_size": 275,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ICICILIFE_FUT": {
+    "instrument_key": "NSE_FO|58991",
+    "name": "ICICI LIFE INSURANCE LTD",
+    "trading_symbol": "ICICILIFE FUT 29 DEC 26",
+    "lot_size": 925,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ICICIGI_FUT": {
+    "instrument_key": "NSE_FO|58990",
+    "name": "ICICI LOMBARD GIC LIMITED",
+    "trading_symbol": "ICICIGI FUT 29 DEC 26",
+    "lot_size": 325,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "IDFCFIRSTB_FUT": {
+    "instrument_key": "NSE_FO|58993",
+    "name": "IDFC FIRST BANK LIMITED",
+    "trading_symbol": "IDFCFIRSTB FUT 29 DEC 26",
+    "lot_size": 9275,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "IDEA_FUT": {
+    "instrument_key": "NSE_FO|58992",
+    "name": "VODAFONE IDEA LIMITED",
+    "trading_symbol": "IDEA FUT 29 DEC 26",
+    "lot_size": 71475,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "INDHOTEL_FUT": {
+    "instrument_key": "NSE_FO|58994",
+    "name": "THE INDIAN HOTELS CO. LTD",
+    "trading_symbol": "INDHOTEL FUT 29 DEC 26",
+    "lot_size": 1000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "INDIGO_FUT": {
+    "instrument_key": "NSE_FO|58998",
+    "name": "INTERGLOBE AVIATION LTD",
+    "trading_symbol": "INDIGO FUT 29 DEC 26",
+    "lot_size": 150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "INDIANB_FUT": {
+    "instrument_key": "NSE_FO|58997",
+    "name": "INDIAN BANK",
+    "trading_symbol": "INDIANB FUT 29 DEC 26",
+    "lot_size": 1000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "DMART_FUT": {
+    "instrument_key": "NSE_FO|58951",
+    "name": "AVENUE SUPERMARTS LIMITED",
+    "trading_symbol": "DMART FUT 29 DEC 26",
+    "lot_size": 150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "EICHERMOT_FUT": {
+    "instrument_key": "NSE_FO|58953",
+    "name": "EICHER MOTORS LTD",
+    "trading_symbol": "EICHERMOT FUT 29 DEC 26",
+    "lot_size": 100,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "DRREDDY_FUT": {
+    "instrument_key": "NSE_FO|58952",
+    "name": "DR. REDDY S LABORATORIES",
+    "trading_symbol": "DRREDDY FUT 29 DEC 26",
+    "lot_size": 625,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ENRIN_FUT": {
+    "instrument_key": "NSE_FO|58958",
+    "name": "SIEMENS ENERGY INDIA LTD",
+    "trading_symbol": "ENRIN FUT 29 DEC 26",
+    "lot_size": 175,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "FEDERALBNK_FUT": {
+    "instrument_key": "NSE_FO|58960",
+    "name": "FEDERAL BANK LTD",
+    "trading_symbol": "FEDERALBNK FUT 29 DEC 26",
+    "lot_size": 2500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ETERNAL_FUT": {
+    "instrument_key": "NSE_FO|58959",
+    "name": "ETERNAL LIMITED",
+    "trading_symbol": "ETERNAL FUT 29 DEC 26",
+    "lot_size": 2425,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "FORTIS_FUT": {
+    "instrument_key": "NSE_FO|58962",
+    "name": "FORTIS HEALTHCARE LTD",
+    "trading_symbol": "FORTIS FUT 29 DEC 26",
+    "lot_size": 775,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "FORCEMOT_FUT": {
+    "instrument_key": "NSE_FO|58961",
+    "name": "FORCE MOTORS LIMITED",
+    "trading_symbol": "FORCEMOT FUT 29 DEC 26",
+    "lot_size": 25,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GLENMARK_FUT": {
+    "instrument_key": "NSE_FO|58965",
+    "name": "GLENMARK PHARMACEUTICALS",
+    "trading_symbol": "GLENMARK FUT 29 DEC 26",
+    "lot_size": 375,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GAIL_FUT": {
+    "instrument_key": "NSE_FO|58963",
+    "name": "GAIL (INDIA) LTD",
+    "trading_symbol": "GAIL FUT 29 DEC 26",
+    "lot_size": 3550,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GODREJCP_FUT": {
+    "instrument_key": "NSE_FO|58971",
+    "name": "GODREJ CONSUMER PRODUCTS",
+    "trading_symbol": "GODREJCP FUT 29 DEC 26",
+    "lot_size": 500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GMRAIRPORT_FUT": {
+    "instrument_key": "NSE_FO|58969",
+    "name": "GMR AIRPORTS LIMITED",
+    "trading_symbol": "GMRAIRPORT FUT 29 DEC 26",
+    "lot_size": 6975,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GODREJPROP_FUT": {
+    "instrument_key": "NSE_FO|58972",
+    "name": "GODREJ PROPERTIES LTD",
+    "trading_symbol": "GODREJPROP FUT 29 DEC 26",
+    "lot_size": 325,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GVT&D_FUT": {
+    "instrument_key": "NSE_FO|58974",
+    "name": "GE VERNOVA T&D INDIA LTD",
+    "trading_symbol": "GVT&D FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GRASIM_FUT": {
+    "instrument_key": "NSE_FO|58973",
+    "name": "GRASIM INDUSTRIES LTD",
+    "trading_symbol": "GRASIM FUT 29 DEC 26",
+    "lot_size": 250,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HAVELLS_FUT": {
+    "instrument_key": "NSE_FO|58976",
+    "name": "HAVELLS INDIA LIMITED",
+    "trading_symbol": "HAVELLS FUT 29 DEC 26",
+    "lot_size": 500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "HAL_FUT": {
+    "instrument_key": "NSE_FO|58975",
+    "name": "HINDUSTAN AERONAUTICS LTD",
+    "trading_symbol": "HAL FUT 29 DEC 26",
+    "lot_size": 150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "DLF_FUT": {
+    "instrument_key": "NSE_FO|58950",
+    "name": "DLF LIMITED",
+    "trading_symbol": "DLF FUT 29 DEC 26",
+    "lot_size": 950,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "DIXON_FUT": {
+    "instrument_key": "NSE_FO|58949",
+    "name": "DIXON TECHNO (INDIA) LTD",
+    "trading_symbol": "DIXON FUT 29 DEC 26",
+    "lot_size": 50,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "INDUSINDBK_FUT": {
+    "instrument_key": "NSE_FO|58999",
+    "name": "INDUSIND BANK LIMITED",
+    "trading_symbol": "INDUSINDBK FUT 29 DEC 26",
+    "lot_size": 700,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "KARURVYSYA_FUT": {
+    "instrument_key": "NSE_FO|55041",
+    "name": "KARUR VYSYA BANK LTD",
+    "trading_symbol": "KARURVYSYA FUT 29 DEC 26",
+    "lot_size": 1550,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BANDHANBNK_FUT": {
+    "instrument_key": "NSE_FO|58917",
+    "name": "BANDHAN BANK LIMITED",
+    "trading_symbol": "BANDHANBNK FUT 29 DEC 26",
+    "lot_size": 3600,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BAJFINANCE_FUT": {
+    "instrument_key": "NSE_FO|58916",
+    "name": "BAJAJ FINANCE LIMITED",
+    "trading_symbol": "BAJFINANCE FUT 29 DEC 26",
+    "lot_size": 750,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BANKBARODA_FUT": {
+    "instrument_key": "NSE_FO|58918",
+    "name": "BANK OF BARODA",
+    "trading_symbol": "BANKBARODA FUT 29 DEC 26",
+    "lot_size": 2925,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BANKINDIA_FUT": {
+    "instrument_key": "NSE_FO|58919",
+    "name": "BANK OF INDIA",
+    "trading_symbol": "BANKINDIA FUT 29 DEC 26",
+    "lot_size": 5200,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BAJAJFINSV_FUT": {
+    "instrument_key": "NSE_FO|58911",
+    "name": "BAJAJ FINSERV LTD.",
+    "trading_symbol": "BAJAJFINSV FUT 29 DEC 26",
+    "lot_size": 300,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BAJAJ-AUTO_FUT": {
+    "instrument_key": "NSE_FO|58910",
+    "name": "BAJAJ AUTO LIMITED",
+    "trading_symbol": "BAJAJ-AUTO FUT 29 DEC 26",
+    "lot_size": 75,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "COCHINSHIP_FUT": {
+    "instrument_key": "NSE_FO|58938",
+    "name": "COCHIN SHIPYARD LIMITED",
+    "trading_symbol": "COCHINSHIP FUT 29 DEC 26",
+    "lot_size": 400,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "COLPAL_FUT": {
+    "instrument_key": "NSE_FO|58941",
+    "name": "COLGATE PALMOLIVE LTD.",
+    "trading_symbol": "COLPAL FUT 29 DEC 26",
+    "lot_size": 275,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "COFORGE_FUT": {
+    "instrument_key": "NSE_FO|58940",
+    "name": "COFORGE LIMITED",
+    "trading_symbol": "COFORGE FUT 29 DEC 26",
+    "lot_size": 475,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CONCOR_FUT": {
+    "instrument_key": "NSE_FO|58942",
+    "name": "CONTAINER CORP OF IND LTD",
+    "trading_symbol": "CONCOR FUT 29 DEC 26",
+    "lot_size": 1250,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "COROMANDEL_FUT": {
+    "instrument_key": "NSE_FO|54914",
+    "name": "COROMANDEL INTERNTL. LTD",
+    "trading_symbol": "COROMANDEL FUT 29 DEC 26",
+    "lot_size": 300,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CROMPTON_FUT": {
+    "instrument_key": "NSE_FO|58944",
+    "name": "CROMPT GREA CON ELEC LTD",
+    "trading_symbol": "CROMPTON FUT 29 DEC 26",
+    "lot_size": 2150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CUMMINSIND_FUT": {
+    "instrument_key": "NSE_FO|58945",
+    "name": "CUMMINS INDIA LTD",
+    "trading_symbol": "CUMMINSIND FUT 29 DEC 26",
+    "lot_size": 100,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CUB_FUT": {
+    "instrument_key": "NSE_FO|54920",
+    "name": "CITY UNION BANK LTD",
+    "trading_symbol": "CUB FUT 29 DEC 26",
+    "lot_size": 2325,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "DATAPATTNS_FUT": {
+    "instrument_key": "NSE_FO|54925",
+    "name": "DATA PATTERNS INDIA LTD",
+    "trading_symbol": "DATAPATTNS FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "DABUR_FUT": {
+    "instrument_key": "NSE_FO|58946",
+    "name": "DABUR INDIA LTD",
+    "trading_symbol": "DABUR FUT 29 DEC 26",
+    "lot_size": 1250,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "DIVISLAB_FUT": {
+    "instrument_key": "NSE_FO|58948",
+    "name": "DIVI S LABORATORIES LTD",
+    "trading_symbol": "DIVISLAB FUT 29 DEC 26",
+    "lot_size": 100,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "DELHIVERY_FUT": {
+    "instrument_key": "NSE_FO|58947",
+    "name": "DELHIVERY LIMITED",
+    "trading_symbol": "DELHIVERY FUT 29 DEC 26",
+    "lot_size": 2075,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BIOCON_FUT": {
+    "instrument_key": "NSE_FO|58925",
+    "name": "BIOCON LIMITED.",
+    "trading_symbol": "BIOCON FUT 29 DEC 26",
+    "lot_size": 2500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BHEL_FUT": {
+    "instrument_key": "NSE_FO|58924",
+    "name": "BHEL",
+    "trading_symbol": "BHEL FUT 29 DEC 26",
+    "lot_size": 2625,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BLUESTARCO_FUT": {
+    "instrument_key": "NSE_FO|58926",
+    "name": "BLUE STAR LIMITED",
+    "trading_symbol": "BLUESTARCO FUT 29 DEC 26",
+    "lot_size": 325,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BPCL_FUT": {
+    "instrument_key": "NSE_FO|58928",
+    "name": "BHARAT PETROLEUM CORP  LT",
+    "trading_symbol": "BPCL FUT 29 DEC 26",
+    "lot_size": 1975,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BOSCHLTD_FUT": {
+    "instrument_key": "NSE_FO|58927",
+    "name": "BOSCH LIMITED",
+    "trading_symbol": "BOSCHLTD FUT 29 DEC 26",
+    "lot_size": 25,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BSE_FUT": {
+    "instrument_key": "NSE_FO|58930",
+    "name": "BSE LIMITED",
+    "trading_symbol": "BSE FUT 29 DEC 26",
+    "lot_size": 200,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BRITANNIA_FUT": {
+    "instrument_key": "NSE_FO|58929",
+    "name": "BRITANNIA INDUSTRIES LTD",
+    "trading_symbol": "BRITANNIA FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CAMS_FUT": {
+    "instrument_key": "NSE_FO|58931",
+    "name": "COMPUTER AGE MNGT SER LTD",
+    "trading_symbol": "CAMS FUT 29 DEC 26",
+    "lot_size": 825,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CANBK_FUT": {
+    "instrument_key": "NSE_FO|58932",
+    "name": "CANARA BANK",
+    "trading_symbol": "CANBK FUT 29 DEC 26",
+    "lot_size": 6750,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CGPOWER_FUT": {
+    "instrument_key": "NSE_FO|58934",
+    "name": "CG POWER AND IND SOL LTD",
+    "trading_symbol": "CGPOWER FUT 29 DEC 26",
+    "lot_size": 850,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CDSL_FUT": {
+    "instrument_key": "NSE_FO|58933",
+    "name": "CENTRAL DEPO SER (I) LTD",
+    "trading_symbol": "CDSL FUT 29 DEC 26",
+    "lot_size": 475,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CIPLA_FUT": {
+    "instrument_key": "NSE_FO|58936",
+    "name": "CIPLA LTD",
+    "trading_symbol": "CIPLA FUT 29 DEC 26",
+    "lot_size": 425,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "CHOLAFIN_FUT": {
+    "instrument_key": "NSE_FO|58935",
+    "name": "CHOLAMANDALAM IN & FIN CO",
+    "trading_symbol": "CHOLAFIN FUT 29 DEC 26",
+    "lot_size": 625,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "COALINDIA_FUT": {
+    "instrument_key": "NSE_FO|58937",
+    "name": "COAL INDIA LTD",
+    "trading_symbol": "COALINDIA FUT 29 DEC 26",
+    "lot_size": 1350,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BDL_FUT": {
+    "instrument_key": "NSE_FO|58920",
+    "name": "BHARAT DYNAMICS LIMITED",
+    "trading_symbol": "BDL FUT 29 DEC 26",
+    "lot_size": 425,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BEL_FUT": {
+    "instrument_key": "NSE_FO|58921",
+    "name": "BHARAT ELECTRONICS LTD",
+    "trading_symbol": "BEL FUT 29 DEC 26",
+    "lot_size": 1425,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BHARTIARTL_FUT": {
+    "instrument_key": "NSE_FO|58923",
+    "name": "BHARTI AIRTEL LIMITED",
+    "trading_symbol": "BHARTIARTL FUT 29 DEC 26",
+    "lot_size": 475,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BHARATFORG_FUT": {
+    "instrument_key": "NSE_FO|58922",
+    "name": "BHARAT FORGE LTD",
+    "trading_symbol": "BHARATFORG FUT 29 DEC 26",
+    "lot_size": 500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GOLD1G_FUT": {
+    "instrument_key": "NSE_COM|124609",
+    "name": "GOLD1G",
+    "trading_symbol": "GOLD1G FUT 04 DEC 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796408999000
+  },
+  "ATHERENERG_FUT": {
+    "instrument_key": "NSE_FO|58906",
+    "name": "ATHER ENERGY LIMITED",
+    "trading_symbol": "ATHERENERG FUT 29 DEC 26",
+    "lot_size": 375,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "AUBANK_FUT": {
+    "instrument_key": "NSE_FO|58907",
+    "name": "AU SMALL FINANCE BANK LTD",
+    "trading_symbol": "AUBANK FUT 29 DEC 26",
+    "lot_size": 500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "AUROPHARMA_FUT": {
+    "instrument_key": "NSE_FO|58908",
+    "name": "AUROBINDO PHARMA LTD",
+    "trading_symbol": "AUROPHARMA FUT 29 DEC 26",
+    "lot_size": 550,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "AXISBANK_FUT": {
+    "instrument_key": "NSE_FO|58909",
+    "name": "AXIS BANK LIMITED",
+    "trading_symbol": "AXISBANK FUT 29 DEC 26",
+    "lot_size": 625,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ASHOKLEY_FUT": {
+    "instrument_key": "NSE_FO|58895",
+    "name": "ASHOK LEYLAND LTD",
+    "trading_symbol": "ASHOKLEY FUT 29 DEC 26",
+    "lot_size": 5000,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ASIANPAINT_FUT": {
+    "instrument_key": "NSE_FO|58896",
+    "name": "ASIAN PAINTS LIMITED",
+    "trading_symbol": "ASIANPAINT FUT 29 DEC 26",
+    "lot_size": 250,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ASTRAL_FUT": {
+    "instrument_key": "NSE_FO|58897",
+    "name": "ASTRAL LIMITED",
+    "trading_symbol": "ASTRAL FUT 29 DEC 26",
+    "lot_size": 425,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ADANIPOWER_FUT": {
+    "instrument_key": "NSE_FO|58885",
+    "name": "ADANI POWER LTD",
+    "trading_symbol": "ADANIPOWER FUT 29 DEC 26",
+    "lot_size": 3550,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ADANIPORTS_FUT": {
+    "instrument_key": "NSE_FO|58884",
+    "name": "ADANI PORT & SEZ LTD",
+    "trading_symbol": "ADANIPORTS FUT 29 DEC 26",
+    "lot_size": 475,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ALKEM_FUT": {
+    "instrument_key": "NSE_FO|58886",
+    "name": "ALKEM LABORATORIES LTD.",
+    "trading_symbol": "ALKEM FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "AMBUJACEM_FUT": {
+    "instrument_key": "NSE_FO|58888",
+    "name": "AMBUJA CEMENTS LTD",
+    "trading_symbol": "AMBUJACEM FUT 29 DEC 26",
+    "lot_size": 1200,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "AMBER_FUT": {
+    "instrument_key": "NSE_FO|58887",
+    "name": "AMBER ENTERPRISES (I) LTD",
+    "trading_symbol": "AMBER FUT 29 DEC 26",
+    "lot_size": 100,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ANGELONE_FUT": {
+    "instrument_key": "NSE_FO|58892",
+    "name": "ANGEL ONE LIMITED",
+    "trading_symbol": "ANGELONE FUT 29 DEC 26",
+    "lot_size": 2500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ANANDRATHI_FUT": {
+    "instrument_key": "NSE_FO|58891",
+    "name": "ANAND RATHI WEALTH LTD",
+    "trading_symbol": "ANANDRATHI FUT 29 DEC 26",
+    "lot_size": 250,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "APARINDS_FUT": {
+    "instrument_key": "NSE_FO|67144",
+    "name": "APAR INDUSTRIES LTD.",
+    "trading_symbol": "APARINDS FUT 29 DEC 26",
+    "lot_size": 50,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "APLAPOLLO_FUT": {
+    "instrument_key": "NSE_FO|58893",
+    "name": "APL APOLLO TUBES LTD",
+    "trading_symbol": "APLAPOLLO FUT 29 DEC 26",
+    "lot_size": 350,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "APOLLOHOSP_FUT": {
+    "instrument_key": "NSE_FO|58894",
+    "name": "APOLLO HOSPITALS ENTER. L",
+    "trading_symbol": "APOLLOHOSP FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NIFTY_FUT": {
+    "instrument_key": "NSE_FO|58875",
+    "name": "NIFTY",
+    "trading_symbol": "NIFTY FUT 29 DEC 26",
+    "lot_size": 65,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NIFTYFPI_FUT": {
+    "instrument_key": "NSE_FO|58876",
+    "name": "NIFTYFPI",
+    "trading_symbol": "NIFTYFPI FUT 29 DEC 26",
+    "lot_size": 1100,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NIFTYNXT50_FUT": {
+    "instrument_key": "NSE_FO|58877",
+    "name": "NIFTYNXT50",
+    "trading_symbol": "NIFTYNXT50 FUT 29 DEC 26",
+    "lot_size": 25,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ABB_FUT": {
+    "instrument_key": "NSE_FO|58879",
+    "name": "ABB INDIA LIMITED",
+    "trading_symbol": "ABB FUT 29 DEC 26",
+    "lot_size": 125,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "360ONE_FUT": {
+    "instrument_key": "NSE_FO|58878",
+    "name": "360 ONE WAM LIMITED",
+    "trading_symbol": "360ONE FUT 29 DEC 26",
+    "lot_size": 500,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ABCAPITAL_FUT": {
+    "instrument_key": "NSE_FO|58880",
+    "name": "ADITYA BIRLA CAPITAL LTD.",
+    "trading_symbol": "ABCAPITAL FUT 29 DEC 26",
+    "lot_size": 1550,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ACUTAAS_FUT": {
+    "instrument_key": "NSE_FO|67131",
+    "name": "ACUTAAS CHEMICALS LIMITED",
+    "trading_symbol": "ACUTAAS FUT 29 DEC 26",
+    "lot_size": 150,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ADANIENSOL_FUT": {
+    "instrument_key": "NSE_FO|58881",
+    "name": "ADANI ENERGY SOLUTION LTD",
+    "trading_symbol": "ADANIENSOL FUT 29 DEC 26",
+    "lot_size": 675,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ADANIGREEN_FUT": {
+    "instrument_key": "NSE_FO|58883",
+    "name": "ADANI GREEN ENERGY LTD",
+    "trading_symbol": "ADANIGREEN FUT 29 DEC 26",
+    "lot_size": 600,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "ADANIENT_FUT": {
+    "instrument_key": "NSE_FO|58882",
+    "name": "ADANI ENTERPRISES LIMITED",
+    "trading_symbol": "ADANIENT FUT 29 DEC 26",
+    "lot_size": 309,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BANKNIFTY_FUT": {
+    "instrument_key": "NSE_FO|58872",
+    "name": "BANKNIFTY",
+    "trading_symbol": "BANKNIFTY FUT 29 DEC 26",
+    "lot_size": 30,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "FINNIFTY_FUT": {
+    "instrument_key": "NSE_FO|58873",
+    "name": "FINNIFTY",
+    "trading_symbol": "FINNIFTY FUT 29 DEC 26",
+    "lot_size": 60,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "MIDCPNIFTY_FUT": {
+    "instrument_key": "NSE_FO|58874",
+    "name": "MIDCPNIFTY",
+    "trading_symbol": "MIDCPNIFTY FUT 29 DEC 26",
+    "lot_size": 120,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "SYRMA_FUT": {
+    "instrument_key": "NSE_FO|55145",
+    "name": "SYRMA SGS TECHNOLOGY LTD",
+    "trading_symbol": "SYRMA FUT 29 DEC 26",
+    "lot_size": 325,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NAVINFLUOR_FUT": {
+    "instrument_key": "NSE_FO|55078",
+    "name": "NAVIN FLUORINE INT. LTD",
+    "trading_symbol": "NAVINFLUOR FUT 29 DEC 26",
+    "lot_size": 75,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "BRCRUDEOIL_FUT": {
+    "instrument_key": "NSE_COM|121924",
+    "name": "BRCRUDEOIL",
+    "trading_symbol": "BRCRUDEOIL FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "SILVERM_FUT": {
+    "instrument_key": "NSE_COM|121853",
+    "name": "SILVERM",
+    "trading_symbol": "SILVERM FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "NATGASIND_FUT": {
+    "instrument_key": "NSE_COM|123050",
+    "name": "NATGASIND",
+    "trading_symbol": "NATGASIND FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "ELECMBL_FUT": {
+    "instrument_key": "NSE_COM|123362",
+    "name": "ELECMBL",
+    "trading_symbol": "ELECMBL FUT 27 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1795804199000
+  },
+  "GODFRYPHLP_FUT": {
+    "instrument_key": "NSE_FO|58970",
+    "name": "GODFREY PHILLIPS INDIA LT",
+    "trading_symbol": "GODFRYPHLP FUT 29 DEC 26",
+    "lot_size": 275,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "GOLDM_FUT": {
+    "instrument_key": "NSE_COM|121613",
+    "name": "GOLDM",
+    "trading_symbol": "GOLDM FUT 29 DEC 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NATGASMINI_FUT": {
+    "instrument_key": "NSE_COM|130069",
+    "name": "NATGASMINI",
+    "trading_symbol": "NATGASMINI FUT 28 DEC 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798482599000
+  },
+  "NATURALGAS_FUT": {
+    "instrument_key": "NSE_COM|130070",
+    "name": "NATURALGAS",
+    "trading_symbol": "NATURALGAS FUT 28 DEC 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798482599000
+  },
+  "ALUMINI_FUT": {
+    "instrument_key": "NSE_COM|121923",
+    "name": "ALUMINI",
+    "trading_symbol": "ALUMINI FUT 30 NOV 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796063399000
+  },
+  "SILVER_FUT": {
+    "instrument_key": "NSE_COM|123427",
+    "name": "SILVER",
+    "trading_symbol": "SILVER FUT 04 DEC 26",
+    "lot_size": 1,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1796408999000
+  },
+  "BANKEX_FUT": {
+    "instrument_key": "BSE_FO|1147517",
+    "name": "BANKEX",
+    "trading_symbol": "BANKEX FUT 31 DEC 26",
+    "lot_size": 30,
+    "instrument_type": "FUT",
+    "exchange": "BSE",
+    "expiry": 1798741799000
+  },
+  "SENSEX50_FUT": {
+    "instrument_key": "BSE_FO|1138868",
+    "name": "SENSEX50",
+    "trading_symbol": "SENSEX50 FUT 31 DEC 26",
+    "lot_size": 75,
+    "instrument_type": "FUT",
+    "exchange": "BSE",
+    "expiry": 1798741799000
+  },
+  "FOCIT_FUT": {
+    "instrument_key": "BSE_FO|1138470",
+    "name": "FOCIT",
+    "trading_symbol": "FOCIT FUT 31 DEC 26",
+    "lot_size": 45,
+    "instrument_type": "FUT",
+    "exchange": "BSE",
+    "expiry": 1798741799000
+  },
+  "SENSEX_FUT": {
+    "instrument_key": "BSE_FO|1145756",
+    "name": "SENSEX",
+    "trading_symbol": "SENSEX FUT 31 DEC 26",
+    "lot_size": 20,
+    "instrument_type": "FUT",
+    "exchange": "BSE",
+    "expiry": 1798741799000
+  },
   "NIFTY50": {
     "instrument_key": "NSE_INDEX|Nifty 50",
     "name": "Nifty 50",
@@ -40767,11 +43384,56 @@
     "instrument_type": "INDEX",
     "exchange": "NSE"
   },
+  "NIFTY 50_FUT": {
+    "instrument_key": "NSE_FO|58875",
+    "name": "NIFTY",
+    "trading_symbol": "NIFTY FUT 29 DEC 26",
+    "lot_size": 65,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
+  "NIFTY50_FUT": {
+    "instrument_key": "NSE_FO|58875",
+    "name": "NIFTY",
+    "trading_symbol": "NIFTY FUT 29 DEC 26",
+    "lot_size": 65,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
+  },
   "BSESENSEX": {
     "instrument_key": "BSE_INDEX|SENSEX",
     "name": "BSE SENSEX",
     "lot_size": 1,
     "instrument_type": "INDEX",
     "exchange": "BSE"
+  },
+  "BSE SENSEX_FUT": {
+    "instrument_key": "BSE_FO|1145756",
+    "name": "SENSEX",
+    "trading_symbol": "SENSEX FUT 31 DEC 26",
+    "lot_size": 20,
+    "instrument_type": "FUT",
+    "exchange": "BSE",
+    "expiry": 1798741799000
+  },
+  "BSESENSEX_FUT": {
+    "instrument_key": "BSE_FO|1145756",
+    "name": "SENSEX",
+    "trading_symbol": "SENSEX FUT 31 DEC 26",
+    "lot_size": 20,
+    "instrument_type": "FUT",
+    "exchange": "BSE",
+    "expiry": 1798741799000
+  },
+  "NIFTY BANK_FUT": {
+    "instrument_key": "NSE_FO|58872",
+    "name": "BANKNIFTY",
+    "trading_symbol": "BANKNIFTY FUT 29 DEC 26",
+    "lot_size": 30,
+    "instrument_type": "FUT",
+    "exchange": "NSE",
+    "expiry": 1798568999000
   }
 }
